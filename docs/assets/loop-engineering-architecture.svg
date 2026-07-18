@@ -1,0 +1,113 @@
+<svg viewBox="0 0 880 600" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-label="Loop engineering architecture">
+  <title>Loop Engineering — Architecture</title>
+  <desc>Three layers: a Plan layer where you and the Planner build an approved build-plan.json; an Orchestrate layer — a main-session loop that picks the next eligible item, runs the per-item pipeline, verifies locally, updates the plan, and auto-demos the running app to you at checkpoints, until done / DEADLOCK / guardrail; and an Execute layer that runs the reused agent team (PM, Architect + design-critic, Tech Lead, engineers, code-review) per item.</desc>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d97706"/>
+    </marker>
+  </defs>
+  <style>
+    .t{fill:#0f172a;font-size:13px;font-weight:600}
+    .s{fill:#64748b;font-size:10px}
+    .lbl{fill:#64748b;font-size:12px;font-weight:700;letter-spacing:.05em}
+    .title{fill:#0f172a;font-size:16px;font-weight:700}
+    .box{fill:#ffffff;stroke:#cbd5e1;stroke-width:1.5}
+    .hp{fill:#fff7ed;stroke:#d97706;stroke-width:2}
+    .edge{stroke:#64748b;stroke-width:1.5;fill:none}
+    .edgea{stroke:#d97706;stroke-width:1.8;fill:none}
+    .cap{fill:#d97706;font-size:10px;font-weight:600}
+    .capm{fill:#64748b;font-size:10px}
+    .cont{fill:none;stroke:#cbd5e1;stroke-width:1.3;stroke-dasharray:5 4}
+  </style>
+
+  <rect x="0.5" y="0.5" width="879" height="599" fill="#ffffff" stroke="#e2e8f0"/>
+
+  <text x="440" y="30" text-anchor="middle" class="title">Loop Engineering — Architecture</text>
+
+  <!-- BAND 1 PLAN -->
+  <text x="24" y="62" class="lbl">1 · PLAN</text>
+  <rect class="hp" x="120" y="72" width="200" height="56" rx="8"/>
+  <text x="220" y="98" text-anchor="middle" class="t">You + Planner</text>
+  <text x="220" y="114" text-anchor="middle" class="s">decompose the goal</text>
+  <line class="edge" x1="320" y1="100" x2="418" y2="100" marker-end="url(#ah)"/>
+  <rect class="box" x="420" y="72" width="220" height="56" rx="8"/>
+  <text x="530" y="98" text-anchor="middle" class="t">build-plan.json</text>
+  <text x="530" y="114" text-anchor="middle" class="s">feature DAG + status</text>
+  <path class="edgea" d="M530,128 V174" marker-end="url(#aha)"/>
+  <text x="540" y="156" class="cap">you approve →</text>
+
+  <!-- BAND 2 ORCHESTRATE -->
+  <text x="24" y="168" class="lbl">2 · ORCHESTRATE</text>
+  <rect class="cont" x="110" y="176" width="560" height="186" rx="12"/>
+  <text x="125" y="196" class="s">Orchestrator loop (main session) — runs until done / DEADLOCK / guardrail</text>
+
+  <rect class="box" x="135" y="210" width="150" height="50" rx="8"/>
+  <text x="210" y="232" text-anchor="middle" class="t">Pick next item</text>
+  <text x="210" y="247" text-anchor="middle" class="s">unblocked + pending</text>
+
+  <rect class="box" x="320" y="210" width="170" height="50" rx="8"/>
+  <text x="405" y="232" text-anchor="middle" class="t">Run feature pipeline</text>
+  <text x="405" y="247" text-anchor="middle" class="s">design → build → review</text>
+
+  <rect class="box" x="525" y="210" width="120" height="50" rx="8"/>
+  <text x="585" y="232" text-anchor="middle" class="t">Verify</text>
+  <text x="585" y="247" text-anchor="middle" class="s">tests + runs locally</text>
+
+  <rect class="box" x="320" y="302" width="170" height="46" rx="8"/>
+  <text x="405" y="323" text-anchor="middle" class="t">Update plan + log</text>
+  <text x="405" y="338" text-anchor="middle" class="s">status + telemetry</text>
+
+  <line class="edge" x1="285" y1="235" x2="318" y2="235" marker-end="url(#ah)"/>
+  <line class="edge" x1="490" y1="235" x2="523" y2="235" marker-end="url(#ah)"/>
+  <path class="edge" d="M585,260 V325 H492" marker-end="url(#ah)"/>
+  <path class="edge" d="M320,325 H128 V235 H133" marker-end="url(#ah)"/>
+
+  <!-- checkpoint -->
+  <rect class="hp" x="700" y="205" width="150" height="62" rx="8"/>
+  <text x="775" y="231" text-anchor="middle" class="t">Auto-demo → You</text>
+  <text x="775" y="247" text-anchor="middle" class="s">see the app run · escalate</text>
+  <path class="edgea" d="M670,236 H698" marker-end="url(#aha)"/>
+
+  <!-- expansion arrow to execute -->
+  <path class="edgea" d="M405,362 V410" marker-end="url(#aha)" marker-start="url(#aha)"/>
+  <text x="415" y="390" class="capm">each item ↕</text>
+
+  <!-- BAND 3 EXECUTE -->
+  <text x="24" y="424" class="lbl">3 · EXECUTE</text>
+  <text x="140" y="424" class="capm">(existing team — reused, per item)</text>
+
+  <rect class="box" x="40" y="440" width="96" height="56" rx="8"/>
+  <text x="88" y="464" text-anchor="middle" class="t">PM</text>
+  <text x="88" y="480" text-anchor="middle" class="s">requirements</text>
+
+  <rect class="box" x="160" y="440" width="150" height="56" rx="8"/>
+  <text x="235" y="464" text-anchor="middle" class="t">Architect + Critic</text>
+  <text x="235" y="480" text-anchor="middle" class="s">design + gate</text>
+
+  <rect class="box" x="334" y="440" width="110" height="56" rx="8"/>
+  <text x="389" y="464" text-anchor="middle" class="t">Tech Lead</text>
+  <text x="389" y="480" text-anchor="middle" class="s">briefs + dispatch</text>
+
+  <rect class="box" x="468" y="440" width="186" height="56" rx="8"/>
+  <text x="561" y="464" text-anchor="middle" class="t">Engineers</text>
+  <text x="561" y="480" text-anchor="middle" class="s">db · backend · app · admin · infra</text>
+
+  <rect class="box" x="678" y="440" width="150" height="56" rx="8"/>
+  <text x="753" y="464" text-anchor="middle" class="t">Code review</text>
+  <text x="753" y="480" text-anchor="middle" class="s">skill verdict</text>
+
+  <line class="edge" x1="136" y1="468" x2="158" y2="468" marker-end="url(#ah)"/>
+  <line class="edge" x1="310" y1="468" x2="332" y2="468" marker-end="url(#ah)"/>
+  <line class="edge" x1="444" y1="468" x2="466" y2="468" marker-end="url(#ah)"/>
+  <line class="edge" x1="654" y1="468" x2="676" y2="468" marker-end="url(#ah)"/>
+
+  <!-- legend -->
+  <rect x="24" y="536" width="14" height="14" rx="3" fill="#fff7ed" stroke="#d97706" stroke-width="2"/>
+  <text x="46" y="547" class="capm">human-in-the-loop checkpoint</text>
+  <rect x="260" y="536" width="14" height="14" rx="3" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="282" y="547" class="capm">automated step</text>
+  <text x="470" y="547" class="capm">git: branches off main · merges on verify-pass</text>
+</svg>
