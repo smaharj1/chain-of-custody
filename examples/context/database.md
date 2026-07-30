@@ -1,7 +1,7 @@
 ## ORM and Tooling
 
 - ORM: Drizzle ORM.
-- Database: PostgreSQL 16 on RDS.
+- Database: PostgreSQL 16 on RDS in prod; SQLite at `./.data/dev.db` for local dev (see `local-dev.md`). Migrations regenerate per-dialect.
 - Migrations: `drizzle-kit generate` + `drizzle-kit migrate`.
 
 ## Migration Location and Commands
@@ -40,6 +40,7 @@
 - `user_id: text` not null, FK -> users.id, onDelete CASCADE.
 - `role: text` not null, values: MEMBER | ADMIN | OWNER. Default MEMBER.
 - `created_at: timestamp` default now, not null.
+- `updated_at: timestamp` default now, not null.
 - Unique constraint on (workspace_id, user_id).
 
 ### boards
@@ -53,7 +54,7 @@
 ### tasks
 - `id: text` PK via `createId()`.
 - `board_id: text` not null, FK -> boards.id, onDelete CASCADE.
-- `workspace_id: text` not null, FK -> workspaces.id.
+- `workspace_id: text` not null, FK -> workspaces.id, onDelete CASCADE.
 - `title: text` not null.
 - `description: text` nullable.
 - `status: text` not null, values: TODO | IN_PROGRESS | IN_REVIEW | DONE. Default TODO.
@@ -67,18 +68,19 @@
 ### time_entries
 - `id: text` PK via `createId()`.
 - `task_id: text` not null, FK -> tasks.id, onDelete CASCADE.
-- `user_id: text` not null, FK -> users.id.
-- `workspace_id: text` not null, FK -> workspaces.id.
+- `user_id: text` not null, FK -> users.id, onDelete CASCADE.
+- `workspace_id: text` not null, FK -> workspaces.id, onDelete CASCADE.
 - `started_at: timestamp` not null.
 - `ended_at: timestamp` nullable. Null = currently running.
 - `duration_seconds: integer` nullable. Computed on stop.
 - `created_at: timestamp` default now, not null.
+- `updated_at: timestamp` default now, not null.
 
 ## Conventions
 
 - Money is integer cents only: `priceCents`, `amountCents`.
 - IDs are `text` PKs generated via `createId()`, never auto-increment.
-- Every table has `created_at`. Most have `updated_at` (except time_entries).
+- Every table has `created_at` and `updated_at`.
 - Status fields are `text` with documented allowed values, not Postgres enum types.
 - Foreign keys always specify `onDelete` behavior.
 - `workspaceId` is present on all workspace-scoped entities for multi-tenancy queries.

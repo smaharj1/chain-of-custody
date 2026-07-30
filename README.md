@@ -8,7 +8,7 @@ This is a `.claude/` configuration directory you drop into any project. It gives
 
 - **Three operational modes** (`/pm`, `/architect`, `/tech-lead`) that switch Claude's persona and workflow
 - **A build loop** (`/planner` + `/orchestrate`) that turns an idea into a dependency-ordered plan and executes it item by item — local-first, with human checkpoints — until done
-- **Specialist engineer subagents** (database, backend, frontend, infra, security) that implement code to spec
+- **Specialist engineer subagents** (database, backend, app, admin-app, infra) that implement code to spec, plus **read-only reviewers** (design-critic, code-reviewer, security-reviewer) that audit without writing code
 - **A structured development workflow** with requirements gathering, technical design, design critique, engineer dispatch, code review, and telemetry
 - **Quality controls** built in: design-critic catches architectural issues before code is written, code review catches implementation issues after
 
@@ -16,7 +16,9 @@ The system is designed for solo developers or small teams who want Claude to ope
 
 > **New to coding, or not sure what half of these words mean?** Start with **[docs/getting-started.md](docs/getting-started.md)** for a plain-language walkthrough, and keep **[GLOSSARY.md](GLOSSARY.md)** open in another tab. This README is the reference; the getting-started guide is the on-ramp.
 >
-> **Starting a brand-new project (empty folder)?** Read the [Starting from scratch](#starting-from-scratch) note below first — this kit currently assumes a project already exists, and there's one gap you need to know about before you begin.
+> **Starting a brand-new project (empty folder)?** Read the [Starting from scratch](#starting-from-scratch) note below first — greenfield goes straight to `/planner` and skips the fill-in step entirely.
+>
+> **Operational questions** (testing, CI, deploying, teams, non-web projects) live in **[docs/faq.md](docs/faq.md)**.
 
 ## How the Team Works
 
@@ -63,11 +65,38 @@ Start with `/planner` to build the plan, then `/orchestrate` to run it. Configur
 ```bash
 # Clone this repo
 git clone <this-repo-url> /tmp/ai-team
+cd /path/to/your/project
 
-# Copy the .claude directory and docs templates into your project
-cp -r /tmp/ai-team/.claude /path/to/your/project/
-cp -r /tmp/ai-team/docs /path/to/your/project/
+# Runtime-required (the modes and the loop read these at run time):
+cp -r /tmp/ai-team/.claude .
+mkdir -p docs/features docs/design
+cp -r /tmp/ai-team/docs/features/_templates docs/features/
+cp /tmp/ai-team/docs/design/loop-engineering.md docs/design/
+cp /tmp/ai-team/docs/choosing-your-stack.md docs/
+
+# Optional human docs (nice to have in-project; also fine to read from the kit repo):
+cp /tmp/ai-team/docs/getting-started.md /tmp/ai-team/docs/faq.md docs/
 ```
+
+> ⚠️ **Already using Claude Code in this project?** Then `.claude/` already exists, and `cp -r` will merge into it — potentially clobbering your `settings.json` (permissions, hooks), your `CLAUDE.md`, and any agents/commands you've added. **Back up first** (`cp -r .claude .claude.backup`), then merge by hand: this kit's `settings.json` adds two PreToolUse hooks (`guard-git.sh`, `guard-main-edit.sh`) and an empty permission allowlist — fold those into yours rather than replacing it, and **append** the kit's `CLAUDE.md` content to your own.
+
+Then append the kit's runtime artifacts to your project's `.gitignore`:
+
+```gitignore
+.claude/metrics.jsonl
+.claude/loop.jsonl
+.claude/orchestrate.lock
+.claude/settings.local.json
+.claude/worktrees/
+```
+
+(`build-plan.json` and `BUILD_PLAN.md` are the opposite — durable state, **meant to be committed**.)
+
+Links inside the copied docs to `GLOSSARY.md`, this README, and `examples/` refer to the **kit repo** — keep your clone around or bookmark the repo page.
+
+**Which path next?**
+- **Existing project** → do step 2 (fill in your project context).
+- **Empty folder** → **skip step 2 entirely.** `/planner` pre-bakes those decisions with you and the loop scaffolds the project — go straight to step 4 and type `/planner`. (See [Starting from scratch](#starting-from-scratch).)
 
 ### 2. Fill in your project context
 
@@ -83,8 +112,18 @@ The system needs to know about YOUR project to be effective. Fill in these files
 | `.claude/context/app.md` | Main app routes, layout, key interactions |
 | `.claude/context/admin-app.md` | Admin dashboard details (delete if no admin app) |
 | `.claude/context/infra.md` | IaC tool, stacks, deploy commands (delete if no infrastructure) |
+| `.claude/context/local-dev.md` | **EXECUTION-CRITICAL for the loop** — how to run, test, and reset the app locally (dev command, ports, ephemeral-DB commands, verify-run harness). `/orchestrate` hard-stops if this is still a template. |
+| `.claude/loop.config.md` | Loop settings: `verify_tests` / `verify_run` / `db_ephemeral` commands (also execution-critical), autonomy dial, budgets |
 
-Each file has `<!-- comments -->` explaining what goes in each section. See `examples/` for a fully filled-in fictional project ("TaskFlow") to reference.
+Each file has `<!-- comments -->` explaining what goes in each section. See `examples/` for a fully filled-in fictional project ("TaskFlow") covering **every** context file plus a filled `loop.config.md` and a complete example feature folder (`examples/features/csv-export/`).
+
+#### Adopting on an existing codebase
+
+For a real codebase, don't fill the primers from memory — the information is in the code. Paste this into Claude Code:
+
+> *"Read this codebase and draft each `.claude/context/` primer: derive the stack, conventions, and architecture patterns from the code; for the endpoint and table catalogs, reference the source-of-truth files rather than enumerating every entry; flag anything ambiguous as a question for me rather than guessing."*
+
+Two scoping rules that keep this tractable on a large repo: **catalogs may point at source-of-truth files** ("Endpoint catalog: see `src/routes/*.ts`") instead of listing every endpoint/table, and partial primers are fine — they're living documents that grow per feature.
 
 > **How long does this take?** If you already know your stack and patterns (you're porting an existing project), maybe an hour total. If you're starting fresh and *don't* yet know what your endpoints, schema, or architecture will be, **don't try to fill these in by hand from a blank page** — you'll be guessing. Fill in `CLAUDE.md` (the stack + a one-line description) and let `/architect` help you establish the rest as you design your first feature. The primers are living documents; they grow as the project does. See [docs/getting-started.md](docs/getting-started.md).
 
@@ -138,7 +177,9 @@ claude  # start Claude Code
 ```
 .claude/
   CLAUDE.md                          # YOUR project description + conventions
-  settings.json                      # Claude Code settings (permissions, plugins)
+  KIT_VERSION                        # Which kit release this copy came from (see Updating the kit)
+  settings.json                      # Claude Code settings (permissions + the two PreToolUse hooks)
+  loop.config.md                     # Loop settings: autonomy, budgets, verify commands, db, git
   agents/                            # Engineer subagent definitions
     backend-engineer.md              #   Backend API engineer
     database-engineer.md             #   Database/migration engineer
@@ -152,6 +193,8 @@ claude  # start Claude Code
     pm.md                            #   /pm — requirements gathering
     architect.md                     #   /architect — technical design
     tech-lead.md                     #   /tech-lead — dispatch + review
+    planner.md                       #   /planner — whole-idea build plan
+    orchestrate.md                   #   /orchestrate — run the plan item by item
   context/                           # Domain primers (YOUR project knowledge)
     engineer-protocol.md             #   Shared rules for all engineers (generic)
     architect.md                     #   System architecture primer
@@ -161,26 +204,39 @@ claude  # start Claude Code
     app.md                           #   Main app primer
     admin-app.md                     #   Admin app primer
     infra.md                         #   Infrastructure primer
-  metrics.jsonl                      # Telemetry (auto-created, gitignored)
+    local-dev.md                     #   How to run/test/reset the app locally (loop-critical)
+  hooks/
+    guard-git.sh                     #   PreToolUse(Bash): blocks push/rebase/shared-history git ops
+    guard-main-edit.sh               #   PreToolUse(Edit/Write): blocks app-source edits on main
+  metrics.jsonl                      # Interactive telemetry (auto-created; gitignore it — see step 1)
+  loop.jsonl                         # Loop telemetry (auto-created; gitignore it)
+  orchestrate.lock                   # Run lock (auto-created; gitignore it)
+build-plan.json                      # Loop plan — canonical state (commit this)
+BUILD_PLAN.md                        # Generated human view of the plan (commit this)
 docs/
+  design/
+    loop-engineering.md              # Authoritative loop spec (runtime-required — orchestrate cites it)
   features/
-    _templates/                      # Templates used by PM, Architect, Tech Lead
+    _templates/                      # Templates used by PM, Architect, Tech Lead, Planner
       requirements.md                #   PM writes requirements from this
       technical-design.md            #   Architect writes design from this
       api-contract.md                #   Architect writes API contract from this
       brief.md                       #   Tech Lead writes engineer briefs from this
+      build-plan.md                  #   Planner writes build-plan.json from this
     <feature-slug>/                  # Created per feature (scratch — not long-term)
       requirements.md
       technical-design.md
       api-contract.md
       briefs/<engineer>.md
       reports/<engineer>.md
-examples/                            # Filled-in example for reference
-  CLAUDE.md                          #   Example: TaskFlow SaaS project
-  context/
-    architect.md
-    backend.md
-    database.md
+  faq.md                             # Operational FAQ (testing, CI, deploy, teams, non-web)
+examples/                            # Filled-in example for reference (TaskFlow)
+  CLAUDE.md
+  loop.config.md                     #   Filled loop config
+  context/                           #   ALL primers filled: architect, backend, database,
+                                     #   shared-frontend, app, admin-app, infra, local-dev
+  features/csv-export/               #   A complete example feature folder (requirements →
+                                     #   design → contract → brief → report)
 ```
 
 ## The Three Lanes
@@ -246,6 +302,8 @@ After every feature/task, the Tech Lead appends a JSON line to `.claude/metrics.
 - **No admin app?** Delete `agents/admin-app-engineer.md` and `context/admin-app.md`.
 - **Multiple frontend apps?** Duplicate `agents/app-engineer.md` and `context/app.md` for each.
 - **No infrastructure?** Delete `agents/infra-engineer.md` and `context/infra.md`.
+- **No frontend at all (API service, CLI tool)?** Delete the app agents and `context/shared-frontend.md` — the Tech Lead's Backend→frontend dispatch gate simply never fires, and the api-contract template becomes your interface contract. More in [docs/faq.md](docs/faq.md).
+- **Mobile app?** Duplicate `agents/app-engineer.md` and adjust `context/app.md` for React Native etc. Note the loop's auto-demo has no simulator screenshot — mobile demo targets fall back to endpoint/test assertions ([docs/faq.md](docs/faq.md)).
 - **Different backend language?** The agents are language-agnostic. Just fill in `context/backend.md` with your patterns.
 - **Want a UI designer agent?** Create `agents/ui-designer.md` following the pattern of the existing agents.
 
@@ -257,16 +315,39 @@ This kit was built to coordinate work on a project that *already exists* — eng
 2. **That first item is foundational.** It establishes the patterns (folder layout, error handling, naming) every later item copies, and it's the newest, least-exemplar-supported part of the run — so give it more of your attention than the rest.
 3. **After it ships**, the `context/*.md` primers point at those files as the canonical exemplars, and the normal exemplar-matching workflow applies for everything after.
 
-> A dedicated bootstrap mode that hardens this first-item scaffolding experience is on the roadmap. Until then, `/planner` → `/orchestrate` is the path, with extra human attention on item one.
+The kit ships a **bootstrap safety floor** so the empty-folder path works without manual setup: `/orchestrate`'s preamble runs `git init` if no repository exists, the Planner fills `.claude/loop.config.md`'s verify commands as a plan output (you don't pre-fill them), and the Tech Lead's engineer-set detection has an explicit scaffold row (the Backend engineer owns the skeleton). The first item also stamps `CLAUDE.md`'s stack table so the loop's autonomy check passes on later runs.
+
+> A dedicated bootstrap *mode* that further hardens this first-item experience remains on the roadmap (design §14). Until then, `/planner` → `/orchestrate` is the path, with extra human attention on item one.
 
 New to all of this? **[docs/getting-started.md](docs/getting-started.md)** walks through the whole thing in plain language.
 
 ## Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated
-- A project to work on (any language, any framework)
-- Comfort editing text files and running a couple of terminal commands — or willingness to ask Claude to do it for you. See [docs/getting-started.md](docs/getting-started.md) and [GLOSSARY.md](GLOSSARY.md) if the terminology here is unfamiliar.
+**Required**
+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated. Feature floor: agent frontmatter (`.claude/agents/`), PreToolUse hooks with `$CLAUDE_PROJECT_DIR`, and the Skill tool — any recent version has all three.
+- `git` — the loop's branch/merge/verify machinery assumes a repository (the orchestrate preamble runs `git init` for you on an empty folder).
+- `python3` on PATH — both guard hooks use it. Without it they announce themselves inactive and allow everything (fail-open by design), so the git guardrails silently vanish.
+- A project to work on (any language, any framework) — or an empty folder (see [Starting from scratch](#starting-from-scratch)).
+
+**Recommended**
+
+- **context7 MCP** (fresh library docs for engineers). ⚠️ *Install-name trap*: the agent files wire the tool names for a **plugin** install named `context7` (`mcp__plugin_context7_context7__*`). If you install it as a plain MCP server instead, the tools are named `mcp__context7__*` — update the `tools:` line in the eight agent files to match, or the docs capability silently disappears while the engineer protocol still mandates it.
+- **superpowers plugin** (`superpowers:brainstorming` — used by `/pm` and `/planner` for exploratory interviews; both fall back gracefully without it).
+- **code-review plugin** (`code-review:code-review` — the interactive Tech Lead's review skill; a manual-review fallback is built in).
+
+**Optional (text fallbacks built in)**
+
+- A browser-preview MCP for the loop's auto-demo screenshots; a push-notification capability for checkpoint alerts. Absent either, the loop presents demo routes + HTTP checks as text and uses transcript banners.
+
+## Updating the Kit
+
+Your copy records its release in `.claude/KIT_VERSION`; changes ship in [CHANGELOG.md](CHANGELOG.md). To update:
+
+1. Check your `.claude/KIT_VERSION`, read the CHANGELOG entries since.
+2. **Re-copy the never-edit set** from the new kit release — these are kit logic, safe to overwrite: `.claude/agents/*` (unless you added/renamed agents), `.claude/commands/*`, `.claude/context/engineer-protocol.md`, `.claude/hooks/*`, `docs/features/_templates/*`, `docs/design/loop-engineering.md`, and `.claude/KIT_VERSION` itself.
+3. **Never overwrite the user-owned set** — these hold *your* project: `.claude/CLAUDE.md`, `.claude/context/*` primers (except engineer-protocol), `.claude/loop.config.md`, `.claude/settings.json`. If a CHANGELOG entry touches one of these (e.g. a new settings hook), apply it as a hand-merge.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

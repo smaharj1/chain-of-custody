@@ -109,7 +109,7 @@ If the review surfaces blockers, Tech Lead re-dispatches you with `iteration: 2`
 
 ## Telemetry
 - Tool calls used: ~<N>
-- Token budget hit: yes | no
+- Tool-call budget hit: yes | no
 - Wall time (approx): <optional>
 
 ## Escalation Reason (only if ESCALATION_NEEDED)
@@ -120,7 +120,7 @@ If the review surfaces blockers, Tech Lead re-dispatches you with `iteration: 2`
 
 You may run `git status`, `git diff`, `git log`, `git branch --show-current`, `git show`. You may **NOT** run any write git operation: `git commit`, `git push`, `git checkout`, `git branch -D`, `git merge`, `git rebase`, `git reset`, `git stash`, `git tag`, `gh pr create`, `gh pr merge`. Surface those as suggestions in your report; the user runs them.
 
-If a `PreToolUse` hook blocks `Edit`/`Write`/`NotebookEdit` while on `main` — if it fires, STOP and tell the user to create a feature branch. Do not run `git checkout -b` yourself.
+A `PreToolUse` hook (`.claude/hooks/guard-main-edit.sh`) blocks `Edit`/`Write`/`NotebookEdit` to app source while on `main`/`master`. If it fires, STOP and return `Status: NEEDS_CLARIFICATION` — ask the Tech Lead/user to create a feature branch. Do not run `git checkout -b` yourself.
 
 ## 9. Library Docs
 

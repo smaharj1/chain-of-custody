@@ -16,12 +16,12 @@ A blocker caught here costs minutes. The same blocker caught after 3 engineers h
 - Feature slug
 - Path to `docs/features/<slug>/technical-design.md`
 - Path to `docs/features/<slug>/api-contract.md`
-- Path to `docs/features/<slug>/requirements.md`
+- Path to `docs/features/<slug>/requirements.md` — **or, in loop mode, the requirements inline in the dispatch prompt** (the `/orchestrate` loop writes no `requirements.md`; treat inline requirements as equivalent)
 
 ## Required Reading
 
 1. Any architecture context docs in `.claude/context/`
-2. `requirements.md`, `technical-design.md`, `api-contract.md` (the inputs)
+2. `requirements.md` (or the inline requirements from the dispatch), `technical-design.md`, `api-contract.md` (the inputs)
 3. Domain primers relevant to the design's scope (database, backend, frontend context docs)
 4. The current code only when the design references something that must already exist (don't go on a tour).
 

@@ -6,7 +6,7 @@
 **Date**: <YYYY-MM-DD>
 **Iteration**: 1
 **max_review_rounds**: 2
-**token_budget**: <use protocol default unless overriding — see `.claude/context/engineer-protocol.md` section 4>
+**tool_call_budget**: <use protocol default unless overriding — see `.claude/context/engineer-protocol.md` section 4>
 
 ---
 
@@ -15,7 +15,7 @@
 1. `.claude/context/engineer-protocol.md` (the shared rulebook — read first)
 2. `.claude/context/<your-domain>.md` (your primer)
 3. `.claude/context/shared-frontend.md` (frontend engineers only)
-4. `docs/features/<slug>/requirements.md`
+4. `docs/features/<slug>/requirements.md` *(loop mode: requirements arrive inline in the dispatch prompt instead — treat them as equivalent)*
 5. `docs/features/<slug>/technical-design.md` — read **your domain's section** in full
 6. `docs/features/<slug>/api-contract.md`
 
@@ -39,8 +39,8 @@ Any new code in this scope should match its style, layering, naming, and (where 
 
 ## Dependencies
 
-- [ ] **Database Engineer** must complete migration X first -> see `docs/features/<slug>/reports/database-engineer.md`
-- [ ] **Backend Engineer** must define endpoint Y first -> see `docs/features/<slug>/reports/backend-engineer.md`
+- [ ] **Database Engineer** must complete migration X first -> see `docs/features/<slug>/reports/database.md`
+- [ ] **Backend Engineer** must define endpoint Y first -> see `docs/features/<slug>/reports/backend.md`
 - [ ] None (parallelizable)
 
 ## Acceptance Criteria
@@ -50,7 +50,7 @@ What "done" looks like for this engineer specifically.
 - [ ] ...
 - [ ] ...
 - [ ] Lint clean. Existing tests still pass. Domain verification commands all PASS.
-- [ ] Tech Lead's `code-review:code-review` skill returns no blockers (within `max_review_rounds`).
+- [ ] Code review returns no blockers within `max_review_rounds` (the Tech Lead's `code-review:code-review` Skill interactively; the independent `code-reviewer` Agent in the loop).
 
 ## Out of Scope
 
@@ -71,6 +71,6 @@ What "done" looks like for this engineer specifically.
 
 > When Tech Lead re-dispatches you after a `CHANGES_REQUESTED` review, this section will list:
 >
-> - **Blockers to address** (from the `code-review:code-review` skill output)
+> - **Blockers to address** (from the `code-review:code-review` Skill interactively, or the `code-reviewer` Agent in the loop)
 > - **Suggestions to address** (unless you have a stated reason to disagree)
-> - **Pointer to your iteration-1 report** at `docs/features/<slug>/reports/<engineer>.md`
+> - **Pointer to your iteration-1 report** at `docs/features/<slug>/reports/<engineer>.md` (`<engineer>` = the domain shortname: `database`, `backend`, `app`, `admin-app`, `infra`)

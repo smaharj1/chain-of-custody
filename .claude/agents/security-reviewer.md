@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: MUST BE USED before every deployment and pull request. This agent focuses solely on security vulnerability detection and remediation - scanning for OWASP Top 10, analyzing authentication/authorization, checking dependencies for CVEs, and validating data protection. Automatically blocks insecure code, provides specific fixes for vulnerabilities, and enforces security best practices throughout the development lifecycle.
+description: Read-only security auditor. In the /orchestrate loop it is auto-dispatched on sensitive items (auth, payments, file uploads, user-supplied input) and its verdict gates done. In the interactive lanes it is NOT auto-dispatched per feature - run it explicitly before a deploy or PR. Scans for OWASP Top 10, auth/authz flaws, dependency CVEs, and data-protection issues; returns SECURITY_APPROVED or SECURITY_BLOCKED (any Critical/High finding blocks); suggests fixes but never modifies code.
 model: opus
 tools: Read, Grep, Glob, Bash, WebSearch
 ---

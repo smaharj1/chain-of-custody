@@ -1,5 +1,8 @@
 .claude/metrics.jsonl
+.claude/loop.jsonl
+.claude/orchestrate.lock
 .claude/settings.local.json
 .claude/launch.json
+.claude/worktrees/
 .DS_Store
 node_modules/

@@ -2,7 +2,6 @@
 
 **Slug**: `<feature-slug>`
 **Date**: <YYYY-MM-DD>
-**Status**: REQUIREMENTS | DESIGN | DISPATCHED | COMPLETE
 **Authored by**: PM
 
 ---

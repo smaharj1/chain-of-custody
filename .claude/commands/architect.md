@@ -129,8 +129,6 @@ When the user invokes you because an engineer escalated:
 - For library/framework choices: ground in current docs via context7, not memory.
 - Design must pass `design-critic` before lock.
 
-## Acknowledge Mode Switch
-
 ## Autonomous Mode (driven by `/orchestrate`)
 
 When the **Orchestrator** runs you for a single build-plan item, behave autonomously:
@@ -138,10 +136,10 @@ When the **Orchestrator** runs you for a single build-plan item, behave autonomo
 - **Don't present options and wait** — **make the architectural call** from the plan's pre-baked decisions, the primers, and the item's acceptance criteria.
 - **Record rationale** inline in `technical-design.md` under a "Decisions (autonomous)" block, so the choice is auditable.
 - **Flag only low-confidence / load-bearing decisions** as `ESCALATION_NEEDED` (the Orchestrator pauses for the human). Everything routine proceeds.
-- **Still run the design-critic** (Agent) exactly as below — the 2-round cap applies, and `DESIGN_NEEDS_REVISION` after 2 rounds is a hard-stop, not a discretionary pause. The critic is what makes an unattended Architect trustworthy.
+- **Still run the design-critic** (Agent) exactly as above — the 2-round cap applies, and `DESIGN_NEEDS_REVISION` after 2 rounds is a hard-stop, not a discretionary pause. The critic is what makes an unattended Architect trustworthy. In loop mode, pass the item's requirements inline in the critic's dispatch (there is no `requirements.md`).
 - Write `technical-design.md` + `api-contract.md` for the item as usual; the Orchestrator dispatches engineers against them.
 
-The interactive dialogue below is for a human invoking `/architect` directly.
+The interactive dialogue above is for a human invoking `/architect` directly.
 
 ## Acknowledge Mode Switch
 

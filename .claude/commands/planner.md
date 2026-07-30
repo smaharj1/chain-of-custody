@@ -26,7 +26,7 @@ You do **not** execute the plan — that's `/orchestrate`. You do **not** design
 
 ## Phase 1 — Understand the Goal
 
-Interview the user. Use `superpowers:brainstorming` if the goal is exploratory. Cover:
+Interview the user. Use `superpowers:brainstorming` if the goal is exploratory (if the skill is unavailable, run the interview without it). Cover:
 
 - **What** is being built, and **why** — the end state in the user's words.
 - **Who** uses it (roles / personas).
@@ -43,6 +43,7 @@ These become global constraints the autonomous Architect inherits, so execution 
 - Data conventions (IDs, money, status fields).
 - Auth model (roles, how login works).
 - **Local-first**: confirm the app will run locally (SQLite by default) and that deploy/infra is a **later milestone** (§8a). Cloud comes after the app works locally.
+- **Fill `.claude/loop.config.md` as a plan output.** Decide `verify_tests`, `verify_run`, and `db_ephemeral` for the chosen stack and write them into the config (with user approval) **before hand-off** — filling it is not a user precondition, and `/orchestrate` hard-stops on placeholders. For greenfield these commands describe what the baseline item will *create*; the baseline item's acceptance must therefore include "`verify_tests` and `verify_run` execute successfully exactly as configured," so a wrong guess surfaces as an F1 acceptance failure, not a mystery hard-stop.
 
 Record these in `CLAUDE.md` / the relevant primers if they're durable — they outlive this plan.
 
@@ -50,7 +51,7 @@ Record these in `CLAUDE.md` / the relevant primers if they're durable — they o
 
 1. Break the goal into **milestones** (coherent phases), then **features** (items) within each.
 2. Establish the **dependency DAG** — which items must complete before others.
-3. **Greenfield rule**: the **first item is mandatory** — "a locally-runnable app you can see in a browser + test harness + one passing smoke test." Everything else depends on it. Without a runnable baseline, `/orchestrate` refuses to start.
+3. **Greenfield rule**: the **first item is mandatory** — "a locally-runnable app you can see in a browser + test harness + one passing smoke test, **and** `.claude/CLAUDE.md`'s tech-stack table + repo-structure section stamped with the decided stack (template sentinels removed — otherwise the Orchestrator's sentinel grep downgrades autonomy on every run forever)." Everything else depends on it. Without a runnable baseline, `/orchestrate` refuses to start. (The Orchestrator's preamble handles `git init` if no repo exists yet; scaffold ownership is the Tech-Lead A.2 scaffold row — Backend builds the skeleton.)
 4. **Infra/deploy** items go in a **later milestone**, gated behind a working local app.
 
 For each item, write:
@@ -83,7 +84,7 @@ Do **not** silently start execution — the user invokes `/orchestrate`.
 
 ## Mid-Run Plan Changes
 
-You may be re-invoked mid-run when the Orchestrator raises `PLAN_REVISION_NEEDED` (execution discovered the plan itself is wrong — a missing item, a wrong dependency, a needed split). Update the plan structure (only the Planner edits structure), re-validate, then tell the user to resume `/orchestrate`.
+You may be re-invoked mid-run when the Orchestrator raises `PLAN_REVISION_NEEDED` (execution discovered the plan itself is wrong — a missing item, a wrong dependency, a needed split). Update the plan structure (only the Planner edits structure), re-validate, then tell the user to resume `/orchestrate`. **Status resets are not yours**: the Orchestrator's unblock step handles `blocked` items — you edit structure only. A user-abandoned in-flight item follows the same route: remove or edit it here; the Orchestrator discards its orphaned branch at the next preamble.
 
 ## Acknowledge Mode Switch
 

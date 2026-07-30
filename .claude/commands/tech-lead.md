@@ -46,6 +46,7 @@ Read the design and dispatch only the engineers it actually needs. Empty/N/A sec
 | `## API Surface` lists at least one endpoint | yes | **Backend** |
 | `## Frontend Impact` lists changes for an app | yes | **That app's engineer** |
 | `## Cross-Cutting Concerns` / `## Integration Points` requires new infrastructure (new resource, IAM, secret, queue, bucket, pipeline) | yes | **Infra** |
+| Item is the greenfield baseline / repo scaffold (no app code exists yet) | yes | **Backend** (scaffold brief: repo layout, package manifests, test harness, lint config, hello endpoint + one smoke test); **App** follows for the visible page |
 
 Pure frontend feature -> no DB, no Backend. Schema-only feature -> only Database. **Don't dispatch agents for empty scopes.** If your project has no infrastructure-as-code, there's no infra-engineer to dispatch — skip that row.
 
@@ -66,7 +67,7 @@ If only some frontends are in scope, dispatch them in parallel with each other b
 
 ### A.4 Write briefs
 
-Per dispatched engineer, write `docs/features/<slug>/briefs/<engineer>.md` from `docs/features/_templates/brief.md`. Each brief must include:
+Per dispatched engineer, write `docs/features/<slug>/briefs/<engineer>.md` from `docs/features/_templates/brief.md` (`<engineer>` = the domain shortname: `database`, `backend`, `app`, `admin-app`, `infra` — same for `reports/`). Each brief must include:
 
 - Feature slug
 - Pointers to `requirements.md`, `technical-design.md`, `api-contract.md`
@@ -76,9 +77,11 @@ Per dispatched engineer, write `docs/features/<slug>/briefs/<engineer>.md` from 
 - Dependencies on other engineers' output (if any)
 - Acceptance criteria specific to this engineer
 - Out-of-scope fences
-- `max_review_rounds` (default 2) and `token_budget` (default per protocol)
+- `max_review_rounds` (default 2) and `tool_call_budget` (default per protocol §4)
 
 ### A.5 Surface the dispatch plan
+
+**Branch check first**: run `git branch --show-current`. If it reports `main`/`master`, ask the user to create a feature branch (`git checkout -b feat/<slug>`) before you dispatch — engineers cannot branch (protocol §8), and the on-main hook (`guard-main-edit.sh`) will block their edits to app source.
 
 Before invoking subagents, tell the user:
 
@@ -162,6 +165,7 @@ No feature folder. Just an in-message brief naming:
 
 ### B.3 Dispatch + optional review
 
+0. **Branch check**: if `git branch --show-current` reports `main`/`master`, ask the user to branch first (`git checkout -b quick/<short-name>`) — the on-main hook blocks engineer edits to app source.
 1. Invoke the engineer subagent. Pass the in-message brief verbatim.
 2. When it returns, run `code-review:code-review` skill on the diff. Skip review only if the user explicitly said "skip review" or the change is genuinely trivial (one-line, one-file). When in doubt: review.
 3. If review flags blockers, re-dispatch. Cap at 2 iterations.
@@ -213,8 +217,6 @@ If `.claude/metrics.jsonl` doesn't exist yet, create it.
 ## Default Session Behavior
 
 PM mode is the conversational default. Tech Lead is invoked **explicitly** via `/tech-lead`, OR PM/Architect hand off to Tech Lead automatically once the design-critic returns `DESIGN_APPROVED`. Never silently switch modes — the user invokes them.
-
-## Acknowledge Mode Switch
 
 ## Autonomous Mode (driven by `/orchestrate`)
 

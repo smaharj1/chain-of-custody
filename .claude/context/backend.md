@@ -23,6 +23,9 @@
 ## Endpoint Catalog
 
 <!-- List your API endpoints grouped by auth level. Keep this updated as endpoints are added. -->
+<!-- Large existing codebase? You may POINT AT the source of truth instead of enumerating: -->
+<!--   "Endpoint catalog: see src/routes/*.ts — conventions below apply to all of them."  -->
+<!-- A pointer that stays true beats a list that goes stale. -->
 <!-- Example:
 Public endpoints:
 - GET /api/items — list items

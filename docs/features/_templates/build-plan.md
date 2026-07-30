@@ -33,7 +33,10 @@ The Planner writes both. The Orchestrator edits the JSON and regenerates the mar
       "blockReason": null,              // set when blocked/halted; survives for resume + report
       "branch": null,                   // "feat/<slug>", set when work starts
       "mergeCommit": null,              // set on merge-to-main; used for JSON<->git reconciliation
-      "verifyEvidence": null            // { testsExit, runExit, logRef } recorded at done
+      "verifyEvidence": null,           // { testsExit, runExit, logRef } recorded at done
+      "downMigrationRef": null,         // proven down-migration id/path, set at done for schema-touching items
+      "reworkNotes": null,              // user feedback recorded when a checkpoint REJECT resets the item
+      "securityWaiver": null            // { by: "user", reason, findings, ts } — user-granted at a security_blocked stop
     }
   ]
 }
@@ -43,13 +46,17 @@ The Planner writes both. The Orchestrator edits the JSON and regenerates the mar
 
 ```
 pending ──► in_progress ──► verifying ──► done
-                  │              │
-                  ▼              ▼
-              (crash: reset    blocked        ← verify failed after max_retries_per_item
-               to pending)     needs_review   ← paused at a checkpoint
-                               blockReason-qualified halts:
-                                 budget_halted | contract_blocked | needs_provisioning
+   ▲              │              │
+   │              ▼              ▼
+   │          (crash: reset    blocked   ← verify failed after max_retries_per_item, or any
+   │           to pending)               item-level hard-stop; blockReason-qualified:
+   │                                       budget_halted | contract_blocked | needs_provisioning |
+   │                                       security_blocked | migration_failed | ESCALATION_NEEDED |
+   │                                       NEEDS_CLARIFICATION
+   └── user-approved reset at the Orchestrator's unblock step (or a checkpoint REJECT of a done item)
 ```
+
+**Checkpoints do not change item status.** A checkpoint pause is a run-level `.claude/loop.jsonl` record (`{type:"checkpoint", itemId}`) — the paused item stays `done`. There is no `needs_review` status.
 
 `DEADLOCK` is a **run-level terminal outcome** (the loop stops and reports) — *not* an item status.
 
@@ -60,7 +67,7 @@ pending ──► in_progress ──► verifying ──► done
 - **Validation** (at write-time and every load): every `dependsOn` ID exists; the graph is acyclic; every JSON item maps to exactly one `BUILD_PLAN.md` row.
 - **First item, greenfield**: must be "a locally-runnable app you can see in a browser + test harness + one passing smoke test." `/orchestrate` refuses to start without a runnable/test baseline.
 - **Infra/deploy items**: sequenced as a later milestone; the loop won't start them until the app runs locally (`infra_gated_behind_local`).
-- **State ownership**: the **Planner** writes `goal`, `createdAt` (display-only), `milestone`, `title`, `slug`, `dependsOn`, `intent`, `acceptance`, `requiresEnv`. The **Orchestrator** owns `status`, `blockReason`, `branch` (set when work starts), `mergeCommit`, and `verifyEvidence`. `verifyEvidence = { testsExit, runExit, logRef }` lives on the item; the raw command output it summarizes lives in `.claude/loop.jsonl` (pointed to by `logRef`).
+- **State ownership**: the **Planner** writes `goal`, `createdAt` (display-only), `milestone`, `title`, `slug`, `dependsOn`, `intent`, `acceptance`, `requiresEnv`. The **Orchestrator** owns `status`, `blockReason`, `branch` (set when work starts), `mergeCommit`, `verifyEvidence`, `downMigrationRef`, `reworkNotes`, and `securityWaiver`. A user-approved reset of a non-`done` item to `pending` (at the Orchestrator's unblock step, or via a checkpoint **reject**) is a legitimate Orchestrator write — users do not hand-edit this file. `verifyEvidence = { testsExit, runExit, logRef }` lives on the item; the raw command output it summarizes lives in `.claude/loop.jsonl` (pointed to by `logRef`). `build-plan.json` and `BUILD_PLAN.md` are **commit-intended** durable state (unlike the gitignored telemetry files).
 
 ---
 

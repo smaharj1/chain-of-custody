@@ -31,7 +31,9 @@ This is a TypeScript monorepo using pnpm workspaces:
 ## Agents and Modes
 
 Available modes: `/pm`, `/architect`, `/tech-lead`
+Loop modes: `/planner`, `/orchestrate`
 Engineer subagents: database, backend, app, admin-app
+Specialist agents: infra-engineer, security-reviewer, design-critic, code-reviewer
 
 ## Key Conventions
 

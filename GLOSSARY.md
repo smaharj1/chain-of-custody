@@ -28,7 +28,55 @@ Plain-language definitions of the terms used throughout this kit. If a word in t
 
 **Escalation** — When an engineer hits a problem it can't solve and hands it back up the chain for a human or the Architect to resolve.
 
-**Telemetry** — A log file (`metrics.jsonl`) recording how each task went (time, retries, gaps). Useful for spotting patterns over time. You can ignore it at first.
+**Telemetry** — Log files recording how work went: `metrics.jsonl` for interactive features (time, retries, gaps) and `loop.jsonl` for `/orchestrate` runs (per-item attempts, verify evidence, checkpoints). Useful for spotting patterns over time. You can ignore both at first.
+
+## The Loop (`/planner` + `/orchestrate`)
+
+**Planner** — The mode (`/planner`) that turns your whole idea into a build plan, interviewing you and making the big decisions with you. "PM for the whole project."
+
+**Orchestrator** — The mode (`/orchestrate`) that executes the build plan item by item — design, build, review, verify, demo — until it's done or a guardrail stops it. Also called "the conductor" or "the loop."
+
+**Build plan** — The durable checklist the Planner writes (`build-plan.json` + a readable `BUILD_PLAN.md` view): every item to build, in dependency order, with acceptance criteria. The loop's spine.
+
+**Milestone** — A coherent phase of the build plan (e.g., "M1 Foundation"). The default autonomy setting pauses at milestone boundaries.
+
+**Checkpoint** — A planned pause where the loop shows you the feature *running on your machine* (the auto-demo) and waits for your okay. You can approve, reject ("redo this"), or stop.
+
+**Demo target** — The specific route or endpoint the loop screenshots at a checkpoint — each item's "here's what I built" view, taken from its acceptance criteria.
+
+**Autonomy dial** — The setting (`per-feature` / `per-milestone` / `unattended`) controlling how often the loop pauses for you. Hard-stops fire regardless.
+
+**Hard-stop** — A pause the loop always honors, even unattended: an escalation, a security block, a blown budget, a missing secret, a tripped circuit breaker.
+
+**Circuit breaker** — A guard that stops the run when several items in a row fail verification with no success in between — the sign of a systemic problem, not one bad item.
+
+**Verify gate** — The evidence rule for "done": the tests actually ran and passed (with a non-zero test count), and the feature's specific route/behavior actually worked locally, with captured exit codes to prove it.
+
+**Local-first** — The kit's stance that everything runs and is verified on your machine; deploying to the cloud is a deliberately later milestone.
+
+**Dependency order / DAG** — The build plan's rule for sequencing: an item only starts when everything it depends on is done. (DAG = directed acyclic graph, the shape of a dependency chart with no loops.)
+
+## Git (how your work is saved)
+
+**Repository (repo)** — The folder git manages: your project plus its full change history.
+
+**Commit** — A saved snapshot of your project at a point in time, with a message describing the change.
+
+**Branch** — A parallel line of work. The loop builds each item on its own branch (`feat/<name>`), keeping `main` — the primary branch — clean until the item passes.
+
+**Merge** — Folding a branch's commits into another branch. The loop merges each verified item into your *local* `main`.
+
+**Push** — Publishing your local commits to a shared remote (like GitHub). **The loop never pushes — that's your job at checkpoints**: review the demo, then push when you're happy. If you're unsure how, ask Claude: *"push my verified work."*
+
+## Environment Terms
+
+**CLI / terminal / command line** — The text window where you type commands (like `claude` or `pnpm dev`) instead of clicking buttons.
+
+**Monorepo** — One repository containing several apps/packages that are developed together (e.g., web app + admin app + API in one repo).
+
+**MCP (Model Context Protocol)** — The plug-in standard that gives Claude extra tools (browser preview, documentation lookup). Some kit features prefer an MCP tool and fall back to text if it's absent.
+
+**Plugin / Skill** — Packaged extensions for Claude Code. A *skill* is a reusable routine Claude can invoke (like `code-review`); a *plugin* bundles skills/tools (like `context7` for library docs). The README's Prerequisites section lists which ones this kit uses.
 
 ## Project Structure
 

@@ -22,6 +22,9 @@
 ## Table Catalog
 
 <!-- List every table with its columns, types, constraints, and relationships. -->
+<!-- Large existing codebase? You may POINT AT the source of truth instead of enumerating: -->
+<!--   "Table catalog: see packages/db/src/schema/*.ts — conventions below apply to all."  -->
+<!-- A pointer that stays true beats a list that goes stale. -->
 <!-- Keep this updated as the schema evolves. Example:
 
 ### users

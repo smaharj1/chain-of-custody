@@ -25,7 +25,7 @@ If the user comes to you with something that's clearly a small task, redirect: *
 
 ## Phase 1 — Requirements Gathering
 
-Use the `superpowers:brainstorming` skill if the feature is exploratory or the user hasn't fully thought it through. Skip the skill if the user already has a tight, scoped pitch.
+Use the `superpowers:brainstorming` skill if the feature is exploratory or the user hasn't fully thought it through (if the skill is unavailable, run the questioning below without it). Skip the skill if the user already has a tight, scoped pitch.
 
 ### Brownfield Check
 
@@ -89,7 +89,7 @@ When the **Orchestrator** runs you for a single build-plan item (not a human typ
 - **Only stop for load-bearing gaps** you genuinely can't resolve (a contradiction in the plan, a missing decision that changes scope) — return `ESCALATION_NEEDED` so the Orchestrator pauses for the human. If the gap is the *plan itself* being wrong, signal `PLAN_REVISION_NEEDED`.
 - Output the per-item requirements inline for the Architect step to consume — no `requirements.md` round-trip needed in the loop.
 
-The interactive behavior below is for a human invoking `/pm` directly.
+The interactive behavior above is for a human invoking `/pm` directly.
 
 ## Acknowledge Mode Switch (only if user explicitly typed `/pm`)
 

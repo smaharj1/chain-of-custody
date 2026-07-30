@@ -23,6 +23,15 @@
 <!-- - Connection via DATABASE_URL in .env.local -->
 <!-- - To switch to Postgres later: set DATABASE_URL to a Postgres URL; migrations regenerate per-dialect -->
 
+## Apply Migrations to the Durable Dev DB
+
+<!-- The command the Orchestrator runs against the DURABLE dev DB right after each item merges -->
+<!-- (verification ran on a throwaway copy — without this step the demo and every later ephemeral -->
+<!-- copy would run against stale schema). Example: -->
+<!-- ```bash -->
+<!-- pnpm db:migrate   # applies pending migrations to ./.data/dev.db -->
+<!-- ``` -->
+
 ## Seed Data
 
 <!-- How to load sample data so the app shows something real. Example: -->
@@ -42,6 +51,20 @@
 <!-- How the loop creates a throwaway DB for each item's verification. Example: -->
 <!-- - SQLite: copy ./.data/dev.db to a temp file, point DATABASE_URL at it, delete after verify -->
 <!-- - The throwaway DB is how a failed item's schema changes are discarded for free -->
+
+## Verify-Run Harness
+
+<!-- How `verify_run` produces an EXIT CODE from a dev command that never exits on its own. -->
+<!-- The canonical pattern: boot in background → poll the demo route with a timeout → assert -->
+<!-- with curl → capture the exit code as runExit → kill the server. Example: -->
+<!-- ```bash -->
+<!-- pnpm dev & pid=$! -->
+<!-- for i in $(seq 30); do curl -sf http://localhost:5173/ >/dev/null && break; sleep 1; done -->
+<!-- curl -sf http://localhost:5173/<demo-target-route>; rc=$? -->
+<!-- kill $pid -->
+<!-- exit $rc -->
+<!-- ``` -->
+<!-- Replace <demo-target-route> per item (its falsifiable acceptance assertion's route/endpoint). -->
 
 ## Auto-Demo Navigation
 
