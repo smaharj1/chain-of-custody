@@ -1,5 +1,11 @@
 # Backend Engineer Report — csv-export
 
+> **Illustrative example — not a real run.** This report was hand-authored to show the
+> shape and rigor a Backend Engineer's report should have. TaskFlow is a fictional project
+> (see [`examples/README.md`](../../../README.md)): the files listed below do not exist, no
+> tests were executed, and the verification and telemetry figures are invented. Copy the
+> structure and the level of specificity, not the numbers.
+
 ## Status
 APPROVED
 

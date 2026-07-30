@@ -5,6 +5,8 @@
 **Status**: LOCKED
 **Last revised**: 2026-07-07
 
+> *Illustrative example for the fictional TaskFlow project — see [`examples/README.md`](../../README.md). The files and existing behavior it cites (`TaskRepository.listByBoard()`, `apps/web/pages/BoardPage.tsx`) are invented.*
+
 ---
 
 ## Overview

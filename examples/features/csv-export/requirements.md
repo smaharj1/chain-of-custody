@@ -5,6 +5,8 @@
 **Status**: COMPLETE
 **Authored by**: PM
 
+> *Illustrative example for the fictional TaskFlow project — see [`examples/README.md`](../../README.md). No code exists behind it.*
+
 ---
 
 ## Problem

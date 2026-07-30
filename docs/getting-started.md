@@ -112,4 +112,4 @@ Claude will run it or tell you the command. Building the code and *seeing it wor
 - [choosing-your-stack.md](choosing-your-stack.md) — what technology to pick if you don't know
 - [faq.md](faq.md) — operational questions (testing, CI, deploying, teams, non-web projects)
 - [README.md](../README.md) — the full reference once you're comfortable
-- `examples/` (in the kit folder) — a complete filled-in example project to model yours on
+- `examples/` (in the kit folder) — every config file filled in for a fictional project, to calibrate your own against. It's a writing reference, not a working app: there's no code behind it.
