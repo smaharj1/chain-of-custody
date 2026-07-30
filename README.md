@@ -24,7 +24,32 @@ The system is designed for solo developers or small teams who want Claude to ope
 >
 > **Operational questions** (testing, CI, deploying, teams, non-web projects) live in **[docs/faq.md](docs/faq.md)**.
 
-## How the Team Works
+## Loop Engineering: Building a Whole Idea
+
+**For building a project from an idea, this is the front door.** The **loop engineering** layer builds a **whole idea** rather than one feature at a time: a **Planner** (`/planner`) turns a detailed goal into a durable, dependency-ordered build plan, and an **Orchestrator** (`/orchestrate`) works through that plan (design → build → review → verify) **until it's done** — with configurable human checkpoints and a **local-first** experience: at each checkpoint it starts your app locally and *shows you the running feature*, no deployment required.
+
+<p align="center">
+  <img src="docs/assets/loop-engineering-architecture.svg" alt="Loop engineering architecture: a Plan layer, an Orchestrate loop with auto-demo checkpoints, and an Execute layer reusing the existing engineering team" width="820">
+</p>
+
+Start with `/planner` to build the plan, then `/orchestrate` to run it. Configure autonomy, budgets, and your local verify/run commands in [`.claude/loop.config.md`](.claude/loop.config.md).
+
+> **Status: V1 (locked design, sequential).** The design note + the adversarial-review rounds behind it are in [docs/design/loop-engineering.md](docs/design/loop-engineering.md). V1 runs items one at a time with local auto-demo checkpoints; parallel execution and a dedicated project-scaffold mode are deferred (see §14 of the design). The PM / Architect / Tech-Lead workflow still works standalone for one-off features.
+
+## Inside One Item: The Handoff Chain
+
+Band 3 of the diagram above — **EXECUTE** — is the engineering team itself, and the Orchestrator runs it once per plan item. Here is that band up close, with the artifacts that travel between the roles:
+
+<p align="center">
+  <img src="docs/assets/team-workflow.svg" alt="The handoff chain for one item: you describe a feature, /pm writes requirements.md, /architect writes technical-design.md and api-contract.md with design-critic auditing before any code, /tech-lead writes per-engineer briefs and reviews every diff, and engineer subagents implement to spec and report back. A quick lane skips small fixes straight to /tech-lead." width="820">
+</p>
+
+Every arrow is a file. Each agent starts in a clean context and reads nothing but the artifact it was handed — that is the chain of custody the kit is named for.
+
+You can also drive this chain directly, without a plan or the loop: `/pm` for a single feature on an existing project, or straight to `/tech-lead` for a bug fix or tweak — it has a **quick lane** that dispatches one engineer without the full ceremony.
+
+<details>
+<summary>Text version of the diagram</summary>
 
 ```
 User describes feature
@@ -48,19 +73,7 @@ Engineers (subagents)  -->  Read brief + design + contract
                            Return structured report
 ```
 
-For small tasks (bug fixes, tweaks), skip straight to `/tech-lead` — it has a **quick lane** that dispatches one engineer without the full ceremony.
-
-## Loop Engineering: Building a Whole Idea
-
-The `/pm` → `/architect` → `/tech-lead` modes build **one feature at a time**. The **loop engineering** layer builds a **whole idea**: a **Planner** (`/planner`) turns a detailed goal into a durable, dependency-ordered build plan, and an **Orchestrator** (`/orchestrate`) works through that plan (design → build → review → verify) **until it's done** — with configurable human checkpoints and a **local-first** experience: at each checkpoint it starts your app locally and *shows you the running feature*, no deployment required. **For building a project from an idea, this is the front door.**
-
-<p align="center">
-  <img src="docs/assets/loop-engineering-architecture.svg" alt="Loop engineering architecture: a Plan layer, an Orchestrate loop with auto-demo checkpoints, and an Execute layer reusing the existing engineering team" width="820">
-</p>
-
-Start with `/planner` to build the plan, then `/orchestrate` to run it. Configure autonomy, budgets, and your local verify/run commands in [`.claude/loop.config.md`](.claude/loop.config.md).
-
-> **Status: V1 (locked design, sequential).** The design note + the adversarial-review rounds behind it are in [docs/design/loop-engineering.md](docs/design/loop-engineering.md). V1 runs items one at a time with local auto-demo checkpoints; parallel execution and a dedicated project-scaffold mode are deferred (see §14 of the design). The PM / Architect / Tech-Lead workflow still works standalone for one-off features.
+</details>
 
 ## Quick Start
 
@@ -68,7 +81,7 @@ Start with `/planner` to build the plan, then `/orchestrate` to run it. Configur
 
 ```bash
 # Clone this repo
-git clone <this-repo-url> /tmp/chain-of-custody
+git clone https://github.com/smaharj1/chain-of-custody.git /tmp/chain-of-custody
 cd /path/to/your/project
 
 # Runtime-required (the modes and the loop read these at run time):

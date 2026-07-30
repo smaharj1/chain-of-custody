@@ -4,6 +4,12 @@ All notable changes to Chain of Custody. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Published, and a README restructure
+- **Repo is public**: [github.com/smaharj1/chain-of-custody](https://github.com/smaharj1/chain-of-custody). The `git clone <this-repo-url>` placeholder in the install manifest is now the real URL.
+- **New diagram** `docs/assets/team-workflow.svg` — the per-item handoff chain, drawn with the **artifacts on the edges** (`requirements.md` → `technical-design.md` + `api-contract.md` → `briefs/<engineer>.md`), plus the quick lane and the report-back-for-review return. Reuses the loop diagram's visual language (slate palette, amber for human-in-the-loop, dashed for the written handoff). The ASCII flow it replaces is kept in a collapsed `<details>` block, since a fair number of readers will meet this README in a terminal.
+- **Loop section moved above the team flow.** The README led with the one-feature-at-a-time modes while the loop section below it declared itself "the front door" — the ordering argued against the text. The loop opener no longer forward-references the modes, and the duplicate "front door" sentence at the end of that paragraph is gone.
+- **"How the Team Works" → "Inside One Item: The Handoff Chain."** Renamed and reframed as the zoom-in of the loop diagram's **Band 3 (EXECUTE)**, which shows the same five roles compressed into a row *without* the artifacts. The two diagrams were silently redundant before; now the relationship is stated, and the artifact chain — the thing the project is named for — has a picture. Standalone use (`/pm` for one feature, `/tech-lead` for a fix) follows the diagram instead of being the section's premise.
+
 ### Renamed: Chain of Custody
 - The project is now **Chain of Custody** (was "Claude Code AI Engineering Team"), tagline *"a role-based engineering team for Claude Code, where written specs are the only thing that crosses between agents."* The name points at the load-bearing mechanism rather than the org chart: every agent runs in a clean context, so the artifact is the only thing that crosses a boundary — each role takes possession, signs off, and hands on, and the trail is auditable.
 - Updated the README title and opening, the `getting-started.md` intro, the GLOSSARY preamble, and the clone paths in the install manifest (`/tmp/ai-team` → `/tmp/chain-of-custody`). Generic references to "the kit" were left alone deliberately — they read better than repeating the proper noun.
