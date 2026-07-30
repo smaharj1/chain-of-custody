@@ -6,7 +6,9 @@
 **Date**: 2026-07-08
 **Iteration**: 1
 **max_review_rounds**: 2
-**token_budget**: protocol default (~80 tool calls — see `.claude/context/engineer-protocol.md` section 4)
+**tool_call_budget**: protocol default (~80 tool calls — see `.claude/context/engineer-protocol.md` section 4)
+
+> *Illustrative example for the fictional TaskFlow project — see [`examples/README.md`](../../../README.md). The files this brief points the engineer at are invented; no engineer was ever dispatched against it.*
 
 ---
 

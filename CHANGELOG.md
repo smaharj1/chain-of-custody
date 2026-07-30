@@ -2,6 +2,18 @@
 
 All notable changes to this kit. Format follows [Keep a Changelog](https://keepachangelog.com/); versions are recorded in `.claude/KIT_VERSION` of every installed copy.
 
+## [Unreleased]
+
+### Examples — honesty pass
+- **New `examples/README.md`** stating plainly that TaskFlow is fictional, that the folder is a hand-authored writing reference rather than the transcript of a real run, and that the kit ships **no runnable end-to-end demo**. Includes a here → real-install path map and a "don't copy these into your project" warning.
+- **`features/csv-export/reports/backend.md`** gained a prominent disclaimer: its file list, test counts, `curl` check, and telemetry figures are invented. The structure is the lesson; the numbers are not evidence.
+- One-line provenance notes added to `requirements.md`, `technical-design.md`, `api-contract.md`, and `briefs/backend.md` so readers who deep-link into a single artifact still learn it's fictional. The design note calls out specifically that the "existing" code it cites (`TaskRepository.listByBoard()`, `BoardPage.tsx`) is invented.
+- `README.md` and `docs/getting-started.md` no longer describe `examples/` as a "complete filled-in example project" — it's now labelled a writing/calibration reference with no code behind it, and the file tree says so too.
+- **Stale field name fixed**: the example brief still used `token_budget`; renamed to `tool_call_budget` to match `docs/features/_templates/brief.md` and `tech-lead.md`. (The 1.1.0 review believed this rename was fully purged; the examples folder was missed.)
+
+### Known gaps (unchanged)
+- No dogfooded demo: `/planner` → `/orchestrate` has never been run end to end with its output published, so the greenfield "front door" remains unvalidated. Tracked as the next piece of work.
+
 ## [1.1.0] — 2026-07-18
 
 Full remediation of the July 2026 review ([docs/design/review-2026-07.md](docs/design/review-2026-07.md)).

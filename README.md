@@ -115,7 +115,9 @@ The system needs to know about YOUR project to be effective. Fill in these files
 | `.claude/context/local-dev.md` | **EXECUTION-CRITICAL for the loop** — how to run, test, and reset the app locally (dev command, ports, ephemeral-DB commands, verify-run harness). `/orchestrate` hard-stops if this is still a template. |
 | `.claude/loop.config.md` | Loop settings: `verify_tests` / `verify_run` / `db_ephemeral` commands (also execution-critical), autonomy dial, budgets |
 
-Each file has `<!-- comments -->` explaining what goes in each section. See `examples/` for a fully filled-in fictional project ("TaskFlow") covering **every** context file plus a filled `loop.config.md` and a complete example feature folder (`examples/features/csv-export/`).
+Each file has `<!-- comments -->` explaining what goes in each section. For calibration on how much detail to write, see [`examples/`](examples/README.md) — every context file filled in for a fictional project ("TaskFlow"), plus a filled `loop.config.md` and one feature's full artifact chain (`examples/features/csv-export/`).
+
+> **`examples/` is documentation, not a demo.** TaskFlow has no code behind it, and the example feature folder was hand-authored to show the artifacts' shape — it is not the transcript of a real run. The kit does not currently ship a runnable end-to-end demo; see [`examples/README.md`](examples/README.md).
 
 #### Adopting on an existing codebase
 
@@ -230,13 +232,15 @@ docs/
       briefs/<engineer>.md
       reports/<engineer>.md
   faq.md                             # Operational FAQ (testing, CI, deploy, teams, non-web)
-examples/                            # Filled-in example for reference (TaskFlow)
+examples/                            # Writing reference — filled-in docs for a FICTIONAL
+                                     #   project (TaskFlow). No code; not a runnable demo.
+  README.md                          #   What this folder is and isn't — read first
   CLAUDE.md
   loop.config.md                     #   Filled loop config
   context/                           #   ALL primers filled: architect, backend, database,
                                      #   shared-frontend, app, admin-app, infra, local-dev
-  features/csv-export/               #   A complete example feature folder (requirements →
-                                     #   design → contract → brief → report)
+  features/csv-export/               #   One feature's artifact chain (requirements → design
+                                     #   → contract → brief → report), hand-authored
 ```
 
 ## The Three Lanes
