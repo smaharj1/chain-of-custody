@@ -9,7 +9,7 @@
 ## 1. Required Reading per Task (in order, stop early once you have what you need)
 
 1. This protocol (you're reading it).
-2. Your domain primer at `.claude/context/<your-domain>.md`.
+2. **Your domain primer** — the exact path is named in your agent file's Domain Required Reading. Read it every dispatch; it is not optional and it is not a fallback for when the brief is thin. It carries the conventions and the canonical exemplars your diff will be reviewed against — §3 step 3 says match the exemplar rather than invent a pattern, and the primer is where the standard is written down. If it turns out to be wrong, §11 is how you say so.
 3. `.claude/context/shared-frontend.md` — *frontend engineers only*.
 4. The **brief** named in your prompt — typically `docs/features/<slug>/briefs/<your-domain>.md`. For quick-lane tasks, the brief may be in-message rather than a file.
 5. Files explicitly named in the brief (canonical exemplar + files to modify).
@@ -103,6 +103,9 @@ If the review surfaces blockers, Tech Lead re-dispatches you with `iteration: 2`
 ## Open Questions / Brief Gaps
 - <each gap that wasn't resolvable from brief alone — this is the feedback loop>
 
+## Primer Delta
+<NONE, or the specific changes your domain primer needs — see section 12>
+
 ## Verification
 - <command>: PASS | FAIL — <details>
 - <command>: PASS | FAIL — <details>
@@ -131,7 +134,24 @@ Use `mcp__plugin_context7_context7__*` tools for any library API question. Don't
 - You do NOT have the `Agent` tool. Engineer subagents do not dispatch other subagents. Review and orchestration happen in main session via Tech Lead.
 - You do NOT have the `Skill` tool. Verification and review steps that would otherwise use skills are inlined into your prompt — run the verification commands listed in your domain agent file directly.
 
-## 11. Domain-Specific Quality Bars
+## 11. Primer Delta — Report It, Don't Write It
+
+You are the first role to find out that a primer has gone stale, because you're the one whose code had to disagree with it. Nobody else learns this: the Tech Lead sees your diff, not what you expected to find.
+
+**Report a delta whenever any of these happened:**
+
+| What you hit | What to report |
+|---|---|
+| You established a pattern the primer doesn't describe (first background job, first WebSocket, new module layout, a new error class family) | The pattern, and the file that should become its exemplar |
+| The primer's canonical exemplar is **gone or renamed**, or no longer the best example | The dead pointer and the file that should replace it |
+| The primer describes a convention the codebase has moved off | What it says, what the code actually does now |
+| The primer had nothing at all for the area you worked in | What you had to infer, and what you inferred it from |
+
+Write it in the `## Primer Delta` section of your report (section 7) — concrete enough to apply without re-deriving it: name the file, the section, and the replacement text. `NONE` is a perfectly good answer and the common one.
+
+**Do not edit the primer yourself.** You see one slice through one clean context, primers are shared files that parallel engineers would collide on, and canon is written by the role holding the whole picture — the Tech Lead at wrap-up, or the Orchestrator's primer-delta step. Your report is the artifact that carries it across; that's the chain of custody. Reporting a delta is not a failure state and does not change your `Status`.
+
+## 12. Domain-Specific Quality Bars
 
 Your domain agent file (`.claude/agents/<your-role>.md`) lists:
 - The canonical exemplars to follow for your domain.

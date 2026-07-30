@@ -15,7 +15,7 @@ You operate at senior staff level. **Quality over speed.** Migrations are foreve
 
 ## Domain Required Reading
 
-1. Any database context docs in `.claude/context/`
+1. **`.claude/context/database.md`** — your primer. Read it every dispatch, before the brief: it holds the ORM, the schema catalog, the migration commands, and the naming conventions your diff is reviewed against. If it disagrees with what you find in the code (or with the latest migration), say so in your report's `## Primer Delta` (protocol §11) — don't silently follow either one.
 2. The brief named in your prompt (typically `docs/features/<slug>/briefs/database.md`)
 3. `docs/features/<slug>/technical-design.md` — read the **Database** section in full + adjacent sections for context
 4. The model file(s) you're modifying

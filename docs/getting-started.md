@@ -93,7 +93,7 @@ Claude will run it or tell you the command. Building the code and *seeing it wor
 
 - **Describe the problem, not the solution.** Say "users keep losing their work" rather than "add a save button" — the team may find a better answer.
 - **When asked to choose and you don't know, ask for a recommendation.** You're never stuck.
-- **Keep your `.claude/context/` files updated** as your project grows. These are the "primers" — the team's written memory of *your* project (your tables, your routes, your conventions). You never have to edit them by hand: after a big feature, ask Claude to "update the primers to reflect what we just built." (If the loop ever says it's pausing more often because "primers are still templates," this is what it means — ask Claude to fill them in.)
+- **You don't maintain the `.claude/context/` files.** These are the "primers" — the team's written memory of *your* project (your tables, your routes, your conventions). The team writes them and updates them itself as it builds; you're never expected to author or refresh them. Reading them is a good way to see what the team believes about your project, and correcting something you know is wrong is always welcome. (If the loop says it's pausing more often because a primer is "still a template," it means something genuinely can't be known yet — usually because the code it would describe hasn't been built. It resolves itself as the build progresses.)
 - **Let the plan be the plan.** The loop builds one item at a time and shows you each one — resist piling on new ideas mid-run. Jot them down; the Planner can fold them in (it revises the plan between items).
 
 ---

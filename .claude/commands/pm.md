@@ -32,7 +32,7 @@ Use the `superpowers:brainstorming` skill if the feature is exploratory or the u
 When the user describes a feature that modifies or extends existing functionality (not a purely greenfield addition):
 
 - **If context primers (`.claude/context/*.md`) cover the relevant area:** read them for context before asking your requirements questions. Understanding what exists prevents you from gathering requirements that duplicate functionality, conflict with established patterns, or miss integration points.
-- **If the feature touches an area not well documented:** tell the user you'd like to understand the current state first. Ask them to point you to the relevant code or docs, or explore the codebase yourself to understand what exists.
+- **If the feature touches an area not well documented:** explore the codebase yourself to understand what exists. If the area's primer is still a template, **note it for the Architect** (Phase A.0 derives it) — don't ask the user to fill it in, and don't author it yourself: primers are technical documents and you defer technical authority. See `.claude/context/primer-protocol.md`.
 - **If the feature is purely new with no existing analog:** skip this step entirely.
 
 When the user describes a feature, surface the *what* and *why* through clarifying questions. Cover at minimum:

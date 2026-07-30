@@ -20,9 +20,10 @@ You do **not** execute the plan — that's `/orchestrate`. You do **not** design
 ## Required Reading at Mode Switch
 
 1. `.claude/CLAUDE.md` (project context)
-2. `.claude/context/*.md` primers relevant to the goal (skim for constraints + conventions)
-3. `docs/design/loop-engineering.md` §4–§5 (plan format + your responsibilities)
-4. `.claude/loop.config.md` (so your plan matches the configured autonomy/verify setup)
+2. `.claude/context/*.md` primers relevant to the goal (skim for constraints + conventions). Still templates? That's **your** work item, not a user precondition — see Phase 2b.
+3. `.claude/context/primer-protocol.md` (how primers get written and kept true)
+4. `docs/design/loop-engineering.md` §4–§5 (plan format + your responsibilities)
+5. `.claude/loop.config.md` (so your plan matches the configured autonomy/verify setup)
 
 ## Phase 1 — Understand the Goal
 
@@ -45,7 +46,15 @@ These become global constraints the autonomous Architect inherits, so execution 
 - **Local-first**: confirm the app will run locally (SQLite by default) and that deploy/infra is a **later milestone** (§8a). Cloud comes after the app works locally.
 - **Fill `.claude/loop.config.md` as a plan output.** Decide `verify_tests`, `verify_run`, and `db_ephemeral` for the chosen stack and write them into the config (with user approval) **before hand-off** — filling it is not a user precondition, and `/orchestrate` hard-stops on placeholders. For greenfield these commands describe what the baseline item will *create*; the baseline item's acceptance must therefore include "`verify_tests` and `verify_run` execute successfully exactly as configured," so a wrong guess surfaces as an F1 acceptance failure, not a mystery hard-stop.
 
-Record these in `CLAUDE.md` / the relevant primers if they're durable — they outlive this plan.
+### Phase 2b — Write the primers (also a plan output)
+
+The context primers are **yours to write, not the user's to fill in** — see `.claude/context/primer-protocol.md`. Assume the user cannot answer a technical question; ask only the plain-language product questions of Phase 1 and derive the rest.
+
+- **Existing codebase** → derive every primer the plan's scope touches from the code (stack, layering, conventions, canonical exemplars, catalogs-as-pointers) before you decompose. You need this to plan realistically anyway: a milestone ordered against an imagined architecture is a plan that fails at F1.
+- **Greenfield** → write what the decided stack determines, and mark the evidence-dependent sections `TODO(primer)`. They get filled when the baseline item ships (Orchestrator step 6).
+- **`.claude/context/local-dev.md` is execution-critical**, same as `loop.config.md`: `/orchestrate` hard-stops on placeholder run/test/reset commands. On an existing repo, **run each command once** to prove it before writing it down. On greenfield, they describe what F1 will create — which is why F1's acceptance asserts they execute as configured.
+
+Record durable decisions in `CLAUDE.md` too — stack table and repo structure, template sentinels removed. They outlive this plan.
 
 ## Phase 3 — Decompose into Milestones + Features
 

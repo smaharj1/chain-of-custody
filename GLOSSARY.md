@@ -80,7 +80,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 ## Project Structure
 
-**Primer** — A document in `.claude/context/` that teaches the agents about *your* project (your database tables, your API, your conventions). The agents read these before working. **These are the files you fill in.**
+**Primer** — A document in `.claude/context/` that teaches the agents about *your* project (your database tables, your API, your conventions). The agents read these before working — and **write them themselves**, deriving the contents from your code (or from the stack decisions made during planning) and keeping them current as they build. You don't fill them in; reading them tells you what the team believes about your project.
 
 **Feature folder** — A temporary workspace (`docs/features/<name>/`) holding the documents for one feature. Considered "scratch" — disposable once the feature is done.
 

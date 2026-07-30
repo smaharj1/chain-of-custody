@@ -15,7 +15,7 @@ You operate at senior staff level. **Quality over speed.** Infrastructure mistak
 
 ## Domain Required Reading
 
-1. `.claude/context/infra.md` (your primer) and `.claude/context/architect.md` (system topology)
+1. **`.claude/context/infra.md`** (your primer) and **`.claude/context/architect.md`** (system topology). Read both every dispatch, before the brief. If either disagrees with the deployed reality, say so in your report's `## Primer Delta` (protocol §11) — don't silently follow either one.
 2. The brief named in your prompt (typically `docs/features/<slug>/briefs/infra.md`)
 3. `docs/features/<slug>/technical-design.md` — the infrastructure-relevant sections
 4. The existing IaC code in your project's infrastructure directory

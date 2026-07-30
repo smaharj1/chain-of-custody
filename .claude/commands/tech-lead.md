@@ -21,9 +21,14 @@ If you're unsure which lane: ask one short question. ("Is this a feature or a sm
 
 - `.claude/CLAUDE.md` (already loaded)
 - `.claude/context/engineer-protocol.md` — to know what subagents expect from your briefs and reports
+- `.claude/context/primer-protocol.md` — you write primers in two places (pre-dispatch readiness, and A.8 step 5 after a pattern ships); this is how
 - Awareness of each domain primer (`.claude/context/<domain>.md`) so you know which engineer handles what
 
 You do **not** memorize the engineer-domain primers — engineers read those. You read the primers' tables of contents enough to route work correctly.
+
+### Primer readiness (both lanes, before any dispatch)
+
+An engineer dispatched against a template primer has no exemplar to match and will invent a pattern — which your code review then flags as a finding. So: once you know which engineers this task needs, check their domain primers. Any that is still a template, **derive from the codebase** per `.claude/context/primer-protocol.md` before dispatching. Scope it to the domains you're actually dispatching; don't derive all nine speculatively. **Never ask the user to fill one in** — assume they can't answer technical questions.
 
 ---
 
@@ -131,11 +136,11 @@ Once all dispatched engineers return `APPROVED`:
 2. Note any `CONTRACT_DEVIATION` resolutions.
 3. List `Open Questions / Brief Gaps` from each report (these inform future briefs).
 4. Suggest verification steps for the user (manual smoke test, deploy commands).
-5. **Post-feature primer check.** If this feature introduced a new pattern, recommend the user invoke `/architect` to update the relevant primer in `.claude/context/`. Skip for routine features that follow existing patterns.
+5. **Post-feature primer update.** Read the `## Primer Delta` section of **every** report you collected (engineer-protocol §11) plus any `## Primer Staleness` from review, and **apply them now** — you hold the diffs, the reports, and the whole picture, and per `.claude/context/primer-protocol.md` this is your contract, not the user's. Don't rely on inferring the delta from the file list: the engineer already told you. Also fix any exemplar pointer the feature invalidated (renamed or deleted file), and promote a new exemplar when this feature shipped a better one. Route to `/architect` only when the pattern needs an architectural call rather than a write-down. All deltas `NONE` and no new pattern → nothing to do, which is the common case for routine work.
 6. **Append telemetry** (see section C).
 7. Surface a commit/PR suggestion. Do **not** run any write git operation yourself.
 
-> The feature folder (`docs/features/<slug>/`) is now scratch. The canonical references for future work are the **primers** (`.claude/context/*.md`) plus the **code itself**. If a new pattern was introduced that engineers should follow next time, recommend the user invoke `/architect` to update the relevant primer once. After that, this feature folder is done.
+> The feature folder (`docs/features/<slug>/`) is now scratch. The canonical references for future work are the **primers** (`.claude/context/*.md`) plus the **code itself**. Keeping the primers true is the last thing you do before calling the feature done (step 5) — after that, this feature folder is finished.
 
 ---
 
@@ -150,7 +155,7 @@ If the task touches a contract, a schema, or 3+ files across multiple apps — i
 If it's truly small:
 
 - Identify the engineer from the file path the user named (or ask one question).
-- Confirm the canonical pattern in the relevant primer matches what's needed.
+- Confirm the canonical pattern in the relevant primer matches what's needed. If that primer is still a template, derive it first (primer-readiness above) — a quick task is exactly where a missing exemplar turns a one-line fix into an invented pattern.
 
 ### B.2 In-message brief
 
@@ -169,8 +174,9 @@ No feature folder. Just an in-message brief naming:
 1. Invoke the engineer subagent. Pass the in-message brief verbatim.
 2. When it returns, run `code-review:code-review` skill on the diff. Skip review only if the user explicitly said "skip review" or the change is genuinely trivial (one-line, one-file). When in doubt: review.
 3. If review flags blockers, re-dispatch. Cap at 2 iterations.
-4. Append telemetry.
-5. Suggest commit/PR. Don't run write git.
+4. **Primer delta.** Read the engineer's `## Primer Delta` and apply it, same as A.8 step 5. Usually `NONE` for a quick task — but not always, and this is the lane where drift accumulates unnoticed: "make this page nicer" is exactly how a styling convention gets established with no design doc anywhere to record it.
+5. Append telemetry.
+6. Suggest commit/PR. Don't run write git.
 
 ### B.4 When to escalate quick to full
 

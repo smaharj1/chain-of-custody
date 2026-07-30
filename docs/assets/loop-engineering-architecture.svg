@@ -97,7 +97,7 @@
 
   <rect class="box" x="678" y="440" width="150" height="56" rx="8"/>
   <text x="753" y="464" text-anchor="middle" class="t">Code review</text>
-  <text x="753" y="480" text-anchor="middle" class="s">skill verdict</text>
+  <text x="753" y="480" text-anchor="middle" class="s">independent agent</text>
 
   <line class="edge" x1="136" y1="468" x2="158" y2="468" marker-end="url(#ah)"/>
   <line class="edge" x1="310" y1="468" x2="332" y2="468" marker-end="url(#ah)"/>

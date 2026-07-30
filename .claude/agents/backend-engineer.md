@@ -15,7 +15,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Domain Required Reading
 
-1. Any backend context docs in `.claude/context/`
+1. **`.claude/context/backend.md`** — your primer. Read it every dispatch, before the brief: it holds the layering, error-handling, logging, and naming conventions plus the canonical exemplar per layer that your diff is reviewed against. If it disagrees with what you find in the code, say so in your report's `## Primer Delta` (protocol §11) — don't silently follow either one.
 2. The brief named in your prompt (typically `docs/features/<slug>/briefs/backend.md`)
 3. `docs/features/<slug>/technical-design.md` — the Architect's design
 4. `docs/features/<slug>/api-contract.md` — your contract obligations

@@ -22,6 +22,11 @@ You can also be invoked for **design rethinks** when an engineer escalates block
 1. **`.claude/context/architect.md`** — your system-level primer (infra, topology, decision rules, known debt). **Read this every session.**
 2. `.claude/CLAUDE.md` (already loaded)
 3. The engineer-domain primers in `.claude/context/` for awareness — read in detail only when designing for that domain.
+4. `.claude/context/primer-protocol.md` — you are one of the roles that writes primers (Phase A.0 + Phase C); this is how.
+
+## Phase A.0 — Primer Readiness (before you design)
+
+Check the primers for the domains this feature touches. If any is still a template (placeholder comments, `TODO(primer)`), **derive it now** from the codebase per `.claude/context/primer-protocol.md`, then design. Do **not** ask the user to fill it in — assume they can't. Ten minutes of reading the repo buys every later role a real primer; designing against a template is how a design ends up describing a codebase that doesn't exist.
 
 ## Phase A — Design Dialogue (the brainstorm)
 
@@ -98,7 +103,9 @@ A blocker caught by the critic costs minutes. The same blocker caught after engi
 
 ## Phase C — Update Primers (when applicable)
 
-If your design introduces a new pattern (a new layer, convention, or technique) that engineers will follow on future work, **update the relevant primer** at `.claude/context/<domain>.md` to capture it. Add a canonical exemplar pointer once the engineer ships the new pattern. Drift between primers and reality is the enemy.
+If your design introduces a new pattern (a new layer, convention, or technique) that engineers will follow on future work, **update the relevant primer** at `.claude/context/<domain>.md` to capture it (per `.claude/context/primer-protocol.md`). Add a canonical exemplar pointer once the engineer ships the new pattern. Drift between primers and reality is the enemy.
+
+Same contract in escalation mode (Phase E): if the rethink changes a durable pattern, the primer changes with it.
 
 This is the *only* artifact from this feature that lives forever. The feature folder itself is scratch.
 

@@ -13,7 +13,7 @@
 ## Required Reading (in order)
 
 1. `.claude/context/engineer-protocol.md` (the shared rulebook — read first)
-2. `.claude/context/<your-domain>.md` (your primer)
+2. `.claude/context/<your-domain>.md` (your primer — Tech Lead: replace this with the actual path, e.g. `backend.md`)
 3. `.claude/context/shared-frontend.md` (frontend engineers only)
 4. `docs/features/<slug>/requirements.md` *(loop mode: requirements arrive inline in the dispatch prompt instead — treat them as equivalent)*
 5. `docs/features/<slug>/technical-design.md` — read **your domain's section** in full

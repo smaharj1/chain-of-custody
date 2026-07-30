@@ -20,7 +20,7 @@ A blocker caught here costs minutes. The same blocker caught after 3 engineers h
 
 ## Required Reading
 
-1. Any architecture context docs in `.claude/context/`
+1. **`.claude/context/architect.md`** — the system-level primer (topology, decision rules, auth model, known debt). This is the standard the design is measured against; a design that silently contradicts it is a finding, not a style preference.
 2. `requirements.md` (or the inline requirements from the dispatch), `technical-design.md`, `api-contract.md` (the inputs)
 3. Domain primers relevant to the design's scope (database, backend, frontend context docs)
 4. The current code only when the design references something that must already exist (don't go on a tour).

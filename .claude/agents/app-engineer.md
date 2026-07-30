@@ -15,7 +15,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Domain Required Reading
 
-1. Any app-level context docs in `.claude/context/` relevant to the frontend
+1. **`.claude/context/app.md`** (your primer) **and `.claude/context/shared-frontend.md`** (conventions shared across every frontend). Read both every dispatch, before the brief: routes, layout, state management, accessibility rules, and the canonical exemplars your diff is reviewed against. If either disagrees with what you find in the code, say so in your report's `## Primer Delta` (protocol §11) — don't silently follow either one.
 2. The brief named in your prompt (typically `docs/features/<slug>/briefs/app.md`)
 3. `docs/features/<slug>/technical-design.md` — read the frontend section in full
 4. `docs/features/<slug>/api-contract.md` — **authoritative contract**
