@@ -1,6 +1,10 @@
-# Claude Code AI Engineering Team
+# Chain of Custody
 
-A plug-and-play multi-agent configuration for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns a single AI session into a full engineering team — Product Manager, Architect, Tech Lead, and specialist engineers — all coordinated through slash commands and structured workflows.
+**A role-based engineering team for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), where written specs are the only thing that crosses between agents.**
+
+A plug-and-play multi-agent configuration that turns a single AI session into a full engineering team — Product Manager, Architect, Tech Lead, and specialist engineers — coordinated through slash commands and structured workflows.
+
+Every agent works in a clean context and receives nothing but a written artifact: requirements, then a technical design, then an API contract, then a brief. Each role takes possession of the work, signs off, and hands it on. That's the name — the specs are the evidence, the handoffs are logged, and any step can be audited after the fact.
 
 ## What This Is
 
@@ -64,18 +68,18 @@ Start with `/planner` to build the plan, then `/orchestrate` to run it. Configur
 
 ```bash
 # Clone this repo
-git clone <this-repo-url> /tmp/ai-team
+git clone <this-repo-url> /tmp/chain-of-custody
 cd /path/to/your/project
 
 # Runtime-required (the modes and the loop read these at run time):
-cp -r /tmp/ai-team/.claude .
+cp -r /tmp/chain-of-custody/.claude .
 mkdir -p docs/features docs/design
-cp -r /tmp/ai-team/docs/features/_templates docs/features/
-cp /tmp/ai-team/docs/design/loop-engineering.md docs/design/
-cp /tmp/ai-team/docs/choosing-your-stack.md docs/
+cp -r /tmp/chain-of-custody/docs/features/_templates docs/features/
+cp /tmp/chain-of-custody/docs/design/loop-engineering.md docs/design/
+cp /tmp/chain-of-custody/docs/choosing-your-stack.md docs/
 
 # Optional human docs (nice to have in-project; also fine to read from the kit repo):
-cp /tmp/ai-team/docs/getting-started.md /tmp/ai-team/docs/faq.md docs/
+cp /tmp/chain-of-custody/docs/getting-started.md /tmp/chain-of-custody/docs/faq.md docs/
 ```
 
 > ⚠️ **Already using Claude Code in this project?** Then `.claude/` already exists, and `cp -r` will merge into it — potentially clobbering your `settings.json` (permissions, hooks), your `CLAUDE.md`, and any agents/commands you've added. **Back up first** (`cp -r .claude .claude.backup`), then merge by hand: this kit's `settings.json` adds two PreToolUse hooks (`guard-git.sh`, `guard-main-edit.sh`) and an empty permission allowlist — fold those into yours rather than replacing it, and **append** the kit's `CLAUDE.md` content to your own.

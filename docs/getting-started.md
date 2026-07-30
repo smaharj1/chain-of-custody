@@ -1,6 +1,6 @@
 # Getting Started (Plain-Language Guide)
 
-This guide is for people who are **not** deeply technical but want to use this AI engineering team to build software. It assumes no prior knowledge. If you hit a word you don't recognize, check [GLOSSARY.md](../GLOSSARY.md).
+This guide is for people who are **not** deeply technical but want to use Chain of Custody — an AI engineering team for Claude Code — to build software. It assumes no prior knowledge. If you hit a word you don't recognize, check [GLOSSARY.md](../GLOSSARY.md).
 
 > **The one-sentence version:** This kit gives Claude a structured way to act like a whole software team. You describe what you want; the "team" plans it, builds it, and checks its own work. Your job is to describe your idea clearly and make decisions when asked.
 

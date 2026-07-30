@@ -1,8 +1,13 @@
 # Changelog
 
-All notable changes to this kit. Format follows [Keep a Changelog](https://keepachangelog.com/); versions are recorded in `.claude/KIT_VERSION` of every installed copy.
+All notable changes to Chain of Custody. Format follows [Keep a Changelog](https://keepachangelog.com/); versions are recorded in `.claude/KIT_VERSION` of every installed copy.
 
 ## [Unreleased]
+
+### Renamed: Chain of Custody
+- The project is now **Chain of Custody** (was "Claude Code AI Engineering Team"), tagline *"a role-based engineering team for Claude Code, where written specs are the only thing that crosses between agents."* The name points at the load-bearing mechanism rather than the org chart: every agent runs in a clean context, so the artifact is the only thing that crosses a boundary — each role takes possession, signs off, and hands on, and the trail is auditable.
+- Updated the README title and opening, the `getting-started.md` intro, the GLOSSARY preamble, and the clone paths in the install manifest (`/tmp/ai-team` → `/tmp/chain-of-custody`). Generic references to "the kit" were left alone deliberately — they read better than repeating the proper noun.
+- **Always write the name in full.** `custody` alone is crypto-custody and law-enforcement evidence software; `CoC` means Code of Conduct in every repo on GitHub. Note also that Block's [Buzz](https://www.techtimes.com/articles/321242/20260722/block-launches-buzz-open-source-workspace-where-ai-agents-sign-their-own-work.htm) (launched 2026-07-21) uses "signed chain of custody" for *cryptographic* agent-action provenance — a different meaning in an adjacent space, worth disambiguating if the two ever get compared.
 
 ### Examples — honesty pass
 - **New `examples/README.md`** stating plainly that TaskFlow is fictional, that the folder is a hand-authored writing reference rather than the transcript of a real run, and that the kit ships **no runnable end-to-end demo**. Includes a here → real-install path map and a "don't copy these into your project" warning.

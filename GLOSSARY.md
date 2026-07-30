@@ -1,6 +1,6 @@
 # Glossary
 
-Plain-language definitions of the terms used throughout this kit. If a word in the README or an agent file is confusing, it's probably here.
+Plain-language definitions of the terms used throughout Chain of Custody. If a word in the README or an agent file is confusing, it's probably here.
 
 ## The Team / Workflow
 
