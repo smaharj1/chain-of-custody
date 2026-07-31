@@ -4,6 +4,12 @@ All notable changes to Chain of Custody. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.2.0] — 2026-07-30
+
+The Chain of Custody release: the project rename, agent-written primers (the setup questionnaire is gone), the `## Primer Delta` freshness loop, the examples honesty pass, and a cross-reference/ownership audit.
+
 ### Cross-reference + ownership audit (July 2026)
 - **Engineer verify commands moved to the primers.** Four agent files (`backend`, `app`, `admin-app`, `infra`) shipped placeholder verification commands (`lint .`, `test .`, "adjust to match your project") inside files the README declares never-edit and safe to overwrite on kit update — so no role owned filling them in, and the primer-derivation machinery didn't cover them. The domain primers now carry a `## Verification Commands` template section (proven-by-running, per primer-protocol), and the agent files point at the primer as source of truth — the pattern `database-engineer.md` already used. Infra points at its primer's existing Deploy Commands validate/preview lines instead of duplicating them.
 - **Permission prompts documented for loop runs.** Claude Code's own permission gate sits underneath the autonomy dial: an `unattended` run stalls at the first un-allowlisted command, and no doc mentioned it. Now covered in README Prerequisites, a new FAQ entry ("The loop keeps stopping to ask permission"), an orchestrate preamble check (step 5 warns on an empty allowlist before a `per-milestone`/`unattended` run), and a Planner Phase-2 offer to allowlist the run/test commands as a plan output. The shipped allowlist stays empty by design.
