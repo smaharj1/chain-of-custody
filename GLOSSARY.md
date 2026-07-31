@@ -36,19 +36,19 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **Orchestrator** — The mode (`/orchestrate`) that executes the build plan item by item — design, build, review, verify, demo — until it's done or a guardrail stops it. Also called "the conductor" or "the loop."
 
-**Build plan** — The durable checklist the Planner writes (`build-plan.json` + a readable `BUILD_PLAN.md` view): every item to build, in dependency order, with acceptance criteria. The loop's spine.
+**Build plan** — The durable checklist the Planner writes (`build-plan.json` + a readable `BUILD_PLAN.md` view): every item to build, in dependency order, with acceptance criteria. Everything the loop does comes from it.
 
 **Milestone** — A coherent phase of the build plan (e.g., "M1 Foundation"). The default autonomy setting pauses at milestone boundaries.
 
 **Checkpoint** — A planned pause where the loop shows you the feature *running on your machine* (the auto-demo) and waits for your okay. You can approve, reject ("redo this"), or stop.
 
-**Demo target** — The specific route or endpoint the loop screenshots at a checkpoint — each item's "here's what I built" view, taken from its acceptance criteria.
+**Demo target** — The specific route or endpoint the loop screenshots at a checkpoint, taken from the item's acceptance criteria. It's what the loop shows you to prove the item works.
 
 **Autonomy dial** — The setting (`per-feature` / `per-milestone` / `unattended`) controlling how often the loop pauses for you. Hard-stops fire regardless.
 
 **Hard-stop** — A pause the loop always honors, even unattended: an escalation, a security block, a blown budget, a missing secret, a tripped circuit breaker.
 
-**Circuit breaker** — A guard that stops the run when several items in a row fail verification with no success in between — the sign of a systemic problem, not one bad item.
+**Circuit breaker** — A guard that stops the run when several items in a row fail verification with no success in between. That pattern usually means something systemic is wrong rather than one bad item.
 
 **Verify gate** — The evidence rule for "done": the tests actually ran and passed (with a non-zero test count), and the feature's specific route/behavior actually worked locally, with captured exit codes to prove it.
 
@@ -80,7 +80,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 ## Project Structure
 
-**Primer** — A document in `.claude/context/` that teaches the agents about *your* project (your database tables, your API, your conventions). The agents read these before working — and **write them themselves**, deriving the contents from your code (or from the stack decisions made during planning) and keeping them current as they build. You don't fill them in; reading them tells you what the team believes about your project.
+**Primer** — A document in `.claude/context/` that teaches the agents about *your* project (your database tables, your API, your conventions). The agents read these before working, and they write them too, deriving the contents from your code or from the stack decisions made during planning, then keeping them current as they build. You don't fill them in. Reading them tells you what the team believes about your project.
 
 **Feature folder** — A temporary workspace (`docs/features/<name>/`) holding the documents for one feature. Considered "scratch" — disposable once the feature is done.
 

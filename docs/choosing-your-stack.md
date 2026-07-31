@@ -2,9 +2,9 @@
 
 Your "tech stack" is the set of tools your project is built with. The agents need to know it (it lives in `.claude/CLAUDE.md`). If you already know what you're using, just fill it in. If you **don't know what to pick**, this guide gives you safe, popular defaults by project type.
 
-> **You usually don't pick this alone.** When you start a new idea with `/planner`, it asks about your stack during its interview, recommends sensible choices if you're unsure, and records them into `.claude/CLAUDE.md` for you — so you rarely fill that file in by hand. You can also ask any time: *"I'm building `<describe your idea>`. I'm not technical — recommend a stack and explain each choice simply."* This document is the reference behind those recommendations.
+> **You usually don't pick this alone.** When you start a new idea with `/planner`, it asks about your stack during its interview, recommends sensible choices if you're unsure, and records them into `.claude/CLAUDE.md` for you, so you rarely fill that file in by hand. You can also ask any time: *"I'm building `<describe your idea>`. I'm not technical — recommend a stack and explain each choice simply."* This document is the reference behind those recommendations.
 
-There are no wrong answers here — these are all mainstream, well-supported choices that Claude knows deeply. Pick the row that matches your project and copy it into `CLAUDE.md`.
+None of these are wrong answers. They're all mainstream, well-supported choices that Claude knows well. Pick the row that matches your project and copy it into `CLAUDE.md`.
 
 ---
 
@@ -76,4 +76,4 @@ As a non-technical builder, prefer **managed services** — ones that handle the
 - **Supabase / Clerk / Auth0** handle accounts and login.
 - **Stripe** handles payments and compliance.
 
-These cost a little money at scale but save enormous time and avoid whole categories of security mistakes. They also mean you likely don't need the `infra-engineer` agent at all — feel free to delete it.
+They cost a little money at scale, but they save a lot of time and remove whole categories of security mistakes. They also mean you probably don't need the `infra-engineer` agent at all, so feel free to delete it.
