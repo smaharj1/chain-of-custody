@@ -36,6 +36,12 @@ Yes, with one rule: **one conductor per clone**. The run lock (`.claude/orchestr
 
 For the shared `.claude/` directory, **commit** the shared files: `CLAUDE.md`, `agents/`, `commands/`, `context/`, `loop.config.md`, and the hooks. **Gitignore** the personal and telemetry files: `settings.local.json`, `loop.jsonl`, `metrics.jsonl`, and `orchestrate.lock`. That keeps the team's shared context in git and each developer's run state out of it.
 
+## The loop keeps stopping to ask permission. I set autonomy to unattended.
+
+Those pauses come from Claude Code itself, not the kit. The harness asks before running any command that isn't on the project's permission allowlist, and that gate sits *underneath* the loop's autonomy dial — `unattended` controls the kit's own checkpoints, not the harness's safety prompts. The kit ships an empty allowlist (`.claude/settings.json` → `permissions.allow`) deliberately, so the first run of any command asks you.
+
+The fix is to allowlist your project's recurring commands — the `verify_tests` / `verify_run` commands from [`.claude/loop.config.md`](../.claude/loop.config.md), your package manager, your migration commands. Easiest path: ask Claude *"add my project's run and test commands to the permission allowlist in `.claude/settings.json`"*, review what it proposes, and re-run `/orchestrate`. The Planner also offers to do this during planning, and the orchestrate preamble warns you at run start if the allowlist is empty. Leaving it empty is safe, just chattier: the run pauses for a click at each new command.
+
 ## How do I abandon an item mid-run?
 
 Three steps, in order. **Stop the run** (or wait for the next checkpoint). **Run `/planner`** and tell it to remove or edit the item; only the Planner edits plan structure, and it re-validates the dependency order for you. Then **run `/orchestrate` again**: its preamble discards the orphaned branch and partial work as part of resume reconciliation, and the loop continues with the revised plan.

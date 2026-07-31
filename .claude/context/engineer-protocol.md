@@ -1,6 +1,6 @@
 # Engineer Protocol — Shared by All Engineer Subagents
 
-> **You are an engineer subagent.** This protocol is the operational rulebook common to every engineer role. Your domain agent file references this; read this first, then your domain primer, then your brief.
+> **You are an engineer subagent.** This protocol is the operational rulebook common to every engineer role. Your domain agent file references this; read this first, then your domain primer, then your brief. (It's a shared rulebook, not an agent definition — agent definitions live in `.claude/agents/`.)
 >
 > **Quality bar**: senior staff level. Quality over speed. No shortcuts.
 
@@ -104,7 +104,7 @@ If the review surfaces blockers, Tech Lead re-dispatches you with `iteration: 2`
 - <each gap that wasn't resolvable from brief alone — this is the feedback loop>
 
 ## Primer Delta
-<NONE, or the specific changes your domain primer needs — see section 12>
+<NONE, or the specific changes your domain primer needs — see section 11>
 
 ## Verification
 - <command>: PASS | FAIL — <details>

@@ -23,6 +23,8 @@ cp -r path/to/this-kit/docs      your-project/
 
 If that's confusing: open your project folder in Claude Code and ask, *"Copy the .claude and docs folders from `<path to this kit>` into this project."* Claude will do it.
 
+(One file you can skip or delete from your copy: `docs/design/review-2026-07.md` — it's the kit's internal review history, not something your project needs.)
+
 > **Already used Claude Code in this project?** Then a `.claude/` folder already exists, and copying over it can clobber your settings. Back it up first (`cp -r .claude .claude.backup`) or ask Claude to *"merge the kit's `.claude` folder into mine without losing my settings."* The README's install notes have the details.
 
 One more note: links in these docs to `GLOSSARY.md`, the README, and `examples/` refer to the kit itself, so keep the kit folder around (or its GitHub page bookmarked) instead of deleting it once you've copied from it.

@@ -1,4 +1,6 @@
-# <!-- PROJECT_NAME: Replace with your project name -->
+# Your Project Name
+
+<!-- PROJECT_NAME: replace the title above with your project's name -->
 
 <!-- Replace this section with a 2-3 sentence description of what your project does. -->
 <!-- Example: "TaskFlow is a SaaS project management platform. Teams create workspaces, manage tasks with kanban boards, and track time. The app has a public-facing web client and an internal admin dashboard." -->
@@ -44,17 +46,17 @@ Available modes: `/pm`, `/architect`, `/tech-lead`
 <!-- Config: .claude/loop.config.md   ·   Design: docs/design/loop-engineering.md -->
 Loop modes: `/planner`, `/orchestrate`
 
-<!-- List the engineer subagents your project actually uses. Default set: database, backend, app, admin-app -->
+<!-- List the engineer subagents your project actually uses. Default set: database, backend, app, admin-app, infra -->
 <!-- Customize: rename "app" to match your frontend (e.g., "web", "mobile", "dashboard") -->
+<!-- Delete "infra" if you have no infrastructure-as-code. -->
 <!-- Add or remove agents to match your project. See .claude/agents/ for definitions. -->
-Engineer subagents: database, backend, app, admin-app
+Engineer subagents: database, backend, app, admin-app, infra
 
-<!-- Also available, dispatched on demand rather than per-feature: -->
-<!--   infra-engineer    — infrastructure-as-code changes (delete if you have no IaC) -->
+<!-- Read-only reviewers, dispatched on demand rather than per-feature: -->
 <!--   security-reviewer — security audit, run before deploys / PRs; auto-dispatched in the /orchestrate loop on sensitive items -->
 <!--   design-critic     — reviews the Architect's design before any code is written (used automatically by /architect) -->
 <!--   code-reviewer     — independent diff review inside the /orchestrate loop (interactive flow uses the code-review Skill) -->
-Specialist agents: infra-engineer, security-reviewer, design-critic, code-reviewer
+Specialist agents: security-reviewer, design-critic, code-reviewer
 
 **Default posture**: when no mode has been invoked this session, behave as the PM (per `.claude/commands/pm.md`) — gather requirements through questions; don't design or dispatch until the user switches modes.
 

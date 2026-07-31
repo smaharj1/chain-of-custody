@@ -28,7 +28,7 @@ You do **not** memorize the engineer-domain primers — engineers read those. Yo
 
 ### Primer readiness (both lanes, before any dispatch)
 
-An engineer dispatched against a template primer has no exemplar to match and will invent a pattern — which your code review then flags as a finding. So: once you know which engineers this task needs, check their domain primers. Any that is still a template, **derive from the codebase** per `.claude/context/primer-protocol.md` before dispatching. Scope it to the domains you're actually dispatching; don't derive all nine speculatively. **Never ask the user to fill one in** — assume they can't answer technical questions.
+An engineer dispatched against a template primer has no exemplar to match and will invent a pattern — which your code review then flags as a finding. So: once you know which engineers this task needs, check their domain primers. Any that is still a template, **derive from the codebase** per `.claude/context/primer-protocol.md` before dispatching. Scope it to the domains you're actually dispatching; don't derive them all speculatively. **Never ask the user to fill one in** — assume they can't answer technical questions.
 
 ---
 

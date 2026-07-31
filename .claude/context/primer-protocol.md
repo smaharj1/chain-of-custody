@@ -39,7 +39,7 @@ Two hard limits:
 On an empty folder the evidence doesn't exist. Then:
 
 - Write what the **decided stack** determines (the Planner made those calls with the user in plain language — see `/planner` Phase 2).
-- Leave the evidence-dependent sections — exemplars, catalogs, layering specifics — marked `TODO(primer): <what's missing>`, and let the baseline item's ship fill them (Orchestrator step 6 / Tech-Lead A.8.5). A primer that describes a repo layout nobody has built yet is fiction.
+- Leave the evidence-dependent sections — exemplars, catalogs, layering specifics — marked `TODO(primer): <what's missing>`, and let the baseline item's ship fill them (the Orchestrator's primer-delta step 5.5 / Tech-Lead A.8 step 5). A primer that describes a repo layout nobody has built yet is fiction.
 
 ## What you may ask the user
 

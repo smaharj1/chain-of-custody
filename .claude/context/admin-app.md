@@ -35,6 +35,13 @@
 <!-- If the admin app has real-time features, describe them here. -->
 <!-- Delete this section if not applicable. -->
 
+## Verification Commands
+
+<!-- The exact lint + test commands the Admin App Engineer runs before reporting APPROVED. -->
+<!-- Prove each command by running it once before writing it down (see primer-protocol.md). Example: -->
+<!-- - Lint: npm run lint -->
+<!-- - Test: npm run test -- --run -->
+
 ## Frontend Stack
 
 <!-- Note any admin-specific libraries beyond the shared stack. Example: -->

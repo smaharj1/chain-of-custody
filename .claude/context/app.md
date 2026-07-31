@@ -58,6 +58,13 @@
 <!-- - 640-1023px: two-column tablet layout -->
 <!-- - >= 1024px: full desktop layout with sidebar -->
 
+## Verification Commands
+
+<!-- The exact lint + test commands the App Engineer runs before reporting APPROVED. -->
+<!-- Prove each command by running it once before writing it down (see primer-protocol.md). Example: -->
+<!-- - Lint: npm run lint -->
+<!-- - Test: npm run test -- --run -->
+
 ## Frontend Stack
 
 <!-- Note any app-specific libraries beyond the shared stack. Example: -->

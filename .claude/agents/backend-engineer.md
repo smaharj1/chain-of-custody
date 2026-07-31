@@ -24,13 +24,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Verification Commands (run all before reporting `APPROVED`)
 
-```bash
-# Adjust these to match the project's actual tooling
-lint .
-test .
-```
-
-> Replace with the project's actual lint and test commands.
+The project's actual commands are documented in **`.claude/context/backend.md` → Verification Commands** — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, derive the lint and test commands from the repo (package manifests, CI config), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
 
 ## Domain Quality Bar
 

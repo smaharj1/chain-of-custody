@@ -24,12 +24,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Verification Commands (run before reporting `APPROVED`)
 
-```bash
-npm run lint
-npm run test -- --run
-```
-
-> Adjust commands to match the project's actual scripts in `package.json`.
+The project's actual commands are documented in **`.claude/context/app.md` → Verification Commands** — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, derive the lint and test commands from `package.json` scripts (commonly `npm run lint` and `npm run test -- --run`), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
 
 ## Domain Quality Bar
 

@@ -61,6 +61,14 @@ Admin endpoints:
 <!-- - Dot-separated: item.service.ts, item.repository.ts -->
 <!-- - Kebab-case: item-service.ts, item-repository.ts -->
 
+## Verification Commands
+
+<!-- The exact lint + test commands the Backend Engineer runs before reporting APPROVED. -->
+<!-- Execution-relevant: prove each command by running it once before writing it down -->
+<!-- (see primer-protocol.md — a plausible wrong command surfaces later as a mystery failure). Example: -->
+<!-- - Lint: pnpm lint -->
+<!-- - Test: pnpm test -->
+
 ## Canonical Exemplar
 
 <!-- Name one file that represents the "gold standard" for each layer. -->

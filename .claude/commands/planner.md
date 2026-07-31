@@ -45,13 +45,14 @@ These become global constraints the autonomous Architect inherits, so execution 
 - Auth model (roles, how login works).
 - **Local-first**: confirm the app will run locally (SQLite by default) and that deploy/infra is a **later milestone** (§8a). Cloud comes after the app works locally.
 - **Fill `.claude/loop.config.md` as a plan output.** Decide `verify_tests`, `verify_run`, and `db_ephemeral` for the chosen stack and write them into the config (with user approval) **before hand-off** — filling it is not a user precondition, and `/orchestrate` hard-stops on placeholders. For greenfield these commands describe what the baseline item will *create*; the baseline item's acceptance must therefore include "`verify_tests` and `verify_run` execute successfully exactly as configured," so a wrong guess surfaces as an F1 acceptance failure, not a mystery hard-stop.
+- **Offer to allowlist the run/test commands** (with user approval) in `.claude/settings.json` → `permissions.allow`, so harness permission prompts don't pause the loop at every new command — those prompts fire independent of the autonomy dial (see README Prerequisites). Skipping this is fine; the run just pauses for approval more often.
 
 ### Phase 2b — Write the primers (also a plan output)
 
 The context primers are **yours to write, not the user's to fill in** — see `.claude/context/primer-protocol.md`. Assume the user cannot answer a technical question; ask only the plain-language product questions of Phase 1 and derive the rest.
 
 - **Existing codebase** → derive every primer the plan's scope touches from the code (stack, layering, conventions, canonical exemplars, catalogs-as-pointers) before you decompose. You need this to plan realistically anyway: a milestone ordered against an imagined architecture is a plan that fails at F1.
-- **Greenfield** → write what the decided stack determines, and mark the evidence-dependent sections `TODO(primer)`. They get filled when the baseline item ships (Orchestrator step 6).
+- **Greenfield** → write what the decided stack determines, and mark the evidence-dependent sections `TODO(primer)`. They get filled when the baseline item ships (the Orchestrator's primer-delta step, 5.5).
 - **`.claude/context/local-dev.md` is execution-critical**, same as `loop.config.md`: `/orchestrate` hard-stops on placeholder run/test/reset commands. On an existing repo, **run each command once** to prove it before writing it down. On greenfield, they describe what F1 will create — which is why F1's acceptance asserts they execute as configured.
 
 Record durable decisions in `CLAUDE.md` too — stack table and repo structure, template sentinels removed. They outlive this plan.

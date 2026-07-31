@@ -20,7 +20,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **Design Critic** — An agent that reviews the Architect's design *before* any code is written, to catch problems early. Runs automatically.
 
-**Security Reviewer** — An agent that audits code for security problems. You run it before deploying.
+**Security Reviewer** — An agent that audits code for security problems. You run it before deploying; the `/orchestrate` loop also runs it automatically on sensitive items (auth, payments, uploads, user input).
 
 **Brief** — A written assignment the Tech Lead gives an engineer: what to build, which files to read, what "done" looks like.
 

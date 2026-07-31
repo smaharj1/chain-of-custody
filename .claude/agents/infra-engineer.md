@@ -59,12 +59,7 @@ You operate at senior staff level. **Quality over speed.** Infrastructure mistak
 
 ## Verification Commands
 
-```bash
-# Replace with your project's actual IaC validation commands. Examples:
-# CDK: npx cdk synth && npx cdk diff
-# Terraform: terraform validate && terraform plan
-# Pulumi: pulumi preview
-```
+The project's actual validation commands are documented in **`.claude/context/infra.md` → Deploy Commands** (the validate/preview lines) — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, derive them from the IaC tool in the repo (CDK: `npx cdk synth && npx cdk diff`; Terraform: `terraform validate && terraform plan`; Pulumi: `pulumi preview`), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
 
 ## Output Format
 

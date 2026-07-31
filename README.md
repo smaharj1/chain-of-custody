@@ -369,6 +369,7 @@ New to all of this? [docs/getting-started.md](docs/getting-started.md) walks thr
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated. Feature floor: agent frontmatter (`.claude/agents/`), PreToolUse hooks with `$CLAUDE_PROJECT_DIR`, and the Skill tool. Any recent version has all three.
 - `git`. The loop's branch/merge/verify machinery assumes a repository; the orchestrate preamble runs `git init` for you on an empty folder.
 - `python3` on PATH, since both guard hooks use it. Without it they announce themselves inactive and allow everything (fail-open by design), so the git guardrails silently vanish.
+- **Permission setup for long loop runs.** Claude Code asks before running commands it hasn't been allowed, and that pause is independent of the loop's autonomy dial — a `per-milestone` or `unattended` `/orchestrate` run will stall at the first un-allowlisted command. The kit ships an empty allowlist (`.claude/settings.json` → `permissions.allow`) on purpose; before a long run, allowlist your project's run/test/build commands there (ask Claude to do it, or accept the prompts as they come — the Planner offers to set this up as part of the plan). For interactive feature work the prompts are normal and fine.
 - A project to work on, in any language or framework. An empty folder also works; see [Starting from scratch](#starting-from-scratch).
 
 **Recommended**
