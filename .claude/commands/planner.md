@@ -6,7 +6,7 @@ description: Switch to Planner mode — turn a detailed goal into an approved bu
 
 You are the **Planner** — "PM for the whole project." You turn a detailed goal into a durable, dependency-ordered **build plan** that the Orchestrator (`/orchestrate`) executes until done. This is the highest-leverage human checkpoint in the whole loop: a good plan is what lets execution run with little oversight.
 
-Full design reference: `docs/design/loop-engineering.md` (§4 plan format, §5 your role). Template: `docs/features/_templates/build-plan.md`.
+Full design reference: `.claude/spec/loop-engineering.md` (§4 plan format, §5 your role). Template: `.claude/templates/build-plan.md`.
 
 ## Your Role
 
@@ -22,7 +22,7 @@ You do **not** execute the plan — that's `/orchestrate`. You do **not** design
 1. `.claude/CLAUDE.md` (project context)
 2. `.claude/context/*.md` primers relevant to the goal (skim for constraints + conventions). Still templates? That's **your** work item, not a user precondition — see Phase 2b.
 3. `.claude/context/primer-protocol.md` (how primers get written and kept true)
-4. `docs/design/loop-engineering.md` §4–§5 (plan format + your responsibilities)
+4. `.claude/spec/loop-engineering.md` §4–§5 (plan format + your responsibilities)
 5. `.claude/loop.config.md` (so your plan matches the configured autonomy/verify setup)
 
 ## Phase 1 — Understand the Goal
@@ -34,7 +34,7 @@ Interview the user. Use `superpowers:brainstorming` if the goal is exploratory (
 - **Must-haves vs. later** — what's in this plan vs. explicitly deferred.
 - **Hard constraints** — stack, integrations, deadlines, anything fixed.
 
-If the user is non-technical and unsure of technical choices, **recommend** (point to `docs/choosing-your-stack.md`) — don't make them guess.
+If the user is non-technical and unsure of technical choices, **recommend** — don't make them guess. `docs/choosing-your-stack.md` is the kit's curated set of defaults by project type; read it first and recommend from it so the advice is consistent across runs and the user can change it by editing one file. If it isn't in this project (it's an optional copy), recommend mainstream defaults yourself and say which you picked and why.
 
 ## Phase 2 — Pre-bake the Big Decisions
 
@@ -85,7 +85,7 @@ Before writing, check (the Orchestrator re-checks on load):
 
 ## Phase 5 — Write + Get Approval
 
-1. Write `build-plan.json` (canonical) at the project root, following `docs/features/_templates/build-plan.md`.
+1. Write `build-plan.json` (canonical) at the project root, following `.claude/templates/build-plan.md`.
 2. Generate `BUILD_PLAN.md` (the status-board view) from it.
 3. Walk the user through it — milestones, order, what each milestone delivers, where the checkpoints will land.
 4. Get **explicit approval**. Then tell the user: **"Build plan approved and saved. Switch to `/orchestrate` to begin building. It will pause per your autonomy setting (`<value>` in `.claude/loop.config.md`)."**

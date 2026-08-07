@@ -1,6 +1,6 @@
 # Operational FAQ
 
-Answers to the questions real teams hit in their first weeks with the kit: testing, CI, deployment, teams, and non-web projects. For the basics, start with [getting-started.md](getting-started.md). For the design rationale behind the loop, see [design/loop-engineering.md](design/loop-engineering.md).
+Answers to the questions real teams hit in their first weeks with the kit: testing, CI, deployment, teams, and non-web projects. For the basics, start with [getting-started.md](getting-started.md). For the design rationale behind the loop, see [the loop design note](../.claude/spec/loop-engineering.md).
 
 ## What's the testing strategy? My project has no tests.
 

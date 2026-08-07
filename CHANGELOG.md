@@ -4,7 +4,22 @@ All notable changes to Chain of Custody. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed — `docs/` boundary: kit runtime moved into `.claude/`
+
+`docs/` held three unrelated things at once: files the modes read at run time, files the agents write per feature, and files humans read. Nothing marked which was which, so the install needed four `cp` commands and the update procedure needed an 8-path "never-edit set" (the gap logged at review-2026-07 §4.3).
+
+Runtime files now live with the rest of the runtime:
+
+- `docs/design/loop-engineering.md` → **`.claude/spec/loop-engineering.md`**
+- `docs/features/_templates/*.md` → **`.claude/templates/*.md`**
+
+`docs/` now holds only human reading (`getting-started.md`, `faq.md`, `choosing-your-stack.md`) and agent output (`docs/features/<slug>/`). **Every reference to `docs/features/<slug>/` is untouched** — the output path did not move.
+
+**Upgrading**: re-copy `.claude/` and delete `docs/design/loop-engineering.md` and `docs/features/_templates/` from your project. Nothing you authored moves; `docs/features/<slug>/` is unaffected.
+
+Install is now a single required step — `cp -r .claude .` — with the `docs/` files optional. `/planner` previously depended on `docs/choosing-your-stack.md` being present; it now reads that file when it exists and recommends a stack on its own when it doesn't, so no `docs/` file is load-bearing.
+
+Also: `orchestrate.md`'s primer-sentinel grep gained an explicit "never widen past `.claude/context/*.md` + `CLAUDE.md`" guard — the new `spec/` and `templates/` files quote sentinel tokens by design, and sweeping them in would pin every run to `per-feature`.
 
 ## [1.2.0] — 2026-07-30
 

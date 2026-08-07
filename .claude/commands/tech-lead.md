@@ -72,7 +72,7 @@ If only some frontends are in scope, dispatch them in parallel with each other b
 
 ### A.4 Write briefs
 
-Per dispatched engineer, write `docs/features/<slug>/briefs/<engineer>.md` from `docs/features/_templates/brief.md` (`<engineer>` = the domain shortname: `database`, `backend`, `app`, `admin-app`, `infra` — same for `reports/`). Each brief must include:
+Per dispatched engineer, write `docs/features/<slug>/briefs/<engineer>.md` from `.claude/templates/brief.md` (`<engineer>` = the domain shortname: `database`, `backend`, `app`, `admin-app`, `infra` — same for `reports/`). Each brief must include:
 
 - Feature slug
 - Pointers to `requirements.md`, `technical-design.md`, `api-contract.md`
@@ -233,7 +233,7 @@ When the **Orchestrator** runs your dispatch logic for a single build-plan item,
 - **Frontend dispatch gate (A.3)**: dispatch frontends only after Backend reaches `APPROVED`, or its `CONTRACT_DEVIATION` is resolved (re-read `api-contract.md`, regenerate frontend briefs first).
 - **Review with an independent reviewer, not the Skill.** Because the conductor authored the work, dispatch the **`code-reviewer` Agent** (clean context) on each engineer diff instead of the `code-review:code-review` Skill. `CHANGES_REQUESTED` → re-dispatch the engineer, capped by `max_retries_per_item`.
 - **Run security review on sensitive items.** Per `security_review` in `.claude/loop.config.md`: dispatch the **`security-reviewer` Agent** on items touching auth / payments / uploads / user input (or every item if configured). `SECURITY_BLOCKED` (any Critical/High) → hard-stop (`security_blocked`); the item does not reach `done`.
-- **Map engineer signals to loop control** (per `docs/design/loop-engineering.md` §6.1): `NEEDS_CLARIFICATION` / `CONTRACT_INCONSISTENCY` → hard-stop; `CONTRACT_DEVIATION` → re-read contract + regenerate frontend briefs + continue; `DESIGN_DEVIATION` → record + flag for ratification + continue; `PARTIAL` (engineer hit budget) → split remaining scope and re-dispatch within `max_retries_per_item`, else `blocked` + breaker++; review re-dispatch capped by `max_retries_per_item`.
+- **Map engineer signals to loop control** (per `.claude/spec/loop-engineering.md` §6.1): `NEEDS_CLARIFICATION` / `CONTRACT_INCONSISTENCY` → hard-stop; `CONTRACT_DEVIATION` → re-read contract + regenerate frontend briefs + continue; `DESIGN_DEVIATION` → record + flag for ratification + continue; `PARTIAL` (engineer hit budget) → split remaining scope and re-dispatch within `max_retries_per_item`, else `blocked` + breaker++; review re-dispatch capped by `max_retries_per_item`.
 - **Infra is never fully autonomous** — an infra-touching item forces a checkpoint regardless of the autonomy dial.
 
 The two interactive lanes above are for a human invoking `/tech-lead` directly.

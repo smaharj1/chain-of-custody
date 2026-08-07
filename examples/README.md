@@ -26,7 +26,7 @@ The paths here mirror where each file lives once you've copied the kit, minus on
 | `examples/loop.config.md` | `.claude/loop.config.md` |
 | `examples/features/csv-export/` | `docs/features/<your-slug>/` |
 
-Don't copy these files into your own project — they describe someone else's fictional app, and an engineer that reads them as project context will chase files that aren't there. Copy the **templates** (`.claude/context/`, `docs/features/_templates/`) and keep these open alongside as the answer key.
+Don't copy these files into your own project — they describe someone else's fictional app, and an engineer that reads them as project context will chase files that aren't there. Copy the **templates** (`.claude/context/`, `.claude/templates/`) and keep these open alongside as the answer key.
 
 ## What's missing
 
