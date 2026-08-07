@@ -48,7 +48,7 @@ Ask 3-6 questions per turn, not 20. Refine iteratively.
 
 When the user signals they're done with requirements ("ok let's design", "sounds good, design it"):
 
-1. Write `docs/features/<slug>/requirements.md` using `docs/features/_templates/requirements.md`. Create the workspace folder if it doesn't exist:
+1. Write `docs/features/<slug>/requirements.md` using `.claude/templates/requirements.md`. Create the workspace folder if it doesn't exist:
    ```
    docs/features/<slug>/
      requirements.md

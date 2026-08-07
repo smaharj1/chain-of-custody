@@ -43,7 +43,7 @@ Available modes: `/pm`, `/architect`, `/tech-lead`
 <!-- Loop engineering (build a whole goal, not one feature at a time): -->
 <!--   /planner     — turn a detailed goal into an approved build plan (build-plan.json) -->
 <!--   /orchestrate — work through the plan item by item until done, with local auto-demo checkpoints -->
-<!-- Config: .claude/loop.config.md   ·   Design: docs/design/loop-engineering.md -->
+<!-- Config: .claude/loop.config.md   ·   Design: .claude/spec/loop-engineering.md -->
 Loop modes: `/planner`, `/orchestrate`
 
 <!-- List the engineer subagents your project actually uses. Default set: database, backend, app, admin-app, infra -->

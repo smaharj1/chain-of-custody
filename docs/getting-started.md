@@ -14,16 +14,20 @@ You don't need to know how to code. You do need to be able to make product decis
 
 ## Step 1 — Put this kit into your project
 
-Copy the `.claude/` folder and the `docs/` folder from this kit into your own project folder. If you're comfortable in the terminal:
+Everything the agents actually run lives in `.claude/`, so that folder is the one that matters. The `docs/` folder is reading material for you. If you're comfortable in the terminal:
 
 ```bash
 cp -r path/to/this-kit/.claude   your-project/
-cp -r path/to/this-kit/docs      your-project/
+
+mkdir -p your-project/docs
+cp path/to/this-kit/docs/choosing-your-stack.md \
+   path/to/this-kit/docs/getting-started.md \
+   path/to/this-kit/docs/faq.md    your-project/docs/
 ```
 
-If that's confusing: open your project folder in Claude Code and ask, *"Copy the .claude and docs folders from `<path to this kit>` into this project."* Claude will do it.
+If that's confusing: open your project folder in Claude Code and ask, *"Copy the .claude folder from `<path to this kit>` into this project, plus the docs/choosing-your-stack.md, docs/getting-started.md and docs/faq.md files."* Claude will do it.
 
-(One file you can skip or delete from your copy: `docs/design/review-2026-07.md` — it's the kit's internal review history, not something your project needs.)
+(Only the first command is required. The rest are docs you'll want nearby — you can also just keep this kit folder open and read them there.)
 
 > **Already used Claude Code in this project?** Then a `.claude/` folder already exists, and copying over it can clobber your settings. Back it up first (`cp -r .claude .claude.backup`) or ask Claude to *"merge the kit's `.claude` folder into mine without losing my settings."* The README's install notes have the details.
 

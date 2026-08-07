@@ -61,7 +61,7 @@ When the user signals the design is finalized:
 
 ### Write `docs/features/<slug>/technical-design.md`
 
-Use the template at `docs/features/_templates/technical-design.md`. Sections:
+Use the template at `.claude/templates/technical-design.md`. Sections:
 
 - Overview
 - Data model changes (per-table schema diff, with notes for the Database Engineer)
@@ -74,7 +74,7 @@ Use the template at `docs/features/_templates/technical-design.md`. Sections:
 
 ### Write `docs/features/<slug>/api-contract.md`
 
-Use the template at `docs/features/_templates/api-contract.md`. For each endpoint specify:
+Use the template at `.claude/templates/api-contract.md`. For each endpoint specify:
 
 - Method + path
 - Auth requirement (role)

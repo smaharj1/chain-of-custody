@@ -35,7 +35,7 @@ If you're building a project from an idea, start here. The loop engineering laye
 
 Run `/planner` to build the plan, then `/orchestrate` to execute it. Autonomy, budgets, and your local verify/run commands are configured in [`.claude/loop.config.md`](.claude/loop.config.md).
 
-> **Status: V1 (locked design, sequential).** The design note and the adversarial-review rounds behind it are in [docs/design/loop-engineering.md](docs/design/loop-engineering.md). V1 runs items one at a time with local auto-demo checkpoints. Parallel execution and a dedicated project-scaffold mode are deferred; see §14 of the design. The PM / Architect / Tech-Lead workflow still works standalone for one-off features.
+> **Status: V1 (locked design, sequential).** The design note and the adversarial-review rounds behind it are in [.claude/spec/loop-engineering.md](.claude/spec/loop-engineering.md). V1 runs items one at a time with local auto-demo checkpoints. Parallel execution and a dedicated project-scaffold mode are deferred; see §14 of the design. The PM / Architect / Tech-Lead workflow still works standalone for one-off features.
 
 ## The Handoff Chain
 
@@ -93,15 +93,15 @@ Engineers (subagents)  -->  Read domain primer + brief + design + contract
 git clone https://github.com/smaharj1/chain-of-custody.git /tmp/chain-of-custody
 cd /path/to/your/project
 
-# Runtime-required (the modes and the loop read these at run time):
+# The only required step — everything the modes and the loop read at run time is in .claude/:
 cp -r /tmp/chain-of-custody/.claude .
-mkdir -p docs/features docs/design
-cp -r /tmp/chain-of-custody/docs/features/_templates docs/features/
-cp /tmp/chain-of-custody/docs/design/loop-engineering.md docs/design/
-cp /tmp/chain-of-custody/docs/choosing-your-stack.md docs/
 
-# Optional human docs (nice to have in-project; also fine to read from the kit repo):
-cp /tmp/chain-of-custody/docs/getting-started.md /tmp/chain-of-custody/docs/faq.md docs/
+# Optional human docs (also fine to leave in the kit repo and read them there).
+# /planner uses choosing-your-stack.md if it's present, and recommends a stack itself if not:
+mkdir -p docs
+cp /tmp/chain-of-custody/docs/choosing-your-stack.md \
+   /tmp/chain-of-custody/docs/getting-started.md \
+   /tmp/chain-of-custody/docs/faq.md docs/
 ```
 
 > ⚠️ **Already using Claude Code in this project?** Then `.claude/` already exists and `cp -r` will merge into it, which can clobber your `settings.json` (permissions, hooks), your `CLAUDE.md`, and any agents or commands you've added. Back it up first (`cp -r .claude .claude.backup`), then merge by hand. The kit's `settings.json` adds two PreToolUse hooks (`guard-git.sh`, `guard-main-edit.sh`) and an empty permission allowlist, so fold those into yours instead of replacing the file, and append the kit's `CLAUDE.md` content to your own.
@@ -229,28 +229,33 @@ Two consequences worth knowing. A primer section that genuinely can't be known y
   hooks/
     guard-git.sh                     #   PreToolUse(Bash): blocks push/rebase/shared-history git ops
     guard-main-edit.sh               #   PreToolUse(Edit/Write): blocks app-source edits on main
+  spec/                              # Runtime specs the modes read (generic)
+    loop-engineering.md              #   Authoritative loop spec — orchestrate cites it as governing
+  templates/                         # Artifact templates used by PM, Architect, Tech Lead, Planner
+    requirements.md                  #   PM writes requirements from this
+    technical-design.md              #   Architect writes design from this
+    api-contract.md                  #   Architect writes API contract from this
+    brief.md                         #   Tech Lead writes engineer briefs from this
+    build-plan.md                    #   Planner writes build-plan.json from this
   metrics.jsonl                      # Interactive telemetry (auto-created; gitignore it — see step 1)
   loop.jsonl                         # Loop telemetry (auto-created; gitignore it)
   orchestrate.lock                   # Run lock (auto-created; gitignore it)
 build-plan.json                      # Loop plan — canonical state (commit this)
 BUILD_PLAN.md                        # Generated human view of the plan (commit this)
-docs/
+docs/                                # What humans read + what the agents write
+  choosing-your-stack.md             # Stack defaults by project type (/planner points you here)
+  getting-started.md                 # Plain-language on-ramp for non-technical users
+  faq.md                             # Operational FAQ (testing, CI, deploy, teams, non-web)
+  assets/                            # Diagrams embedded in this README (kit repo only)
   design/
-    loop-engineering.md              # Authoritative loop spec (runtime-required — orchestrate cites it)
+    review-2026-07.md                # Kit's own audit history (kit repo only — don't copy)
   features/
-    _templates/                      # Templates used by PM, Architect, Tech Lead, Planner
-      requirements.md                #   PM writes requirements from this
-      technical-design.md            #   Architect writes design from this
-      api-contract.md                #   Architect writes API contract from this
-      brief.md                       #   Tech Lead writes engineer briefs from this
-      build-plan.md                  #   Planner writes build-plan.json from this
     <feature-slug>/                  # Created per feature (scratch — not long-term)
       requirements.md
       technical-design.md
       api-contract.md
       briefs/<engineer>.md
       reports/<engineer>.md
-  faq.md                             # Operational FAQ (testing, CI, deploy, teams, non-web)
 examples/                            # Writing reference — filled-in docs for a FICTIONAL
                                      #   project (TaskFlow). No code; not a runnable demo.
   README.md                          #   What this folder is and isn't — read first
@@ -315,7 +320,6 @@ After every feature or task, the Tech Lead appends a JSON line to `.claude/metri
 ### Which files hold your project context (agent-written — review, don't author)
 
 - `.claude/CLAUDE.md` and `.claude/context/*.md` (except the two protocol files). The agents write these and keep them current ([how](#how-the-agents-learn-your-project)). Correct them freely when you know better; you're never expected to author them.
-- `docs/features/_templates/*.md` — edit if your workflow differs
 
 ### Which files to leave alone (generic workflow logic)
 
@@ -323,6 +327,9 @@ After every feature or task, the Tech Lead appends a JSON line to `.claude/metri
 - `.claude/commands/*.md` — work as-is (the PM/Architect/Tech Lead workflow)
 - `.claude/context/engineer-protocol.md` — generic rules for all engineers
 - `.claude/context/primer-protocol.md` — how agents derive + maintain primers
+- `.claude/spec/*.md` — the authoritative loop spec; `/orchestrate` treats it as governing
+- `.claude/hooks/*.sh` — the two PreToolUse guards
+- `.claude/templates/*.md` — you *can* edit these if your workflow differs, but they're in the never-edit set below, so a kit update overwrites them. Keep a note of your changes if you customize.
 
 ### Tuning for your project
 
@@ -387,7 +394,7 @@ New to all of this? [docs/getting-started.md](docs/getting-started.md) walks thr
 Your copy records its release in `.claude/KIT_VERSION`, and changes ship in [CHANGELOG.md](CHANGELOG.md). To update:
 
 1. Check your `.claude/KIT_VERSION` and read the CHANGELOG entries since.
-2. **Re-copy the never-edit set** from the new kit release. These are kit logic and safe to overwrite: `.claude/agents/*` (unless you added or renamed agents), `.claude/commands/*`, `.claude/context/engineer-protocol.md`, `.claude/context/primer-protocol.md`, `.claude/hooks/*`, `docs/features/_templates/*`, `docs/design/loop-engineering.md`, and `.claude/KIT_VERSION` itself.
+2. **Re-copy the never-edit set** from the new kit release. These are kit logic and safe to overwrite: `.claude/agents/*` (unless you added or renamed agents), `.claude/commands/*`, `.claude/context/engineer-protocol.md`, `.claude/context/primer-protocol.md`, `.claude/hooks/*`, `.claude/templates/*`, `.claude/spec/*`, and `.claude/KIT_VERSION` itself.
 3. **Never overwrite the project-specific set.** These describe *your* project. The agents wrote them, but they're still yours, and the kit's copies are empty templates: `.claude/CLAUDE.md`, `.claude/context/*` primers (except the two protocol files), `.claude/loop.config.md`, `.claude/settings.json`. If a CHANGELOG entry touches one of these, say a new settings hook, apply it as a hand-merge.
 
 ## License
