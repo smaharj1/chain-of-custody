@@ -94,6 +94,7 @@ also includes:
 
 - `AGENTS.md` for Codex-style repository instructions.
 - `.cursor/rules/chain-of-custody.mdc` for Cursor's always-on project rule.
+- `skills/chain-of-custody/SKILL.md` for Codex's reusable global skill format.
 
 Both adapters route agents back to the same commands, primers, templates, and
 review gates, so the workflow does not fork by editor. Start with the adapter
