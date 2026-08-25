@@ -1,0 +1,29 @@
+---
+description: Apply the Chain of Custody role-based engineering workflow and handoff rules.
+alwaysApply: true
+---
+
+# Chain of Custody
+
+Use the repository's `.claude/` files as the canonical source for roles,
+commands, protocols, templates, and quality gates. This rule makes the same
+workflow available in Cursor; it does not duplicate those definitions.
+
+Route work as follows:
+
+- Requirements: `.claude/commands/pm.md`
+- Architecture/API design: `.claude/commands/architect.md`
+- Dispatch and review: `.claude/commands/tech-lead.md`
+- Project planning: `.claude/commands/planner.md`
+- Autonomous execution: `.claude/commands/orchestrate.md`
+
+When delegating, use the matching definition in `.claude/agents/`. Read
+`.claude/context/engineer-protocol.md` and the relevant domain primer before
+implementation. Preserve the artifact handoff chain:
+
+`requirements.md` → `technical-design.md` + `api-contract.md` →
+`briefs/<domain>.md` → `reports/<domain>.md`
+
+Do not bypass design critique, code review, security review when required, or
+primer-defined verification. Keep changes scoped to the active brief and
+surface missing or conflicting requirements.

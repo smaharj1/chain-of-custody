@@ -86,6 +86,21 @@ Engineers (subagents)  -->  Read domain primer + brief + design + contract
 
 ## Quick Start
 
+### Use with Codex, Cursor, or Claude Code
+
+The workflow is portable across coding agents. `.claude/` remains the
+canonical source for the role definitions and handoff protocols; the repo
+also includes:
+
+- `AGENTS.md` for Codex-style repository instructions.
+- `.cursor/rules/chain-of-custody.mdc` for Cursor's always-on project rule.
+- `skills/chain-of-custody/SKILL.md` for Codex's reusable global skill format.
+
+Both adapters route agents back to the same commands, primers, templates, and
+review gates, so the workflow does not fork by editor. Start with the adapter
+that your agent loads automatically, then open the referenced `.claude/`
+definition for the role you need.
+
 ### 1. Copy into your project
 
 ```bash
