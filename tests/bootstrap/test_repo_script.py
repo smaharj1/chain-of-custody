@@ -57,7 +57,7 @@ class Generate(unittest.TestCase):
     def test_every_variant_is_valid_shell(self):
         for kw in ({}, {"create_repo": True}, {"boundary": True, "variant": "team", "release_team_id": 7, "environment": "production", "reviewer_ids": [1, 2]},
                    {"labels_": True, "approvers": ["a-b", "c"]}, {"workflows": list(rs.WORKFLOWS), "config_plan": ".claude/bootstrap/p.json"},
-                   {"description": "it's \"odd\" $HOME `x` ; & | > <", "create_repo": True}):
+                   {"description": "it's \"odd\" $HOME `x` ; & | > <", "create_repo": True}, {"launch_skill": ".claude/bootstrap/launch-app.SKILL.md"}):
             with self.subTest(kw=kw):
                 p = subprocess.run(["sh", "-n"], input=rs.generate(params(**kw)).encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 self.assertEqual(p.returncode, 0, p.stderr)
@@ -107,6 +107,9 @@ class Validation(unittest.TestCase):
         self.bad(boundary=True, environment="prod uction")
         self.bad(boundary=True, environment="-x")
         self.bad(environment="production")             # belongs to --boundary
+        for src in ("../x.md", ".claude/bootstrap/x.sh", ".claude/skills/x.md", "/etc/passwd", ".claude/bootstrap/a b.md", ".claude/bootstrap/../../x.md", "x.md"):
+            with self.subTest(src):
+                self.bad(launch_skill=src)
         self.bad(visibility="world")
         self.bad(variant="both")
 
@@ -299,6 +302,26 @@ class RunTheScript(BaseTestCase):
         with open(os.path.join(self.root, ".claude", "loop.config.md")) as fh:
             self.assertIn("solo_maintainer: true", fh.read())
         self.assertEqual(self.gh_calls(), [])
+
+    def test_the_launch_skill_is_installed_by_the_human_script_and_not_over_an_existing_one(self):
+        src = os.path.join(self.root, ".claude", "bootstrap")
+        os.makedirs(src, exist_ok=True)
+        with open(os.path.join(src, "launch-app.SKILL.md"), "w") as fh:
+            fh.write("---\nname: launch-app\ndescription: d\n---\nbody\n")
+        script = self.make(launch_skill=".claude/bootstrap/launch-app.SKILL.md")
+        target = os.path.join(self.root, ".claude", "skills", "launch-app", "SKILL.md")
+        p = self.run_script(script, "local")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse(os.path.exists(target))   # a dry run installs nothing
+        p = self.run_script(script, "local", "--apply")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        with open(target) as fh:
+            self.assertIn("name: launch-app", fh.read())
+        with open(target, "w") as fh:
+            fh.write("edited by hand\n")
+        self.assertEqual(self.run_script(script, "local", "--apply").returncode, 0)
+        with open(target) as fh:
+            self.assertEqual(fh.read(), "edited by hand\n")
 
 
 if __name__ == "__main__":

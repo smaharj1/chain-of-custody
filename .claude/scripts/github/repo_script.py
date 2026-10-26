@@ -17,6 +17,8 @@ list, and prints that list instead of running it unless the human adds --apply.
       --workflows a,b               copy these templates into .github/workflows/:
                                     intake, dependency-check, smoke, verify, claude-review, label-guard
       --config-plan PATH            run bootstrap_config.py apply on this plan (an H6 change; the human reads the diff)
+      --launch-skill PATH           install this file (.claude/bootstrap/NAME.md) as the project skill .claude/skills/launch-app/SKILL.md;
+                                    an agent may not write under .claude/skills (a skill's frontmatter can run hooks, RC-18), so you do
 
 The printed script has two phases, because a ruleset must come after the first push and a config or workflow edit before it:
 
@@ -55,6 +57,7 @@ _LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\Z")
 _ENV = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}\Z")
 _OUT = re.compile(r"^\.claude/bootstrap/[A-Za-z0-9][A-Za-z0-9._-]{0,79}\Z")
 _PLAN = re.compile(r"^\.claude/bootstrap/[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.json\Z")
+_SKILL_SRC = re.compile(r"^\.claude/bootstrap/[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.md\Z")
 
 
 class ScriptError(ValueError):
@@ -69,7 +72,7 @@ class Params(object):
     def __init__(self, repo: str, create_repo: bool = False, visibility: str = "private", description: str = "", default_branch: str = "main",
                  variant: str = "solo", release_team_id: Optional[int] = None, environment: str = "", reviewer_ids: Sequence[int] = (),
                  approvers: Sequence[str] = (), labels_: bool = False, boundary: bool = False, workflows: Sequence[str] = (),
-                 config_plan: str = "") -> None:
+                 config_plan: str = "", launch_skill: str = "") -> None:
         try:
             self.repo = labels.check_repo(repo)
         except labels.LabelError as exc:
@@ -97,11 +100,14 @@ class Params(object):
             raise ScriptError("--workflows takes distinct names from: %s" % ", ".join(WORKFLOWS))
         if config_plan and not _PLAN.match(config_plan):
             raise ScriptError("--config-plan must be .claude/bootstrap/<name>.json")
+        if launch_skill and (not _SKILL_SRC.match(launch_skill) or ".." in launch_skill):
+            raise ScriptError("--launch-skill must be .claude/bootstrap/<name>.md")
         if (release_team_id or environment or reviewer_ids) and not boundary:
             raise ScriptError("--release-team-id, --environment and --reviewer-id belong to --boundary")
         self.create_repo, self.visibility, self.description, self.default_branch = create_repo, visibility, description, default_branch
         self.variant, self.release_team_id, self.environment, self.reviewer_ids = variant, release_team_id, environment, list(reviewer_ids)
         self.approvers, self.labels, self.boundary, self.workflows, self.config_plan = logins, labels_, boundary, wf, config_plan
+        self.launch_skill = launch_skill
 
 
 HEADER = r'''#!/bin/sh
@@ -154,7 +160,8 @@ if [ "$APPLY" = yes ]; then echo "setup $PHASE: APPLY"; else echo "setup $PHASE:
 def generate(p: Params) -> str:
     kv = [("repo", p.repo), ("create-repo", "yes" if p.create_repo else "no"), ("visibility", p.visibility), ("default-branch", p.default_branch),
           ("variant", p.variant), ("approvers", ",".join(p.approvers) or "(none)"), ("labels", "yes" if p.labels else "no"),
-          ("boundary", "yes" if p.boundary else "no"), ("workflows", ",".join(p.workflows) or "(none)"), ("config-plan", p.config_plan or "(none)")]
+          ("boundary", "yes" if p.boundary else "no"), ("workflows", ",".join(p.workflows) or "(none)"), ("config-plan", p.config_plan or "(none)"),
+          ("launch-skill", p.launch_skill or "(none)")]
     params = "\n".join("#   %-15s %s" % (k, v) for k, v in kv)
     out = [HEADER % {"params": params}]
     # ---- local phase
@@ -171,6 +178,11 @@ def generate(p: Params) -> str:
                 "  copy_new %s %s" % (q(".claude/templates/github/workflows/%s.yml" % w), q(".github/workflows/%s.yml" % w))]
     if p.workflows:
         out.append('  echo "Pin every uses: in .github/workflows/ to a commit SHA, run python3 .claude/scripts/ci_lint.py, and read each file once."')
+    if p.launch_skill:
+        n += 1
+        out += ['  say "%d. project skill launch-app (read it first: a skill\'s frontmatter can run hooks)"' % n,
+                "  step mkdir -p .claude/skills/launch-app",
+                "  copy_new %s .claude/skills/launch-app/SKILL.md" % q(p.launch_skill)]
     if n == 0:
         out.append('  echo "Nothing to do in the local phase."')
     out.append('  echo "Now commit what changed (an H6 change goes through your normal review), then run the remote phase."')
@@ -248,6 +260,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--boundary", action="store_true")
     ap.add_argument("--workflows", default="")
     ap.add_argument("--config-plan", default="")
+    ap.add_argument("--launch-skill", default="")
     ap.add_argument("--out", default="")
     ap.add_argument("--repo-dir", default=".", help="the checkout to write --out into (default: current directory)")
     ap.add_argument("--json", action="store_true")
@@ -259,7 +272,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         p = Params(args.repo, args.create_repo, args.visibility, args.description, args.default_branch, args.variant, args.release_team_id,
                    args.environment, args.reviewer_id, [a for a in args.approvers.split(",") if a] if args.approvers else [], args.labels,
-                   args.boundary, [w for w in args.workflows.split(",") if w] if args.workflows else [], args.config_plan)
+                   args.boundary, [w for w in args.workflows.split(",") if w] if args.workflows else [], args.config_plan, args.launch_skill)
         text = generate(p)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         path = None  # type: Optional[str]

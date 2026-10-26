@@ -122,8 +122,8 @@ def load_labels(path: str) -> List[Label]:
         raise LabelError("cannot read %s: %s" % (path, problem))
     try:
         data = json.loads(text)
-    except ValueError as exc:
-        raise LabelError("%s is not valid JSON: %s" % (path, exc))
+    except (ValueError, RecursionError) as exc:
+        raise LabelError("%s is not valid JSON%s" % (path, (": " + str(exc)[:80]) if isinstance(exc, ValueError) else " (nested too deeply)"))
     return parse_labels(data, os.path.basename(path))
 
 

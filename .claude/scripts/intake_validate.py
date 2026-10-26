@@ -115,7 +115,7 @@ def extract(raw: str) -> Any:
     """The triage object from a file's text: the object itself, or the `result` of a claude -p JSON document."""
     try:
         doc = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise Invalid("the file is not JSON")
     if isinstance(doc, dict) and "result" in doc:
         res = doc["result"]
@@ -124,7 +124,7 @@ def extract(raw: str) -> Any:
         for cand in _candidates(res):
             try:
                 return json.loads(cand)
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
         raise Invalid("no JSON object in the model's answer")
     return doc

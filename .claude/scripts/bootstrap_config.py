@@ -297,7 +297,7 @@ def load_plan(root: str, path: str, reg: registry.Registry) -> Dict[str, Any]:
         raise ConfigPlanError("cannot read the plan file (%s)" % (problem or "too large"))
     try:
         plan = json.loads(data.decode("utf-8"))
-    except ValueError:
+    except (ValueError, RecursionError):
         raise ConfigPlanError("the plan file is not JSON")
     if not isinstance(plan, dict) or plan.get("schema") != SCHEMA or set(plan) != {"schema", "set"} or not isinstance(plan["set"], dict):
         raise ConfigPlanError("the plan file is not a %s document" % SCHEMA)

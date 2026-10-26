@@ -142,7 +142,7 @@ def _read_json(path: Optional[str]) -> Any:
         return None
     try:
         return json.loads(data.decode("utf-8", "replace"))
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
 
 
@@ -265,27 +265,31 @@ def check_peers(repo: str, f: Findings) -> None:
                 f.peers.append({"name": name, "peer": peer, "range": rng.strip(), "installed": versions[peer]})
 
 
+_DECLARED = re.compile(r"(?<![\w@/.-])(@?[a-z0-9][a-z0-9._-]{0,100}(?:/[a-z0-9._-]{1,100})?)(?:@|\s+v|\s+(?=\d+\.[\dx*]))(\d{1,6})(?:\.(?:\d+|x|\*))*(?![\w-])")
+
+
 def check_drift(repo: str, f: Findings) -> None:
     versions = lock_versions(repo)
     if not versions:
         return
     files = sorted(glob.glob(os.path.join(repo, ".claude", "context", "*.md"))) + [os.path.join(repo, ".claude", "CLAUDE.md")]
+    lowered = {n.lower(): (n, v) for n, v in versions.items()}
     seen = set()  # type: set
     for path in files:
         text, _ = safeio.read_text_status(path, MAX_PRIMER)
         if not text:
             continue
-        text = text.replace("`", "").lower()
-        for name, installed in sorted(versions.items()):
-            have = vtuple(installed)
-            if have is None:
+        # one pass over the text, whatever the number of dependencies; a name counts only if the lockfile has it
+        for m in _DECLARED.finditer(text.replace("`", "").lower()):
+            hit = lowered.get(m.group(1))
+            if hit is None:
                 continue
-            rx = re.compile(r"(?<![\w@/.-])" + re.escape(name.lower()) + r"(?:@|\s+v|\s+(?=\d+\.[\dx*]))(\d+)(?:\.(?:\d+|x|\*))*(?![\w-])")
-            for m in rx.finditer(text):
-                declared = int(m.group(1))
-                if declared != have[0] and (name, declared) not in seen:
-                    seen.add((name, declared))
-                    f.drift.append({"name": name, "declared": str(declared), "installed": installed, "file": os.path.relpath(path, repo)})
+            name, installed = hit
+            have = vtuple(installed)
+            declared = int(m.group(2))
+            if have is not None and declared != have[0] and (name, declared) not in seen:
+                seen.add((name, declared))
+                f.drift.append({"name": name, "declared": str(declared), "installed": installed, "file": os.path.relpath(path, repo)})
 
 
 # ---------------------------------------------------------------------------------------------------- issues

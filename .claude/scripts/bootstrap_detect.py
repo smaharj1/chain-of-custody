@@ -89,7 +89,7 @@ def _read_json(path: str) -> Any:
         return None
     try:
         return json.loads(data.decode("utf-8", "replace"))
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
 
 

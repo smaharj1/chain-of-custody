@@ -300,7 +300,7 @@ def load(root: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         return None, "cannot read the receipt: %s" % problem
     try:
         doc = json.loads(data.decode("utf-8"))
-    except ValueError:
+    except (ValueError, RecursionError):
         return None, "the receipt is not valid JSON"
     problems = validate(doc)
     if problems:
