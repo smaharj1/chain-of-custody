@@ -1,0 +1,143 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-bash",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-edit",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-mcp",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-dispatch",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch|WebSearch|mcp__.*|Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PostToolUse --id post-untrusted; exit 0",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PostToolUse --id post-telemetry; exit 0",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" SubagentStart --id subagent-start; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" SubagentStop --id subagent-stop; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PermissionDenied --id permission-denied; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" ConfigChange --id config-change",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/session_start.py\"; fi; echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"kit guards: python3 was not found, so the guards and the liveness canary did NOT load. Install python3 (3.9 or newer); until then the effective level is L0 (rule guards:no-python3).\"}}'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" SessionStart --id session-start-selftest; fi; echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"kit guards: python3 was not found, so the guards and the liveness canary did NOT load. Install python3 (3.9 or newer); until then the effective level is L0 (rule guards:no-python3).\"}}'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

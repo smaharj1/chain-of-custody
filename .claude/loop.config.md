@@ -161,6 +161,17 @@ factory_approvers: []            # logins of the humans whose labels count (`fac
 promotion_attested: ""           # date (YYYY-MM-DD) the human confirmed the §6.3 promotion bar is met. Needed for L5.
 mcp_allowed_servers: []          # names of MCP servers or plugins the human accepts in a loop run (report section 5.6), for
                                  #   example a read-only docs server. Any other deploy-capable server caps the level at L1.
+
+# --- Guards (report section 7). Read by .claude/scripts/guards/ ---
+roster: {}                       # extra subagent roles the guards should know, as role: engineer | critic (CS-39).
+                                 #   The built-in roster (the kit's own agent names) needs no entry. A role that is not on the roster is treated
+                                 #   as an engineer (agent-blind default); a `<plugin>:` prefix on agent_type is stripped before matching.
+protected_branches: [main, master]   # branches that are shared: no edits to app source while checked out, no push, no force-delete, no hard-reset onto them.
+                                 #   main and master are always protected, whatever this says.
+integration_branch: ""           # the loop's integration branch, if you use one (DEC-2). Protected like main. Empty = none.
+main_edit_allow: []              # extra path globs that may be edited while on a protected branch (repo-relative, `**` crosses directories).
+                                 #   Built in: docs/**, plan files, README/CHANGELOG/GLOSSARY/LICENSE/.gitignore, CLAUDE.md and .claude/context/**.
+                                 #   There is no allow-list for the rest of .claude/** (report section 7.1).
 ```
 
 ## Notes

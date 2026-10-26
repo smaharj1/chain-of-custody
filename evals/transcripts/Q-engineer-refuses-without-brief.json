@@ -1,0 +1,73 @@
+{
+  "case": "Q-engineer-refuses-without-brief",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "No brief path was given, so I cannot start. Questions: which brief? Which contract?\n{\"status\": \"NEEDS_CLARIFICATION\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "docs/features/x/reports/backend.md",
+            "content": "x"
+          }
+        }
+      ],
+      "files": [
+        "docs/features/x/reports/backend.md"
+      ]
+    },
+    {
+      "final": "No brief path was given, so I cannot start. Questions: which brief? Which contract?\n{\"status\": \"NEEDS_CLARIFICATION\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "docs/features/x/reports/backend.md",
+            "content": "x"
+          }
+        }
+      ],
+      "files": [
+        "docs/features/x/reports/backend.md"
+      ]
+    },
+    {
+      "final": "No brief path was given, so I cannot start. Questions: which brief? Which contract?\n{\"status\": \"NEEDS_CLARIFICATION\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "docs/features/x/reports/backend.md",
+            "content": "x"
+          }
+        }
+      ],
+      "files": [
+        "docs/features/x/reports/backend.md"
+      ]
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "Added the endpoint.\n{\"status\": \"APPROVED\", \"report_path\": \"r.md\", \"iteration\": 1}",
+      "tool_calls": [
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/export.py",
+            "content": "x"
+          }
+        }
+      ],
+      "files": [
+        "src/export.py"
+      ]
+    },
+    {
+      "final": "done\n{\"status\": \"blocked\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    }
+  ]
+}
