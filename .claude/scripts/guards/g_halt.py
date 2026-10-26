@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-from . import g_file, g_git
+from . import g_exec, g_file, g_git
 from .invoke import Inv
 from .lib import BASH_TOOLS, EDIT_TOOLS, Ctx, Decision, deny
 
@@ -21,7 +21,7 @@ SAFE_CMDS = {
     "rev", "fold", "expand", "paste", "join", "comm", "seq", ":", "export", "set", "unset", "local", "declare", "type", "command", "wait", "read",
     "awk", "gawk", "sed", "gsed", "yq", "find", "env", "xargs", "tee", ":assign", ":redirect", "du", "df", "ps", "lsof", "top", "uptime", "free", "vm_stat",
 }
-LOOPCTL_READ = {"validate", "status", "render", "doctor", "help", "--help", "version", "resume"}
+# `resume` is not here: HALT is released by a human, not by a session that is halted (CS-13). The read commands are g_exec's.
 
 
 def _halted(ctx: Ctx) -> Optional[dict]:
@@ -81,9 +81,9 @@ def _read_only(ctx: Ctx, inv: Inv) -> bool:
         return g_git._check_git(ctx, inv, 0) is None and _git_sub_ok(inv)
     if n == "gh":
         return g_git._check_gh(ctx, inv) is None
-    if n in ("loopctl", "loopctl.py"):
-        pos = [a for a in inv.args if not a.startswith("-")]
-        return not pos or pos[0].lower() in LOOPCTL_READ
+    lc = g_exec.loopctl_is_read(inv)
+    if lc is not None:
+        return lc
     if re.match(r"^(python[0-9.]*)$", n):
         return any(re.search(r"(doctor|session_start|ci_lint)\.py$", a) for a in inv.args[:2]) or "json.tool" in inv.args[:2]
     if n in ("sed", "gsed") and any(a.startswith("-i") or a == "--in-place" for a in inv.args):

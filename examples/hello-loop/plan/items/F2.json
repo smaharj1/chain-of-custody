@@ -1,0 +1,63 @@
+{
+  "acceptance": [
+    {
+      "id": "AC-F2-1",
+      "text": "`POST /api/bookmarks` with JSON `{\"url\": \"https://example.com/\", \"title\": \"Example\"}` returns 201 and a JSON object with `id`, `url`, `title` and `created_at` (UTC, `YYYY-MM-DDTHH:MM:SSZ`)"
+    },
+    {
+      "id": "AC-F2-2",
+      "text": "`GET /api/bookmarks` returns 200 and `{\"bookmarks\": [...]}` ordered newest first (highest id first)"
+    },
+    {
+      "id": "AC-F2-3",
+      "text": "`POST /api/bookmarks` returns 400 and `{\"error\": \"<message>\"}`, and stores nothing, when the body is not a JSON object, `url` is missing or does not start with `http://` or `https://`, or `title` is missing or blank after trimming"
+    },
+    {
+      "id": "AC-F2-4",
+      "text": "`POST /api/bookmarks` with a url that is already stored returns 409 and `{\"error\": \"<message>\"}`, and adds no row"
+    },
+    {
+      "id": "AC-F2-5",
+      "text": "`GET /api/bookmarks/<id>` returns 200 and the object for an existing id, and 404 with `{\"error\": \"<message>\"}` for an unknown or non-numeric id"
+    },
+    {
+      "id": "AC-F2-6",
+      "text": "`tests/test_bookmarks_api.py` exists, covers AC-F2-1 to AC-F2-5 against the running server, and passes under `verify_tests`; demo target `GET /api/bookmarks` returns 200 under `verify_run`"
+    }
+  ],
+  "dependsOn": [
+    "F1"
+  ],
+  "estimate": {
+    "engineers": [
+      "backend-engineer"
+    ],
+    "loc": 220
+  },
+  "id": "F2",
+  "intent": "Expose bookmarks over HTTP: create one, list all (newest first), fetch one by id. Input is validated; a duplicate url is a conflict. Responses are JSON.",
+  "milestone": "M1 Data and API",
+  "requiresEnv": [],
+  "riskClass": "medium",
+  "schema": "loopctl.item.v1",
+  "size": "M",
+  "slug": "bookmarks-api",
+  "title": "Bookmarks JSON API",
+  "touches": {
+    "deps_change": false,
+    "domains": [
+      "backend"
+    ],
+    "paths": [
+      "hello_loop/handlers/**",
+      "hello_loop/repos/**",
+      "hello_loop/router.py",
+      "tests/test_bookmarks_api.py"
+    ],
+    "schema": false
+  },
+  "verify": {
+    "demoRoute": "/api/bookmarks",
+    "tests": "python3 -m unittest tests.test_bookmarks_api"
+  }
+}

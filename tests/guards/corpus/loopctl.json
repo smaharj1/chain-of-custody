@@ -1,0 +1,818 @@
+[
+{
+"id": "loopctl-001",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl audit render F1",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-002",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl report check docs/features/x/reports/backend.md",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-003",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl run --dry-run",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-004",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl abort --dry-run --rollback-to 0123456789abcdef0123456789abcdef01234567",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-005",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --dry-run",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-006",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --check",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-007",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl status --pending-human",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-008",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl status --matrix F1",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-009",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl evidence --check",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-010",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl cost --projection",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-011",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl lock status",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-012",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl reconcile --dry-run --prs prs.json",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-013",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl validate --committed",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-014",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl render --format mermaid",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-015",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl run --session s1 --nonce abc",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-016",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl abort --rollback-to 0123456789abcdef0123456789abcdef01234567 --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-017",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl abort --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-018",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --check --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-019",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --dry-run --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-020",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl reconcile --dry-run --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-021",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl reconcile --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-022",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl evidence",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-023",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl cost",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-024",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl halt --reason x",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-025",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl resume",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-026",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl approve plan --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-027",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl approve item F1 --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-028",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl begin F1 --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-029",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl advance F1 merged --merge-commit 0123456789abcdef0123456789abcdef01234567",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-030",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl fail F1 --class item --reason tests_failed",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-031",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl clarify F1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-032",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl park F1 --code x",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-033",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl gate g6 F1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-034",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl spend record --item F1 --result r.json",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-035",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl lock acquire --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-036",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl lock release --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-037",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl lock steal",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-038",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl ABORT --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-039",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl Run --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-040",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl run --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-041",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 -m loopctl advance F1 building",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-042",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl audit render F1",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-043",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl report check docs/features/x/reports/backend.md",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-044",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl run --dry-run",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-045",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl abort --dry-run --rollback-to 0123456789abcdef0123456789abcdef01234567",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-046",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --dry-run",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-047",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --check",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-048",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl status --pending-human",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-049",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl status --matrix F1",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-050",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl evidence --check",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-051",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl cost --projection",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-052",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl lock status",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-053",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl reconcile --dry-run --prs prs.json",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-054",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl validate --committed",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-055",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl render --format mermaid",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-056",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl run --session s1 --nonce abc",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-057",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl abort --rollback-to 0123456789abcdef0123456789abcdef01234567 --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-058",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl abort --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-059",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --check --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-060",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl migrate-plan --dry-run --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-061",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl reconcile --dry-run --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-062",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl reconcile --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-063",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl evidence",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-064",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl cost",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-065",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl halt --reason x",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-066",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl resume",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-067",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl approve plan --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-068",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl approve item F1 --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-069",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl begin F1 --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-070",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl advance F1 merged --merge-commit 0123456789abcdef0123456789abcdef01234567",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-071",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl fail F1 --class item --reason tests_failed",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-072",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl clarify F1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-073",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl park F1 --code x",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-074",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl gate g6 F1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-075",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl spend record --item F1 --result r.json",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-076",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl lock acquire --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-077",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl lock release --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-078",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl lock steal",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-079",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl ABORT --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-080",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl Run --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-081",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl run --session s1",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-082",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 -m loopctl advance F1 building",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-083",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl --repo /x abort --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "the first word is /x, not a read command"
+},
+{
+"id": "loopctl-084",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl --dry-run abort --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "--dry-run before the command is not a read flag for abort"
+},
+{
+"id": "loopctl-085",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl run --session s1 --nonce abc",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-086",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl abort --by me",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-087",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl approve item F1 --by me",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-088",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl halt --reason stop",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-089",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl gate g6 F1",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-090",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl lock acquire --session s1",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-091",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl resume",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-092",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl status",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-093",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl status --pending-human",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-094",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl validate",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-095",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl audit render F1",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-096",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl resume",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "HALT is released by a human, not by a halted session",
+"halt": true
+},
+{
+"id": "loopctl-097",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl resume",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "HALT is released by a human, not by a halted session",
+"halt": true
+},
+{
+"id": "loopctl-098",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl advance F1 building",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "HALT is released by a human, not by a halted session",
+"halt": true
+},
+{
+"id": "loopctl-099",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl begin F1 --session s1",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "HALT is released by a human, not by a halted session",
+"halt": true
+},
+{
+"id": "loopctl-100",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl run --dry-run --apply",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "HALT is released by a human, not by a halted session",
+"halt": true
+}
+]

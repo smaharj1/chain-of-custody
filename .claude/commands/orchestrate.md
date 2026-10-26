@@ -27,6 +27,35 @@ A **Workflow** is an optional alternative host for fan-out (reviews, critic voti
 
 ---
 
+## loopctl hand-off (OPT-IN, experimental)
+
+Everything below this block is the V1 prose loop, and it stays the default. If `.claude/loop.config.md` (as committed at the base sha) says `loopctl_tier2: true` **and** the project has `plan/plan.json`, the deterministic decisions move out of this prose into `python3 .claude/scripts/loopctl`. Otherwise ignore this block. Spec: `.claude/spec/loopctl.md`.
+
+1. `python3 .claude/scripts/loopctl run --dry-run` prints the plan, order, critical path, gates, runner, budget and every preflight check. Fix what it names.
+2. A human registers this session once by running, from a plain terminal or with `!`: `python3 .claude/scripts/loopctl run --session <session id> --nonce <nonce>`. Both values are in the `kit session_start: canary session=... nonce=...` line this session started with. **No canary line, no run**: the hooks may not be firing, and then no guard can be trusted. `run` takes the run lock, registers this session as the conductor and prints your hand-off.
+3. With `runner: sequential` (the default) you keep running the loop; with `runner: driver` the driver does and you only answer `status --pending-human`.
+
+Where this file says to change item state, counters or caps, do it with loopctl and re-read `python3 .claude/scripts/loopctl status --json` at every stage instead of trusting your memory of it:
+
+| Prose below | loopctl |
+|---|---|
+| Run lock (preamble 1), stale-lock reclaim | `lock acquire\|release\|steal`; `run` takes it |
+| Mark `in_progress`, write `branch` (loop step 3) | `begin <item> --session <id> [--create-branch]` |
+| Move to the next stage | `advance <item> designing\|design_review\|stubbing\|building\|verifying\|reviewing\|pr_open\|awaiting_human\|merged --session <id>` (`merged` needs `--merge-commit <sha>`) |
+| Verify fail, review blockers, `PARTIAL`, design critic blockers, malformed report, CI-fix | `fail <item> --class platform\|transient\|env\|item --reason <code> [--ac AC-..] --session <id>`: loopctl counts it against the right cap and answers `retry`, `discard`, `park` or `hard_stop` |
+| `NEEDS_CLARIFICATION` | `clarify <item> --session <id>` (two rounds, then a human) |
+| `ESCALATION_NEEDED`, `security_blocked`, `contract_blocked` | `park <item> --code <CODE> --session <id>` |
+| Gates and verify | `gate <name> <item> --session <id>`: the toggle in the base sha's loop.config decides whether it blocks |
+| The human's answer at a checkpoint, the unblock review, plan approval | `approve item\|checkpoint\|unblock\|plan ... --by <the human's name>`: only after the human said so in this chat |
+| Reconciliation (preamble 4, 5) and the orphan sweep | `reconcile --dry-run`, then `reconcile --apply` |
+| Budget, circuit breaker | the spend ledger and `max_consecutive_failures`, enforced by loopctl; `status` shows both |
+| `BUILD_PLAN.md` | `render > BUILD_PLAN.md` |
+| Whole-run abort and rollback | `abort --dry-run`, then `abort --rollback-to <sha> --by <the human>` |
+
+A step back is always `fail`, never `advance`. You never edit `plan/`, the state ref, `HALT` or the lock by hand, and you never run `resume` (a human does). If loopctl refuses, read its message and stop; do not look for another way around it. Design, briefs, engineer dispatch, integration conflicts and the summaries for the human stay yours.
+
+---
+
 ## Run Preamble (once, before the loop)
 
 **Order matters (L-9).** Everything that decides *what state the plan is in* comes first: the repo, the lock, the plan, the reconciliation with git, the resume reset. Every gate that can stop or downgrade the run comes after, so a hard-stop never leaves a half-reconciled plan, and nothing is written before the lock is held.

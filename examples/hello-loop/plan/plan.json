@@ -1,0 +1,10 @@
+{
+  "created": "2026-10-26",
+  "goal": "Build hello-loop, a tiny bookmarks service on the Python standard library: a SQLite table for bookmarks, a JSON API to add and list them, and a server-rendered page that shows them and lets a visitor add one. Local only; no deployment, no authentication.",
+  "milestones": [
+    "M1 Data and API",
+    "M2 Interface"
+  ],
+  "name": "hello-loop",
+  "schema": "loopctl.plan.v1"
+}

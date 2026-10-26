@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "phase": "4a-loopctl-core",
+  "sections": [
+    {
+      "id": "loopctl",
+      "title": "loopctl (report section 10; python3 .claude/scripts/loopctl <command>)",
+      "comment": [
+        "loopctl owns the deterministic decisions of the loop: state, counters, caps, the lock, spend, abort.",
+        "Read from the BASE sha by loopctl, never from the branch it is judging (CO-11)."
+      ],
+      "example_title": "loopctl"
+    }
+  ],
+  "keys": [
+    {
+      "name": "runner",
+      "type": "enum",
+      "choices": [
+        "sequential",
+        "driver"
+      ],
+      "default": "sequential",
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "sequential | driver   (report section 11.2, DEC-23). Where an item runs. Never auto-selected.",
+        "  sequential = the prose loop: the Orchestrator conductor dispatches engineers itself; `loopctl run` prints the",
+        "               hand-off and exits (default)",
+        "  driver     = `loopctl run` launches one `claude -p` child per item or stage (OPT-IN, needs loopctl_tier2: true,",
+        "               run_budget_usd > 0 and the driver module)"
+      ],
+      "example": {
+        "value": "sequential",
+        "doc": [
+          "the Orchestrator runs the loop in my session"
+        ]
+      }
+    },
+    {
+      "name": "loopctl_tier2",
+      "type": "bool",
+      "default": false,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "OPT-IN (experimental, IMP-1). Tier 2 = the loopctl commands that write loop state: begin, advance, fail, approve,",
+        "  gate, run, abort, reconcile --apply. They refuse while this is false. Tier 1 (validate, status, render, doctor,",
+        "  migrate-plan, lock, evidence, cost, audit, halt, resume) works either way. It is not evidence-gated: three clean",
+        "  runs with loopctl are what the evidence gate asks for."
+      ],
+      "example": {
+        "value": false,
+        "doc": [
+          "leave off until you want loopctl to own the item state"
+        ]
+      }
+    },
+    {
+      "name": "run_budget_usd",
+      "type": "number",
+      "default": 0,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "USD ceiling for one run, summed from each child session's total_cost_usd (report section 10.5). 0 = not set.",
+        "  Set it explicitly before `runner: driver` (no projection exists before a baseline). Reaching it parks the run."
+      ],
+      "example": {
+        "value": 0,
+        "doc": [
+          "0 = not set; the driver refuses to start until you set a ceiling"
+        ]
+      }
+    },
+    {
+      "name": "item_budget_usd",
+      "type": "number",
+      "default": 0,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "USD ceiling for one item across its attempts. 0 = not set. Reaching it sets the item needs_human."
+      ]
+    },
+    {
+      "name": "day_budget_usd",
+      "type": "number",
+      "default": 0,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "USD ceiling per UTC day over every run in this repository. 0 = not set."
+      ]
+    },
+    {
+      "name": "lock_stale_min",
+      "type": "int",
+      "default": 60,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Minutes without a heartbeat before the run lock may be stolen (report section 19.7). The owner must also be",
+        "  gone: the driver pid dead, or the session not registered. A lock from another host is never stolen unless",
+        "  you say `lock steal --host-dead`."
+      ]
+    },
+    {
+      "name": "max_transient_retries",
+      "type": "int",
+      "default": 2,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Retries of a `transient` failure (flaky test, port in use) per item attempt. Each one also uses retry budget."
+      ]
+    },
+    {
+      "name": "max_platform_retries",
+      "type": "int",
+      "default": 6,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Retries of a `platform` failure (API 5xx, overloaded, rate limit, CLI crash) per item, with backoff and jitter.",
+        "  They do not use retry budget; past this number the item is parked as needs_human (an outage, not a bug)."
+      ]
+    },
+    {
+      "name": "platform_backoff_base_s",
+      "type": "int",
+      "default": 30,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": false,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Seconds before the first platform retry; it doubles each time, with jitter, up to 15 minutes."
+      ]
+    },
+    {
+      "name": "dispatch_timeout_min",
+      "type": "int",
+      "default": 20,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Minutes without a tool call before a dispatched session counts as stalled (a `transient` failure). Read by the",
+        "  driver; loopctl classifies the stall."
+      ]
+    },
+    {
+      "name": "orphan_retention_days",
+      "type": "int",
+      "default": 7,
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": false,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Days a `dead/*` branch is kept before `reconcile --apply` prunes it. `blocked/*` is never auto-deleted."
+      ]
+    },
+    {
+      "name": "state_remote",
+      "type": "string",
+      "default": "",
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Name of the git remote that also holds refs/loopctl/state/<plan>. Empty = local only (L1). At L2 and above set it:",
+        "  state is then written with a compare-and-swap push, so it survives a fresh clone. Advisory, not a boundary:",
+        "  anyone with contents: write can move the ref. Empty or a remote name; never a URL."
+      ]
+    },
+    {
+      "name": "db_migrate_down",
+      "type": "command",
+      "default": "",
+      "owner_phase": "4a-loopctl-core",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "loopctl",
+      "doc": [
+        "Command that runs ONE down-migration against the local or ephemeral database (report section 19.7 L-25). It gets",
+        "  LOOPCTL_ITEM, LOOPCTL_MIGRATION and LOOPCTL_MIGRATION_DOWN in its environment, never on its command line.",
+        "  Empty = `loopctl abort` writes the down-migrations into the human revert plan instead of running them."
+      ]
+    }
+  ]
+}

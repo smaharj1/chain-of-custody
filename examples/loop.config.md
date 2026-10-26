@@ -69,6 +69,13 @@ delivery: draft-pr               # branch, verify, then pr_prepare prints the pu
 git_autonomy: branch+commit      # the conductor branches and makes the WIP commits; I push
 max_ci_fix_attempts: 2           # CI-fix attempts per PR
 always_human_paths: [src/auth/**, src/payments/**]   # project paths a human always reviews (the kit's own list always applies)
+
+# --- loopctl ---
+# loopctl owns the deterministic decisions of the loop: state, counters, caps, the lock, spend, abort.
+# Read from the BASE sha by loopctl, never from the branch it is judging (CO-11).
+runner: sequential               # the Orchestrator runs the loop in my session
+loopctl_tier2: false             # leave off until you want loopctl to own the item state
+run_budget_usd: 0                # 0 = not set; the driver refuses to start until you set a ceiling
 ```
 
 ## Notes

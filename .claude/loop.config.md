@@ -213,6 +213,39 @@ always_human_paths: []           # Extra path globs a human must review on top o
                                  # every changed path that matches and refuses a PR body that says "none" when the diff touches one.
                                  #   - src/auth/**
                                  #   - src/payments/**
+
+# --- loopctl (report section 10; python3 .claude/scripts/loopctl <command>) ---
+# loopctl owns the deterministic decisions of the loop: state, counters, caps, the lock, spend, abort.
+# Read from the BASE sha by loopctl, never from the branch it is judging (CO-11).
+runner: sequential               # sequential | driver   (report section 11.2, DEC-23). Where an item runs. Never auto-selected.
+                                 #   sequential = the prose loop: the Orchestrator conductor dispatches engineers itself; `loopctl run` prints the
+                                 #                hand-off and exits (default)
+                                 #   driver     = `loopctl run` launches one `claude -p` child per item or stage (OPT-IN, needs loopctl_tier2: true,
+                                 #                run_budget_usd > 0 and the driver module)
+loopctl_tier2: false             # OPT-IN (experimental, IMP-1). Tier 2 = the loopctl commands that write loop state: begin, advance, fail, approve,
+                                 #   gate, run, abort, reconcile --apply. They refuse while this is false. Tier 1 (validate, status, render, doctor,
+                                 #   migrate-plan, lock, evidence, cost, audit, halt, resume) works either way. It is not evidence-gated: three clean
+                                 #   runs with loopctl are what the evidence gate asks for.
+run_budget_usd: 0                # USD ceiling for one run, summed from each child session's total_cost_usd (report section 10.5). 0 = not set.
+                                 #   Set it explicitly before `runner: driver` (no projection exists before a baseline). Reaching it parks the run.
+item_budget_usd: 0               # USD ceiling for one item across its attempts. 0 = not set. Reaching it sets the item needs_human.
+day_budget_usd: 0                # USD ceiling per UTC day over every run in this repository. 0 = not set.
+lock_stale_min: 60               # Minutes without a heartbeat before the run lock may be stolen (report section 19.7). The owner must also be
+                                 #   gone: the driver pid dead, or the session not registered. A lock from another host is never stolen unless
+                                 #   you say `lock steal --host-dead`.
+max_transient_retries: 2         # Retries of a `transient` failure (flaky test, port in use) per item attempt. Each one also uses retry budget.
+max_platform_retries: 6          # Retries of a `platform` failure (API 5xx, overloaded, rate limit, CLI crash) per item, with backoff and jitter.
+                                 #   They do not use retry budget; past this number the item is parked as needs_human (an outage, not a bug).
+platform_backoff_base_s: 30      # Seconds before the first platform retry; it doubles each time, with jitter, up to 15 minutes.
+dispatch_timeout_min: 20         # Minutes without a tool call before a dispatched session counts as stalled (a `transient` failure). Read by the
+                                 #   driver; loopctl classifies the stall.
+orphan_retention_days: 7         # Days a `dead/*` branch is kept before `reconcile --apply` prunes it. `blocked/*` is never auto-deleted.
+state_remote: ""                 # Name of the git remote that also holds refs/loopctl/state/<plan>. Empty = local only (L1). At L2 and above set it:
+                                 #   state is then written with a compare-and-swap push, so it survives a fresh clone. Advisory, not a boundary:
+                                 #   anyone with contents: write can move the ref. Empty or a remote name; never a URL.
+db_migrate_down: ""              # Command that runs ONE down-migration against the local or ephemeral database (report section 19.7 L-25). It gets
+                                 #   LOOPCTL_ITEM, LOOPCTL_MIGRATION and LOOPCTL_MIGRATION_DOWN in its environment, never on its command line.
+                                 #   Empty = `loopctl abort` writes the down-migrations into the human revert plan instead of running them.
 ```
 
 ## Notes
