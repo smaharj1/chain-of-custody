@@ -29,8 +29,8 @@ __all__ = ["RegistryError", "Key", "Section", "Registry", "load_registry", "load
 SCHEMA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema")
 TYPES = ("string", "command", "int", "number", "bool", "enum", "list", "map")
 PLACEHOLDER = "<command>"
-_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.(?:[a-z][a-z0-9_]*|\*))*$")
-_SECTION_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.(?:[a-z][a-z0-9_]*|\*))*\Z")
+_SECTION_ID_RE = re.compile(r"^[a-z][a-z0-9_]*\Z")
 _KEY_FIELDS = {"name", "type", "default", "owner_phase", "h6_protected", "evidence_gated", "doc",
                "deprecated_by", "choices", "section", "example", "after_doc"}
 _REQUIRED = ("name", "type", "default", "owner_phase", "h6_protected", "evidence_gated", "doc", "deprecated_by")

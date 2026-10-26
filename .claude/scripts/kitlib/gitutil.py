@@ -31,8 +31,8 @@ __all__ = ["GitError", "CasResult", "run_git", "git_env", "nearest_existing_dir"
 
 ZERO_OID_SHA1 = "0" * 40
 
-_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-_REF_RE = re.compile(r"^refs/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_REF_RE = re.compile(r"^refs/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\Z")
 
 # Environment variables that redirect git away from the directory we pass with -C.
 _STRIP_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",

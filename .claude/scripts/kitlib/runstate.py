@@ -44,7 +44,7 @@ from . import gitutil, jsonio, redact
 
 __all__ = ["RunState", "valid_id", "pid_alive", "lock_is_stale", "now_iso", "parse_iso", "LOCK_FIELDS"]
 
-_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}\Z")
 LOCK_FIELDS = ("runId", "sessionId", "host", "worktree", "driverPid", "startedAt", "heartbeat", "planRev")
 
 

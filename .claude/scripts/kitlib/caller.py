@@ -123,6 +123,8 @@ def classify(hook_input: Any, registry: Mapping[str, Mapping[str, Any]],
     rec = registry.get(sid) if isinstance(registry, Mapping) else None
     if rec is None:
         return Caller(UNKNOWN, role, None, sid, "session is not registered: least privilege")
+    if not isinstance(rec, Mapping):
+        return Caller(UNKNOWN, role, None, sid, "registry record is malformed: least privilege")
     reg_role = normalize_agent_type(rec.get("role"))
     if reg_role == CONDUCTOR:
         return Caller(CONDUCTOR, CONDUCTOR, None, sid, "registered conductor session")
