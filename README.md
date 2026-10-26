@@ -1,127 +1,83 @@
 # Chain of Custody
 
-A role-based engineering team for [Claude Code](https://docs.anthropic.com/en/docs/claude-code), where the only thing that crosses between agents is a written spec.
+**Make Claude Code work like a small software team: it plans your app, designs each feature, writes the code, reviews its own work, and shows you each piece running on your machine.**
 
-It's a plug-and-play multi-agent setup that splits one Claude session into a full engineering team: Product Manager, Architect, Tech Lead, and specialist engineers, coordinated through slash commands.
+You bring an idea, or a feature you want added to an existing project. Chain of Custody turns Claude into a team with a clear division of labor. A product manager asks what you actually need. An architect designs how to build it. A tech lead splits the design into tasks. Specialist engineers write the code. Separate reviewers check the design before any code is written and check the code before it's accepted.
 
-Every agent starts in a clean context and gets exactly one written artifact to work from. Requirements first, then a technical design, then an API contract, then a brief. Each role takes possession of the work, signs off, and hands it on. Hence the name: the specs are the paper trail, the handoffs are logged, and you can go back later and see what any role was working from.
+There's nothing to install and nothing to configure. It's a folder of instructions (`.claude/`) that you copy into your project. Claude Code picks it up automatically, and adapters for Codex and Cursor are included.
 
-## What This Is
+## What it looks like
 
-A `.claude/` directory you copy into any project. Inside:
+Building a new app from an idea takes two commands:
 
-- Three operational modes (`/pm`, `/architect`, `/tech-lead`) that switch Claude's persona and workflow
-- A build loop (`/planner` + `/orchestrate`) that turns an idea into a dependency-ordered plan and works through it item by item, locally, with human checkpoints
-- Specialist engineer subagents (database, backend, app, admin-app, infra) that write code to spec, plus read-only reviewers (design-critic, code-reviewer, security-reviewer) that audit without touching anything
-- A development workflow that runs requirements gathering, technical design, design critique, engineer dispatch, code review, and telemetry
-- Two quality gates: design-critic before code is written, code review after
+```text
+you     /planner
+        I want a simple app where my book club can suggest books and vote on next month's pick.
 
-It's aimed at solo developers and small teams who want Claude to behave like a disciplined engineering org rather than a freeform assistant.
+claude  Asks a handful of plain-language questions (Who can sign in? Can anyone add a book?).
+        Recommends a tech stack and explains why in plain terms.
+        Writes a build plan:
+          1. A minimal app that runs, with one passing test
+          2. Sign-in for club members
+          3. Suggest a book
+          4. Vote on suggestions
+          5. Show this month's winner
+        Waits for your approval.
 
-**Before you start:**
+you     Looks good.
+        /orchestrate
 
-- New to coding, or unsure what half of these words mean? Read [docs/getting-started.md](docs/getting-started.md) for a plain-language walkthrough and keep [GLOSSARY.md](GLOSSARY.md) open in another tab. This README is the reference; getting-started is the on-ramp.
-- Starting a brand-new project in an empty folder? Read [Starting from scratch](#starting-from-scratch) first. Greenfield goes straight to `/planner`.
-- There's no setup questionnaire. You copy the directory in and start working. The agents write their own project context ([how](#how-the-agents-learn-your-project)), and the only questions you'll get are plain-language ones about your product.
-- Operational questions (testing, CI, deploying, teams, non-web projects) live in [docs/faq.md](docs/faq.md).
-
-## Loop Engineering: Building a Whole Idea
-
-If you're building a project from an idea, start here. The loop engineering layer handles a whole idea rather than one feature at a time. The Planner (`/planner`) interviews you and produces a durable, dependency-ordered build plan. The Orchestrator (`/orchestrate`) then works through that plan, designing, building, reviewing, and verifying each item until the plan is done. You choose how often it stops for you, and at every checkpoint it starts your app on your machine and shows you the feature running. Nothing gets deployed.
-
-<p align="center">
-  <img src="docs/assets/loop-engineering-architecture.svg" alt="Loop engineering architecture: a Plan layer, an Orchestrate loop with auto-demo checkpoints, and an Execute layer reusing the existing engineering team" width="820">
-</p>
-
-Run `/planner` to build the plan, then `/orchestrate` to execute it. Autonomy, budgets, and your local verify/run commands are configured in [`.claude/loop.config.md`](.claude/loop.config.md).
-
-> **Status: V1 (locked design, sequential).** The design note and the adversarial-review rounds behind it are in [.claude/spec/loop-engineering.md](.claude/spec/loop-engineering.md). V1 runs items one at a time with local auto-demo checkpoints. Parallel execution and a dedicated project-scaffold mode are deferred; see §14 of the design. The PM / Architect / Tech-Lead workflow still works standalone for one-off features.
-
-## The Handoff Chain
-
-Band 3 of the diagram above, EXECUTE, is this chain. Both lanes run the same four roles in the same order; what differs is how much of it you're in. Here it is with you driving by hand:
-
-<p align="center">
-  <img src="docs/assets/team-workflow.svg" alt="The handoff chain in the interactive lane: you describe a feature, /pm asks questions and writes requirements.md, /architect brainstorms tradeoffs with you and writes technical-design.md and api-contract.md with design-critic auditing before any code, /tech-lead writes per-engineer briefs and reviews every diff, and engineer subagents implement to spec and report back. A quick lane skips small fixes straight to /tech-lead. Under /orchestrate the same roles run autonomously." width="820">
-</p>
-
-Every arrow is a file. Each agent starts in a clean context and reads only the artifact it was handed, which is the chain of custody the kit is named for.
-
-Under `/orchestrate` the same chain runs with you out of it, and three things change:
-
-- PM and Architect run on their own, deriving requirements from the plan item's `intent` and `acceptance` instead of interviewing you.
-- No `requirements.md` gets written. Requirements pass inline to the design-critic and the engineers, and only the briefs hit disk.
-- Review goes to the independent `code-reviewer` agent rather than the Tech Lead's review skill. The Orchestrator wrote the design, the briefs, and the dispatch, so reviewing all that in its own session wouldn't count for much.
-
-Your contact points move up a level: approving the plan, then the auto-demo checkpoint after each item.
-
-Driving the chain by hand is still the right call for one-off work. Use `/pm` for a single feature on an existing project, or go straight to `/tech-lead` for a bug fix, which has a quick lane that dispatches one engineer without the full ceremony.
-
-<details>
-<summary>Text version of the diagram</summary>
-
-```
-User describes feature
-  |
-  v
-/pm  -->  Gathers requirements via Q&A
-  |       Writes docs/features/<slug>/requirements.md
-  v
-/architect  -->  Brainstorms tradeoffs with user
-  |              Writes technical-design.md + api-contract.md
-  |              Runs design-critic (catches issues before code)
-  v
-/tech-lead  -->  Writes per-engineer briefs
-  |              Dispatches engineers in dependency order
-  |              Runs code review on each engineer's output
-  |              Handles escalations and re-dispatch
-  v
-Engineers (subagents)  -->  Read domain primer + brief + design + contract
-                           Implement matching canonical exemplars
-                           Self-verify (lint, test)
-                           Return structured report (+ primer delta)
+claude  Builds the plan one item at a time: designs it, writes it, tests it, reviews it.
+        At each checkpoint it starts the app on your machine and shows you the feature working.
+        Waits for you to approve, reject with feedback, or stop.
 ```
 
-</details>
+Everything happens locally. Nothing is deployed and nothing is pushed to GitHub until you decide to do it.
 
-## Quick Start
+For smaller jobs there are shortcuts: describe one feature and it runs the same team on just that feature, or type `/tech-lead` for a bug fix and it sends one engineer to fix it.
 
-### Use with Codex, Cursor, or Claude Code
+## Why not just ask Claude?
 
-The workflow is portable across coding agents. `.claude/` remains the
-canonical source for the role definitions and handoff protocols; the repo
-also includes:
+Asking Claude directly works well for small edits. On anything bigger, a single long chat tends to go wrong in predictable ways:
 
-- `AGENTS.md` for Codex-style repository instructions.
-- `.cursor/rules/chain-of-custody.mdc` for Cursor's always-on project rule.
-- `skills/chain-of-custody/SKILL.md` for Codex's reusable global skill format.
+- **It forgets.** Decisions from early in the conversation get lost as the context fills up.
+- **It skips the thinking.** It jumps to writing code before working out the design, and the gaps show up later as bugs.
+- **It grades its own homework.** The same session that wrote the code reviews the code.
+- **It leaves no record.** A month later, nobody can say why something was built the way it was.
 
-Both adapters route agents back to the same commands, primers, templates, and
-review gates, so the workflow does not fork by editor. Start with the adapter
-that your agent loads automatically, then open the referenced `.claude/`
-definition for the role you need.
+Chain of Custody fixes this by making every step produce a written document and hand it to the next role:
 
-### 1. Copy into your project
+| Step | Who | Writes |
+|---|---|---|
+| 1. What are we building? | Product Manager (`/pm`) | `requirements.md` |
+| 2. How will we build it? | Architect (`/architect`) | `technical-design.md` and `api-contract.md` |
+| 3. Is the design sound? | Design Critic | A list of problems to fix before coding starts |
+| 4. Who builds which part? | Tech Lead (`/tech-lead`) | One brief per engineer |
+| 5. Build it | Engineers (database, backend, app, admin app, infra) | Code, tests, and a report of what they did |
+| 6. Is the code right? | Code review | Approval, or specific fixes to make |
+
+Each role starts with a clean slate and reads only the document it was handed, so nothing depends on what an earlier conversation happened to remember. Those documents stay in your project as a paper trail of who decided what, and why. That's where the name comes from: like evidence in a court case, the work changes hands only with a signed record of each handoff.
+
+## Who it's for
+
+- **Solo developers and small teams** who use Claude Code and want it to behave like a disciplined engineering team rather than a freeform assistant.
+- **People with an idea who aren't deeply technical.** You'll be asked product questions in plain language ("Can a regular user see other people's records, or only their own?"). Technical choices are recommended and explained for you. Start with the [plain-language guide](docs/getting-started.md), and keep the [glossary](GLOSSARY.md) handy.
+
+It works on an empty folder or an existing codebase, in any language or framework.
+
+## Quick start
+
+**1. Copy the `.claude/` folder into your project.** This is the only required step.
 
 ```bash
-# Clone this repo
 git clone https://github.com/smaharj1/chain-of-custody.git /tmp/chain-of-custody
 cd /path/to/your/project
-
-# The only required step — everything the modes and the loop read at run time is in .claude/:
 cp -r /tmp/chain-of-custody/.claude .
-
-# Optional human docs (also fine to leave in the kit repo and read them there).
-# /planner uses choosing-your-stack.md if it's present, and recommends a stack itself if not:
-mkdir -p docs
-cp /tmp/chain-of-custody/docs/choosing-your-stack.md \
-   /tmp/chain-of-custody/docs/getting-started.md \
-   /tmp/chain-of-custody/docs/faq.md docs/
 ```
 
-> ⚠️ **Already using Claude Code in this project?** Then `.claude/` already exists and `cp -r` will merge into it, which can clobber your `settings.json` (permissions, hooks), your `CLAUDE.md`, and any agents or commands you've added. Back it up first (`cp -r .claude .claude.backup`), then merge by hand. The kit's `settings.json` adds two PreToolUse hooks (`guard-git.sh`, `guard-main-edit.sh`) and an empty permission allowlist, so fold those into yours instead of replacing the file, and append the kit's `CLAUDE.md` content to your own.
+> ⚠️ **Already have a `.claude/` folder in this project?** Copying will merge into it and can overwrite your `settings.json`, `CLAUDE.md`, and any agents or commands you've added. Back it up first (`cp -r .claude .claude.backup`) and merge by hand. The kit's `settings.json` adds two safety hooks (`guard-git.sh`, `guard-main-edit.sh`) and an empty permission allowlist, so fold those into your file rather than replacing it, and append the kit's `CLAUDE.md` to yours.
 
-Then add the kit's runtime artifacts to your project's `.gitignore`:
+**2. Ignore the kit's log and lock files** by adding these lines to your project's `.gitignore`:
 
 ```gitignore
 .claude/metrics.jsonl
@@ -131,287 +87,288 @@ Then add the kit's runtime artifacts to your project's `.gitignore`:
 .claude/worktrees/
 ```
 
-`build-plan.json` and `BUILD_PLAN.md` go the other way. They're durable state and should be committed.
+Do commit `build-plan.json` and `BUILD_PLAN.md` when they appear. They're the build plan, and the loop needs them to pick up where it left off.
 
-Links inside the copied docs to `GLOSSARY.md`, this README, and `examples/` point at the kit repo, so keep your clone around or bookmark the repo page.
-
-You don't fill in any templates. The `.claude/context/` primers arrive as templates and the agents write them; see [How the agents learn your project](#how-the-agents-learn-your-project) below. Go straight to step 3 (`/planner` for a whole project, `/pm` for one feature). Step 2 is optional.
-
-### 2. Customize the agent roster (optional)
-
-The default agents are:
-
-| Agent | File | Purpose |
-|---|---|---|
-| **Backend Engineer** | `agents/backend-engineer.md` | API endpoints, services, business logic |
-| **Database Engineer** | `agents/database-engineer.md` | Schema changes, migrations |
-| **App Engineer** | `agents/app-engineer.md` | Main frontend app UI |
-| **Admin App Engineer** | `agents/admin-app-engineer.md` | Admin dashboard UI |
-| **Infra Engineer** | `agents/infra-engineer.md` | Infrastructure-as-code |
-| **Security Reviewer** | `agents/security-reviewer.md` | Security audit before deploy; auto-dispatched in the loop on sensitive items |
-| **Design Critic** | `agents/design-critic.md` | Reviews architecture before code |
-| **Code Reviewer** | `agents/code-reviewer.md` | Independent diff review in the `/orchestrate` loop (interactive flow uses the code-review Skill) |
-
-**To rename an agent** (say, "app" to "web"): rename the file and update the `name:` in the frontmatter.
-
-**To add a frontend app**: duplicate `agents/app-engineer.md`, rename it (`mobile-app-engineer.md`, for instance), update the frontmatter, and copy `context/app.md` to `.claude/context/mobile-app.md`. Leave that copy as a template; the Tech Lead fills it in before the first dispatch.
-
-**To remove an agent**: delete the file. The Tech Lead works out which engineers are needed from the design doc and won't dispatch agents that don't exist.
-
-### 3. Start using it
+**3. Start Claude Code and pick the command that matches what you're doing.**
 
 ```bash
-cd /path/to/your/project
-claude  # start Claude Code
-
-# To build a whole idea or project (greenfield, or a big batch of work):
-> /planner          # interview -> dependency-ordered build-plan.json
-> /orchestrate      # runs the plan item by item, local-first, with checkpoints
-
-# For a single feature on an existing project:
-> "I want to add user notifications"   # PM mode is the default
-
-# For a small fix:
-> /tech-lead
-> "Fix the broken pagination on the tasks list page"
-
-# For one-off architecture work:
-> /architect
-> "Let's design the notification system"
+claude
 ```
 
-## How the Agents Learn Your Project
+| You want to... | Type | What happens |
+|---|---|---|
+| Build a new app, or a big batch of features | `/planner`, then `/orchestrate` | The Planner interviews you and writes a build plan. The Orchestrator builds it item by item and shows you each piece running. |
+| Add one feature to an existing project | Just describe it (or `/pm`) | The PM asks questions, then hands off to `/architect` and `/tech-lead` for that one feature. |
+| Fix a bug or make a small change | `/tech-lead` | Sends one engineer straight to the fix. It'll tell you if the job is bigger than it looks. |
+| Think through a technical design | `/architect` | Works through the tradeoffs with you and writes the design. |
 
-The agents need real knowledge of your project: the stack, the layering, the conventions, and which file is the gold-standard example to copy. That knowledge lives in the primers (`.claude/context/*.md`), which ship as templates.
+That's it. There are no templates to fill in and no setup questionnaire. The agents work out what they need to know about your project on their own (see [How the agents learn your project](#how-the-agents-learn-your-project)).
 
-Filling them in is the agents' job, not yours. The assumption throughout is that you might not know what an ORM is, which router your app uses, or what a canonical exemplar would even look like, and that you shouldn't have to. Every role that reads a primer will write it first if it's still a template, deriving it from evidence rather than asking you: the code itself on an existing repo, or the stack decisions the Planner walked you through in plain language on a new one. The rules they follow are in [`.claude/context/primer-protocol.md`](.claude/context/primer-protocol.md).
+**Optional:** copy the human-readable guides too, so they sit next to your code. `/planner` uses `choosing-your-stack.md` if it finds it and recommends a stack on its own if it doesn't.
+
+```bash
+mkdir -p docs
+cp /tmp/chain-of-custody/docs/{choosing-your-stack,getting-started,faq}.md docs/
+```
+
+Links in those guides to `GLOSSARY.md`, this README, and `examples/` point back at the kit, so keep your clone around or bookmark the repo.
+
+## What still needs you
+
+The loop runs on its own between checkpoints, but some things can't be automated:
+
+| Moment | Why |
+|---|---|
+| **Approving the plan** | Nothing gets built until you've said yes to the plan. |
+| **Checkpoints** | By default the loop stops after each milestone, starts your app, and shows you the working feature. You approve it, reject it with feedback (it undoes the item and tries again), or stop. Set `autonomy: per-feature` in `.claude/loop.config.md` to see every item. |
+| **Product questions** | "Can a regular user see other people's records?" The answer isn't in any codebase. |
+| **Secrets** | When an item needs an API key (payments, email), the loop stops and asks. No agent can invent a credential. |
+| **Security blocks** | If the security reviewer finds a Critical or High issue, the item won't be marked done until you fix it or record a waiver with a reason. |
+| **The very first item** | On a new project, item one is the skeleton every later item copies. If something looks off, say so then rather than ten items later. |
+| **Publishing** | Finished work stays on your machine. When you're happy, ask Claude to push it. |
+
+## How it works
+
+### The handoff chain
+
+<p align="center">
+  <img src="docs/assets/team-workflow.svg" alt="The handoff chain in the interactive lane: you describe a feature, /pm asks questions and writes requirements.md, /architect brainstorms tradeoffs with you and writes technical-design.md and api-contract.md with design-critic auditing before any code, /tech-lead writes per-engineer briefs and reviews every diff, and engineer subagents implement to spec and report back. A quick lane skips small fixes straight to /tech-lead. Under /orchestrate the same roles run autonomously." width="820">
+</p>
+
+Every arrow in the diagram is a file. This is the chain you drive by hand with `/pm`, `/architect`, and `/tech-lead`, one feature at a time.
+
+<details>
+<summary>Text version of the diagram</summary>
+
+```
+You describe a feature
+  |
+  v
+/pm  -->  Asks you questions
+  |       Writes docs/features/<slug>/requirements.md
+  v
+/architect  -->  Talks through tradeoffs with you
+  |              Writes technical-design.md + api-contract.md
+  |              Runs design-critic (catches problems before code)
+  v
+/tech-lead  -->  Writes one brief per engineer
+  |              Dispatches engineers in dependency order
+  |              Reviews each engineer's code
+  |              Handles escalations and re-dispatch
+  v
+Engineers (subagents)  -->  Read their project notes + brief + design + contract
+                            Write code that matches the project's existing patterns
+                            Run lint and tests on their own work
+                            Report back what they did and what they learned
+```
+
+</details>
+
+### The build loop
+
+<p align="center">
+  <img src="docs/assets/loop-engineering-architecture.svg" alt="Loop engineering architecture: a Plan layer, an Orchestrate loop with auto-demo checkpoints, and an Execute layer reusing the existing engineering team" width="820">
+</p>
+
+`/planner` and `/orchestrate` wrap that same team in a loop so it can build a whole idea instead of one feature.
+
+- **`/planner`** interviews you, makes the big technical decisions with you, and writes `build-plan.json`: a checklist ordered so that nothing is built before the things it depends on. It also writes down how to run and test your app. It never builds anything itself, and finishes by telling you to run `/orchestrate`.
+- **`/orchestrate`** takes the next ready item, runs it through the team (design, build, review, security check where relevant), verifies that the tests really ran and passed, merges it into your local `main`, and moves on. At checkpoints it starts the app and shows you the result.
+
+Inside the loop the team runs without you in the chair, so three things change. The PM and Architect work out requirements from the plan item instead of interviewing you. Requirements are passed along directly instead of being written to `requirements.md`. And code review goes to a separate `code-reviewer` agent, because the Orchestrator wrote the design and the briefs and shouldn't also be the one approving the result.
+
+How often the loop stops for you, how much work it may do per run, and the commands it uses to test your app all live in [`.claude/loop.config.md`](.claude/loop.config.md).
+
+### The team
+
+| Agent | Writes code? | Job |
+|---|---|---|
+| **Database Engineer** | Yes | Schema changes and migrations |
+| **Backend Engineer** | Yes | API endpoints, services, business logic |
+| **App Engineer** | Yes | The main frontend app |
+| **Admin App Engineer** | Yes | An admin dashboard |
+| **Infra Engineer** | Yes | Infrastructure-as-code |
+| **Design Critic** | No | Reviews the design before any code is written |
+| **Code Reviewer** | No | Independent review of each change inside `/orchestrate` (interactive work uses the code-review skill instead) |
+| **Security Reviewer** | No | Security audit. Runs automatically in the loop on items touching sign-in, payments, file uploads, or user input; run it yourself before a deploy or PR otherwise |
+
+The reviewers only read. They report problems and never edit code themselves.
+
+### How the agents learn your project
+
+To write code that fits your project, the engineers need to know its stack, its structure, its conventions, and which existing file is the best example to copy. That knowledge lives in short notes called **primers** (`.claude/context/*.md`), and **the agents write them, not you.**
+
+Each primer ships as an empty template. The first role that needs one fills it in from evidence: the code itself on an existing project, or the decisions the Planner made with you on a new one. You're never asked what an ORM is or which router you use. You're only asked product questions that can't be read from code. The full rules are in [`primer-protocol.md`](.claude/context/primer-protocol.md).
 
 | Primer | Written by | When |
 |---|---|---|
-| `.claude/CLAUDE.md` | Planner, then the baseline item | Stack table + repo structure, stamped at plan time and again when the skeleton ships |
-| `.claude/context/architect.md` | Architect | Before designing (Phase A.0) |
-| `.claude/context/backend.md`, `database.md`, `shared-frontend.md`, `app.md`, `admin-app.md`, `infra.md` | Tech Lead, or the Architect | Before an engineer in that domain is dispatched |
-| `.claude/context/local-dev.md` | Planner | At plan time. Execution-critical: the run/test/reset commands are proven by running them, not guessed |
-| `.claude/loop.config.md` | Planner | At plan time, also execution-critical (`verify_tests` / `verify_run` / `db_ephemeral`) |
-| `.claude/context/engineer-protocol.md`, `primer-protocol.md` | Nobody. Generic kit logic | Leave alone |
+| `.claude/CLAUDE.md` | Planner, then the first build item | Tech stack and repo layout, written at plan time and updated once the skeleton exists |
+| `.claude/context/architect.md` | Architect | Before its first design |
+| `.claude/context/backend.md`, `database.md`, `shared-frontend.md`, `app.md`, `admin-app.md`, `infra.md` | Tech Lead or Architect | Before the first engineer in that area starts |
+| `.claude/context/local-dev.md` | Planner | At plan time. The run, test, and reset commands are proven by running them, not guessed |
+| `.claude/loop.config.md` | Planner | At plan time |
+| `.claude/context/engineer-protocol.md`, `primer-protocol.md` | Nobody | Shared kit rules. Leave these alone |
 
-**How they get read.** There's no auto-loader. Each role's instructions name the exact primer file and the role opens it. Engineers read their domain primer before the brief on every dispatch, since it holds the canonical exemplar they implement against. The Architect reads `architect.md` every session. The design critic and code reviewer read primers as the standard a design or diff is measured against, which is what gives the primers teeth: a primer isn't decoration if a review can cite it.
+**Primers stay current on their own.** The engineer writing the code is the first to notice when a primer is out of date, so every engineer report includes a `## Primer Delta` section listing new patterns, dead references, or conventions the code has moved past. Engineers report but don't edit. The role holding the whole picture (the Tech Lead at wrap-up, the Orchestrator after each item) applies the change. If a primer and correct code disagree, the code wins and the primer gets fixed.
 
-**How they stay true.** The engineer shipping the code is the first to know a primer has gone stale, because their work is what had to disagree with it. So every report carries a `## Primer Delta` (new pattern established, dead exemplar pointer, convention the codebase has moved off), and review adds `## Primer Staleness` if it finds more. Engineers report; they don't edit. Whichever role is holding the whole picture applies the change in the same session: Tech Lead at wrap-up, the Orchestrator after each item, the Architect for patterns its own design introduced. Same chain of custody as everything else here, with the artifact crossing the boundary rather than the edit. Exemplar pointers get repaired when the file they name moves, and the loop logs `primersUpdated` per item, so a long run of empty deltas across pattern-heavy items shows up as a drift signal instead of passing unnoticed.
+**When something can't be known yet**, such as an example file on a brand-new project, the section is marked `TODO(primer)` and `/orchestrate` keeps a checkpoint at every item until it's resolved. Missing run or test commands are a hard stop instead, because the loop can't verify anything without them.
 
-**What you will be asked** are plain-language product questions, like "can a regular user see other people's records, or only their own?" Those answers can't be derived from code. Technical calls the agents make themselves and record along with their reasoning, so you can audit them later.
+They're plain markdown, and reading what the agents wrote about your project is a good use of ten minutes. Correct anything you know is wrong. To see how much detail a filled-in primer should have, look at [`examples/`](examples/README.md): every primer written out for a made-up app called TaskFlow, plus one feature's full set of handoff documents. It's a writing reference, not a demo. There's no code behind it.
 
-Two consequences worth knowing. A primer section that genuinely can't be known yet, like an exemplar on an empty folder, gets marked `TODO(primer)`, and `/orchestrate` responds by keeping a human checkpoint at every feature until it's resolved. That's deliberate. Missing execution-critical commands are a hard stop instead, since the loop can't verify anything without them.
+### Starting from scratch
 
-**Want to read or edit them anyway?** They're plain markdown, and reviewing what the agents wrote about your project is a good use of ten minutes. For calibration on the level of detail, see [`examples/`](examples/README.md), which has every primer filled in for a fictional project called TaskFlow, plus a filled `loop.config.md` and one feature's full artifact chain.
+On an empty folder, start with `/planner`, not `/pm`. Engineers normally copy patterns from existing code, and an empty folder has none, so:
 
-> **`examples/` is documentation, not a demo.** TaskFlow has no code behind it, and the example feature folder was hand-authored to show the shape of the artifacts. It isn't the transcript of a real run. The kit doesn't currently ship a runnable end-to-end demo; see [`examples/README.md`](examples/README.md).
+1. **The Planner always makes item one a runnable skeleton:** a minimal app, a test setup, and one passing test. You never scaffold the project by hand.
+2. **That skeleton sets the patterns** (folder layout, error handling, naming) that every later item copies. Give it more attention than the rest.
+3. **Once it ships,** the Orchestrator points the primers at its files as the examples to follow, and the normal workflow takes over.
 
-## File Structure
-
-```
-.claude/
-  CLAUDE.md                          # Project description + conventions (agent-written)
-  KIT_VERSION                        # Which kit release this copy came from (see Updating the kit)
-  settings.json                      # Claude Code settings (permissions + the two PreToolUse hooks)
-  loop.config.md                     # Loop settings: autonomy, budgets, verify commands, db, git
-  agents/                            # Engineer subagent definitions
-    backend-engineer.md              #   Backend API engineer
-    database-engineer.md             #   Database/migration engineer
-    app-engineer.md                  #   Main frontend app engineer
-    admin-app-engineer.md            #   Admin dashboard engineer
-    infra-engineer.md                #   Infrastructure engineer
-    security-reviewer.md             #   Security auditor (in-loop gate on sensitive items)
-    design-critic.md                 #   Architecture reviewer (pre-code)
-    code-reviewer.md                 #   Independent diff reviewer (loop)
-  commands/                          # Slash command mode definitions
-    pm.md                            #   /pm — requirements gathering
-    architect.md                     #   /architect — technical design
-    tech-lead.md                     #   /tech-lead — dispatch + review
-    planner.md                       #   /planner — whole-idea build plan
-    orchestrate.md                   #   /orchestrate — run the plan item by item
-  context/                           # Domain primers (project knowledge — agent-written)
-    engineer-protocol.md             #   Shared rules for all engineers (generic)
-    primer-protocol.md               #   How agents derive + maintain primers (generic)
-    architect.md                     #   System architecture primer
-    backend.md                       #   Backend patterns primer
-    database.md                      #   Schema + migration primer
-    shared-frontend.md               #   Shared frontend conventions
-    app.md                           #   Main app primer
-    admin-app.md                     #   Admin app primer
-    infra.md                         #   Infrastructure primer
-    local-dev.md                     #   How to run/test/reset the app locally (loop-critical)
-  hooks/
-    guard-git.sh                     #   PreToolUse(Bash): blocks push/rebase/shared-history git ops
-    guard-main-edit.sh               #   PreToolUse(Edit/Write): blocks app-source edits on main
-  spec/                              # Runtime specs the modes read (generic)
-    loop-engineering.md              #   Authoritative loop spec — orchestrate cites it as governing
-  templates/                         # Artifact templates used by PM, Architect, Tech Lead, Planner
-    requirements.md                  #   PM writes requirements from this
-    technical-design.md              #   Architect writes design from this
-    api-contract.md                  #   Architect writes API contract from this
-    brief.md                         #   Tech Lead writes engineer briefs from this
-    build-plan.md                    #   Planner writes build-plan.json from this
-  metrics.jsonl                      # Interactive telemetry (auto-created; gitignore it — see step 1)
-  loop.jsonl                         # Loop telemetry (auto-created; gitignore it)
-  orchestrate.lock                   # Run lock (auto-created; gitignore it)
-build-plan.json                      # Loop plan — canonical state (commit this)
-BUILD_PLAN.md                        # Generated human view of the plan (commit this)
-docs/                                # What humans read + what the agents write
-  choosing-your-stack.md             # Stack defaults by project type (/planner points you here)
-  getting-started.md                 # Plain-language on-ramp for non-technical users
-  faq.md                             # Operational FAQ (testing, CI, deploy, teams, non-web)
-  assets/                            # Diagrams embedded in this README (kit repo only)
-  design/
-    review-2026-07.md                # Kit's own audit history (kit repo only — don't copy)
-  features/
-    <feature-slug>/                  # Created per feature (scratch — not long-term)
-      requirements.md
-      technical-design.md
-      api-contract.md
-      briefs/<engineer>.md
-      reports/<engineer>.md
-examples/                            # Writing reference — filled-in docs for a FICTIONAL
-                                     #   project (TaskFlow). No code; not a runnable demo.
-  README.md                          #   What this folder is and isn't — read first
-  CLAUDE.md
-  loop.config.md                     #   Filled loop config
-  context/                           #   ALL primers filled: architect, backend, database,
-                                     #   shared-frontend, app, admin-app, infra, local-dev
-  features/csv-export/               #   One feature's artifact chain (requirements → design
-                                     #   → contract → brief → report), hand-authored
-```
-
-## The Three Lanes
-
-### Loop Lane
-
-For building a project from an idea, or working through a large batch of features.
-
-1. `/planner` — interview, big decisions, dependency-ordered `build-plan.json` (first item = runnable baseline)
-2. `/orchestrate` — runs the plan item by item (design → build → review → local demo) until done, with checkpoints
-
-### Full Feature Lane
-
-For a single feature on a project that already exists: significant changes, multi-file refactors.
-
-1. `/pm` — gather requirements, write `requirements.md`
-2. `/architect` — design the solution, write `technical-design.md` + `api-contract.md`, run design-critic
-3. `/tech-lead` — write briefs, dispatch engineers, run code review, wrap up
-
-### Quick Lane
-
-For small, scoped tasks: bug fixes, single-component tweaks, prop renames.
-
-1. `/tech-lead` — describe the task, it dispatches one engineer directly
-
-The Tech Lead will push back if a "quick" task is actually feature-sized.
-
-## Key Concepts
-
-### Primers vs Feature Folders
-
-- Primers (`.claude/context/*.md`) are long-lived project knowledge, written and kept current by the agents themselves ([how](#how-the-agents-learn-your-project)).
-- Feature folders (`docs/features/<slug>/`) are scratch workspaces for one feature. Once the feature ships, the primers and the code are what's canonical, not the feature folder.
-
-### Brief Gaps Are Feedback
-
-When an engineer can't find information they need, they report it as a "brief gap" instead of guessing. These gaps are the most valuable feedback signal the system produces, because they tell the Tech Lead what to include in future briefs.
-
-### Primer Deltas Keep Canon True
-
-Same shape of signal, pointed at the primers. An engineer who had to disagree with a primer to get the work done is the only role that learns it went stale, so every report carries a `## Primer Delta`: a new pattern established, a dead exemplar pointer, a convention the codebase has moved off. The code reviewer adds `## Primer Staleness` if it finds more. Engineers report and never edit. The role holding the whole picture applies the change in the same session, whether that's the Tech Lead at wrap-up or the Orchestrator after each item. A stale primer is never grounds for blocking correct code; the code wins and the primer gets fixed.
-
-### The Design Critic
-
-Before any code is written, the Architect runs a design-critic subagent that looks for blockers: missing error cases, schema issues, contract ambiguities, security gaps. A bug caught here costs minutes. The same bug caught after implementation costs hours.
-
-### Telemetry
-
-After every feature or task, the Tech Lead appends a JSON line to `.claude/metrics.jsonl` with timing, iteration counts, and brief gaps. Read it occasionally to tune your workflow.
-
-## Customization Guide
-
-### Which files hold your project context (agent-written — review, don't author)
-
-- `.claude/CLAUDE.md` and `.claude/context/*.md` (except the two protocol files). The agents write these and keep them current ([how](#how-the-agents-learn-your-project)). Correct them freely when you know better; you're never expected to author them.
-
-### Which files to leave alone (generic workflow logic)
-
-- `.claude/agents/*.md` — work as-is for most projects
-- `.claude/commands/*.md` — work as-is (the PM/Architect/Tech Lead workflow)
-- `.claude/context/engineer-protocol.md` — generic rules for all engineers
-- `.claude/context/primer-protocol.md` — how agents derive + maintain primers
-- `.claude/spec/*.md` — the authoritative loop spec; `/orchestrate` treats it as governing
-- `.claude/hooks/*.sh` — the two PreToolUse guards
-- `.claude/templates/*.md` — you *can* edit these if your workflow differs, but they're in the never-edit set below, so a kit update overwrites them. Keep a note of your changes if you customize.
-
-### Tuning for your project
-
-- **No admin app?** Delete `agents/admin-app-engineer.md` and `context/admin-app.md`.
-- **Multiple frontend apps?** Duplicate `agents/app-engineer.md` and `context/app.md` for each.
-- **No infrastructure?** Delete `agents/infra-engineer.md` and `context/infra.md`.
-- **No frontend at all (API service, CLI tool)?** Delete the app agents and `context/shared-frontend.md`. The Tech Lead's Backend→frontend dispatch gate simply never fires, and the api-contract template becomes your interface contract. More in [docs/faq.md](docs/faq.md).
-- **Mobile app?** Duplicate `agents/app-engineer.md` and adjust `context/app.md` for React Native or similar. Note that the loop's auto-demo has no simulator screenshot, so mobile demo targets fall back to endpoint/test assertions ([docs/faq.md](docs/faq.md)).
-- **Different backend language?** The agents are language-agnostic and derive `context/backend.md` from whatever is in the repo.
-- **Want a UI designer agent?** Create `agents/ui-designer.md` following the pattern of the existing agents.
-
-## Starting from Scratch
-
-This kit was built to coordinate work on a project that already exists, where engineers "match the canonical exemplar," an existing file showing the established pattern. On an empty folder there are no exemplars yet, which is exactly why greenfield starts with `/planner` instead of `/pm`:
-
-1. **`/planner` makes a runnable skeleton the mandatory first item.** Its greenfield rule requires the first plan item to be "a locally-runnable app + test harness + one passing smoke test." `/orchestrate` builds that item first, so you never scaffold the project by hand.
-2. **That first item is foundational.** It establishes the patterns (folder layout, error handling, naming) that every later item copies, and it's the newest, least-exemplar-supported part of the run, so give it more of your attention than the rest.
-3. **After it ships**, the Orchestrator points the `context/*.md` primers at those files as the canonical exemplars, which is the primer-delta step at the end of every item. The normal exemplar-matching workflow applies from then on. Until that point those sections sit marked `TODO(primer)`, since you can't name an exemplar before it exists.
-
-The kit ships a bootstrap safety floor so the empty-folder path works without manual setup. `/orchestrate`'s preamble runs `git init` if there's no repository, the Planner writes the primers plus the verify commands in `.claude/loop.config.md` and `local-dev.md` as plan outputs (nothing to pre-fill), and the Tech Lead's engineer-set detection has an explicit scaffold row where the Backend engineer owns the skeleton. The first item also stamps `CLAUDE.md`'s stack table so the loop's autonomy check passes on later runs.
-
-### It's two commands, not one
-
-`/planner` interviews and writes; it doesn't build. It recommends the technical choices rather than asking you to make them, produces the plan, the primers, and the config, then ends by telling you to switch. You type `/orchestrate` yourself, and that's the role that runs [the handoff chain](#the-handoff-chain) once per plan item. The Planner never dispatches anyone.
-
-Here's what still needs you, so none of it comes as a surprise:
-
-| Moment | Why it can't be automated |
-|---|---|
-| **Checkpoints** | Default `autonomy: per-milestone` starts your app locally and shows you the working feature, then waits for a yes. Set `per-feature` in `.claude/loop.config.md` to see every item. |
-| **Secrets** | An item needing a payment or email API key hard-stops and asks. No agent can derive a credential from your code. |
-| **Security blocks** | A Critical/High finding won't merge past you. You either fix it or record an explicit waiver with justification. |
-| **Plain-language product questions** | "Can a regular user see other people's records, or only their own?" The answers aren't in any codebase. |
-| **Item one** | The skeleton every later item copies, with no exemplar behind it yet. If it looks wrong, say so then, not ten items later. |
-
-> A dedicated bootstrap *mode* that further hardens this first-item experience is still on the roadmap (design §14). Until then, `/planner` → `/orchestrate` is the path, with extra human attention on item one.
-
-New to all of this? [docs/getting-started.md](docs/getting-started.md) walks through the whole thing in plain language.
+`/orchestrate` runs `git init` for you if the folder isn't a repository yet.
 
 ## Prerequisites
 
 **Required**
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed and authenticated. Feature floor: agent frontmatter (`.claude/agents/`), PreToolUse hooks with `$CLAUDE_PROJECT_DIR`, and the Skill tool. Any recent version has all three.
-- `git`. The loop's branch/merge/verify machinery assumes a repository; the orchestrate preamble runs `git init` for you on an empty folder.
-- `python3` on PATH, since both guard hooks use it. Without it they announce themselves inactive and allow everything (fail-open by design), so the git guardrails silently vanish.
-- **Permission setup for long loop runs.** Claude Code asks before running commands it hasn't been allowed, and that pause is independent of the loop's autonomy dial — a `per-milestone` or `unattended` `/orchestrate` run will stall at the first un-allowlisted command. The kit ships an empty allowlist (`.claude/settings.json` → `permissions.allow`) on purpose; before a long run, allowlist your project's run/test/build commands there (ask Claude to do it, or accept the prompts as they come — the Planner offers to set this up as part of the plan). For interactive feature work the prompts are normal and fine.
-- A project to work on, in any language or framework. An empty folder also works; see [Starting from scratch](#starting-from-scratch).
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code), installed and signed in. Any recent version works (the kit uses agent definitions in `.claude/agents/`, PreToolUse hooks, and the Skill tool).
+- `git`. The loop builds each item on a branch and merges it locally.
+- `python3` on your PATH. The two safety hooks use it, and without it they quietly switch themselves off, which removes the git guardrails.
+- **Permissions set up before long loop runs.** Claude Code asks before running any command it hasn't been allowed to run, regardless of the loop's autonomy setting, so an unattended run will stall at the first new command. The kit ships an empty allowlist on purpose. Before a long run, add your project's run, test, and build commands to `permissions.allow` in `.claude/settings.json`. The Planner offers to do this for you. For interactive work the prompts are normal.
 
 **Recommended**
 
-- **context7 MCP** for fresh library docs. ⚠️ *Install-name trap*: the agent files wire the tool names for a **plugin** install named `context7` (`mcp__plugin_context7_context7__*`). Install it as a plain MCP server instead and the tools are named `mcp__context7__*`, so you'd need to update the `tools:` line in the eight agent files to match. Otherwise the docs capability silently disappears while the engineer protocol still mandates it.
-- **superpowers plugin** (`superpowers:brainstorming`), used by `/pm` and `/planner` for exploratory interviews. Both fall back gracefully without it.
-- **code-review plugin** (`code-review:code-review`), the interactive Tech Lead's review skill. A manual-review fallback is built in.
+- **context7 MCP** for up-to-date library docs. ⚠️ The agent files expect it installed as a **plugin** named `context7` (tools named `mcp__plugin_context7_context7__*`). If you install it as a plain MCP server instead, the tools are named `mcp__context7__*` and you'll need to update the `tools:` line in all eight agent files, or the agents silently lose access to docs.
+- **superpowers plugin** (`superpowers:brainstorming`), which `/pm` and `/planner` use for interviews. Both work without it.
+- **code-review plugin** (`code-review:code-review`), the Tech Lead's review skill. There's a manual fallback.
 
-**Optional (text fallbacks built in)**
+**Optional**
 
-- A browser-preview MCP for the loop's auto-demo screenshots, and a push-notification capability for checkpoint alerts. Without either, the loop presents demo routes and HTTP checks as text and uses transcript banners.
+- A browser-preview MCP so checkpoints can include screenshots, and push notifications for checkpoint alerts. Without them the loop describes the demo in text and flags checkpoints in the transcript.
 
-## Updating the Kit
+## Using Codex or Cursor
 
-Your copy records its release in `.claude/KIT_VERSION`, and changes ship in [CHANGELOG.md](CHANGELOG.md). To update:
+The `.claude/` folder is the single source of truth. Thin adapters point other coding agents at it, so the workflow is the same everywhere:
 
-1. Check your `.claude/KIT_VERSION` and read the CHANGELOG entries since.
-2. **Re-copy the never-edit set** from the new kit release. These are kit logic and safe to overwrite: `.claude/agents/*` (unless you added or renamed agents), `.claude/commands/*`, `.claude/context/engineer-protocol.md`, `.claude/context/primer-protocol.md`, `.claude/hooks/*`, `.claude/templates/*`, `.claude/spec/*`, and `.claude/KIT_VERSION` itself.
-3. **Never overwrite the project-specific set.** These describe *your* project. The agents wrote them, but they're still yours, and the kit's copies are empty templates: `.claude/CLAUDE.md`, `.claude/context/*` primers (except the two protocol files), `.claude/loop.config.md`, `.claude/settings.json`. If a CHANGELOG entry touches one of these, say a new settings hook, apply it as a hand-merge.
+- **Codex:** `AGENTS.md` for repository instructions, or `skills/chain-of-custody/SKILL.md` as a reusable skill.
+- **Cursor:** `.cursor/rules/chain-of-custody.mdc`, an always-on project rule.
+
+Copy the adapter your tool loads along with `.claude/`.
+
+## Customizing
+
+**Change the team to match your project.** The Tech Lead only dispatches engineers that exist, so adding or removing an agent file is all it takes.
+
+- **No admin app or no infrastructure?** Delete `agents/admin-app-engineer.md` and `context/admin-app.md`, or `agents/infra-engineer.md` and `context/infra.md`.
+- **More than one frontend** (a mobile app, say)? Duplicate `agents/app-engineer.md` as `mobile-app-engineer.md`, update its `name:` field, and copy `context/app.md` to `context/mobile-app.md`. Leave the copy as a template and the agents will fill it in. Note that checkpoints can't screenshot a phone simulator, so mobile demos fall back to API and test checks.
+- **No frontend at all** (an API or CLI tool)? Delete the app agents and `context/shared-frontend.md`. The API contract template becomes your interface contract. See the [FAQ](docs/faq.md).
+- **Rename an agent?** Rename the file and update `name:` in its frontmatter.
+- **A different language?** Nothing to change. The agents work out your stack from the code.
+- **Want another specialist,** like a UI designer? Add `agents/ui-designer.md` following the pattern of the existing agents.
+
+**Which files are yours and which are the kit's:**
+
+- **Yours, written by the agents:** `.claude/CLAUDE.md`, `.claude/context/*.md` (except the two protocol files), `.claude/loop.config.md`, `.claude/settings.json`. Review and correct them freely. Never overwrite them when updating the kit.
+- **The kit's, safe to replace on update:** `.claude/agents/`, `.claude/commands/`, `.claude/context/engineer-protocol.md`, `.claude/context/primer-protocol.md`, `.claude/hooks/`, `.claude/spec/`, `.claude/templates/`, `.claude/KIT_VERSION`. You can edit the templates, but an update will overwrite your changes, so keep a note of them.
+
+## Updating the kit
+
+Your copy records its version in `.claude/KIT_VERSION`, and every change is listed in [CHANGELOG.md](CHANGELOG.md).
+
+1. Check your `.claude/KIT_VERSION` and read the CHANGELOG entries since that version.
+2. Re-copy the kit's files listed above from the new release (skip `agents/` if you've added or renamed agents, and merge by hand instead).
+3. Never overwrite your own files listed above. If a CHANGELOG entry touches one of them, such as a new settings hook, merge that change by hand.
+
+## Reference
+
+<details>
+<summary>File structure</summary>
+
+```
+.claude/
+  CLAUDE.md                          # Project description + conventions (agent-written)
+  KIT_VERSION                        # Which kit release this copy came from
+  settings.json                      # Claude Code settings (permissions + the two safety hooks)
+  loop.config.md                     # Loop settings: autonomy, budgets, verify commands, db, git
+  agents/                            # Subagent definitions
+    backend-engineer.md              #   Backend API engineer
+    database-engineer.md             #   Database/migration engineer
+    app-engineer.md                  #   Main frontend app engineer
+    admin-app-engineer.md            #   Admin dashboard engineer
+    infra-engineer.md                #   Infrastructure engineer
+    security-reviewer.md             #   Security auditor (read-only)
+    design-critic.md                 #   Design reviewer, before code (read-only)
+    code-reviewer.md                 #   Independent code reviewer in the loop (read-only)
+  commands/                          # Slash commands
+    pm.md                            #   /pm: requirements
+    architect.md                     #   /architect: technical design
+    tech-lead.md                     #   /tech-lead: briefs, dispatch, review
+    planner.md                       #   /planner: whole-idea build plan
+    orchestrate.md                   #   /orchestrate: run the plan item by item
+  context/                           # Primers: project knowledge (agent-written)
+    engineer-protocol.md             #   Shared rules for all engineers (kit logic)
+    primer-protocol.md               #   How agents write and maintain primers (kit logic)
+    architect.md                     #   System architecture
+    backend.md                       #   Backend patterns
+    database.md                      #   Schema + migrations
+    shared-frontend.md               #   Conventions shared by frontend apps
+    app.md                           #   Main app
+    admin-app.md                     #   Admin app
+    infra.md                         #   Infrastructure
+    local-dev.md                     #   How to run, test, and reset the app locally
+  hooks/
+    guard-git.sh                     #   Blocks push, rebase, and other shared-history git commands
+    guard-main-edit.sh               #   Blocks app-code edits directly on main
+  spec/
+    loop-engineering.md              #   The authoritative loop spec /orchestrate follows
+  templates/                         # Document templates the roles fill in
+    requirements.md
+    technical-design.md
+    api-contract.md
+    brief.md
+    build-plan.md
+  metrics.jsonl                      # Interactive telemetry (auto-created, gitignored)
+  loop.jsonl                         # Loop telemetry (auto-created, gitignored)
+  orchestrate.lock                   # Run lock (auto-created, gitignored)
+build-plan.json                      # The build plan (commit this)
+BUILD_PLAN.md                        # Readable view of the plan (commit this)
+docs/
+  getting-started.md                 # Plain-language guide
+  choosing-your-stack.md             # Stack recommendations by project type
+  faq.md                             # Testing, CI, deploying, teams, non-web projects
+  features/<feature-slug>/           # Created per feature; scratch space, not long-term
+    requirements.md
+    technical-design.md
+    api-contract.md
+    briefs/<engineer>.md
+    reports/<engineer>.md
+examples/                            # Filled-in documents for a fictional app (TaskFlow).
+                                     #   A writing reference. No code, not a runnable demo.
+```
+
+`docs/assets/` (diagrams) and `docs/design/` (the kit's own review history) exist only in this repo. Don't copy them.
+
+</details>
+
+<details>
+<summary>Feedback signals the team produces</summary>
+
+- **Brief gaps.** When an engineer can't find something it needs, it reports a "brief gap" instead of guessing. These tell the Tech Lead what to include in future briefs.
+- **Primer deltas.** Described [above](#how-the-agents-learn-your-project): engineers report where the project notes are out of date, and the lead role fixes them.
+- **Telemetry.** After every feature or task, the Tech Lead appends a line to `.claude/metrics.jsonl` with timing, retry counts, and brief gaps. The loop logs to `.claude/loop.jsonl`, including which primers were updated per item, so a long run of "nothing to update" stands out as possible drift.
+
+</details>
+
+## Project status
+
+V1. The build loop runs items **one at a time**. Running items in parallel and a dedicated mode for scaffolding new projects are planned but not built yet. The full design, and the review rounds behind it, are in [`.claude/spec/loop-engineering.md`](.claude/spec/loop-engineering.md).
+
+## More documentation
+
+- [Getting started](docs/getting-started.md): a plain-language walkthrough, no coding experience assumed
+- [Glossary](GLOSSARY.md): every term used here, explained
+- [FAQ](docs/faq.md): testing, CI, deploying, teams, monorepos, non-web projects
+- [Choosing your stack](docs/choosing-your-stack.md): what technology to use if you don't know
+- [Examples](examples/README.md): filled-in documents for a fictional project, to calibrate against
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
