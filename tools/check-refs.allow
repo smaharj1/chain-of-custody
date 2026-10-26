@@ -1,0 +1,19 @@
+# Paths that tools/check-refs.py may find mentioned in markdown without a matching file.
+# One fnmatch pattern per line, matched against the repo-relative path. Keep this short:
+# every entry needs a reason. Run `python3 tools/check-refs.py --list-unused-allow` to prune.
+
+# Runtime files the v1 loop creates in a user's project; they are gitignored, so never tracked here.
+.claude/loop.jsonl
+.claude/metrics.jsonl
+.claude/orchestrate.lock
+.claude/settings.local.json
+.claude/worktrees
+.claude/worktrees/*
+
+# Files that live in a user's project, not in the kit (the docs tell the user to create them).
+docs/tech_spec.md
+docs/features
+docs/features/*
+
+# Historical CHANGELOG entries naming files that were moved or renamed since.
+docs/design/loop-engineering.md
