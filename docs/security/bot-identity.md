@@ -37,6 +37,10 @@ Grant contents: write and pull requests: write. Nothing else.
 - Turn on "prevent self-review" for every Environment that has reviewers, and `require_last_push_approval` in the pull request rule, so the identity that pushed cannot be the one that approves.
 - Workflows must not be able to approve pull requests: `apply-boundary.sh` sets `can_approve_pull_request_reviews` to false.
 
+## Where the agent runs
+
+The bot's credential is only half of B1. The other half is that **your** credential is not reachable: the agent runs as a separate OS user, or in a devcontainer or container with none of your credentials, and your `gh` login, git credential helper and SSH agent do not exist there ([credentials.md](credentials.md), [sandbox.md](sandbox.md)). A bot identity next to a reachable human token is no identity at all, because the agent can use whichever it finds first. `doctor.py --credentials` fails on the human credentials even when a bot is configured.
+
 ## Setting it up
 
 1. Create the App (or the machine user) in your account or organization. Install it on this repository only.

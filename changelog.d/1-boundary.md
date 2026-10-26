@@ -17,7 +17,7 @@
 - `docs/security/`: README, bot-identity, rulesets, credentials, deploy-surface, secrets-policy, supply-chain, mcp, untrusted-content, git-escalation, sandbox, version-policy, infra-human-gate, plus split-ci and first-run-probe.
 - Config schema `kitlib/schema/1-boundary.json`; `.claude/loop.config.md` regenerated.
 - `.gitignore`: secrets patterns appended at the end of the file.
-- Tests: `tests/doctor/` (444 tests, about 20 s on 3.14, 25 s on 3.9), including the five IMP-23 boundary fixtures and an adversarial corpus.
+- Tests: `tests/doctor/` (about 450 tests, 20 s on Python 3.14 and 25 s on 3.9), including the five IMP-23 boundary fixtures and an adversarial corpus (`test_adversarial.py`).
 - `tests/kitlib/test_registry.py`: the one-line assertion that the *only* evidence-gated key is `autonomy` became a membership check, because `autonomy_level` (and later `parallel_mode` etc.) are gated too.
 
 ## Upgrade impact

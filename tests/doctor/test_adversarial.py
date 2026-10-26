@@ -104,6 +104,21 @@ class Cred(BoundaryCase):
         write(os.path.join(h, ".ssh", "config"), "Host x\n  IdentityFile ~/keys/k\n")
         self.assertFails(self.results(self.ctx(self.kit_repo(), {"HOME": h})), "cred.ssh.identity-files")
 
+    def test_ssh_controlmaster_socket_is_an_authenticated_session_with_no_key(self):
+        import socket
+        d = os.path.join(self.fake_home.path, ".ssh", "sockets")
+        os.makedirs(d)
+        cwd = os.getcwd()
+        os.chdir(d)
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.bind("cm-prod")
+            s.close()
+        finally:
+            os.chdir(cwd)
+        hit = self.assertFails(self.results(self.ctx(self.kit_repo())), "cred.ssh.control-sockets")
+        self.assertIn("cm-prod", hit[0].message)
+
     # -- containers --------------------------------------------------------------------------------------
     def test_remote_docker_context(self):
         h = self.fake_home.path

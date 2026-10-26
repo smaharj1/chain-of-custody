@@ -52,7 +52,7 @@ class Ready(BoundaryCase):
         if evidence:
             files["docs/baseline/evidence.json"] = json.dumps(EVIDENCE)
         files.update(files_edit or {})
-        repo = self.kit_repo(files=files, kit_version=kit_version, origin=origin, commit=True)
+        repo = self.kit_repo(files=files, kit_version=kit_version, origin=origin)
         cfg = json.loads(json.dumps(BASE_CONFIG))
         # two passes: the attestation fingerprint depends on the repo's deploy-surface files
         ctx0 = self.ctx(repo)
@@ -348,7 +348,6 @@ class ConfigRef(Ready):
     def test_config_can_be_read_from_a_git_revision_not_the_working_tree(self):
         """Report §9: gates and attestations are read from the base sha, never the head."""
         repo, ctx = self.ready()
-        sha = repo.head()
         repo.git("add", "-A")
         repo.git("commit", "-q", "-m", "attestation")
         base = repo.head()

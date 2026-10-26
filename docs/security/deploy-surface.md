@@ -45,7 +45,7 @@ deploy_surface:
   fingerprint: "<the sha256 that --deploy-surface prints>"
 ```
 
-- `fires_on: none` declares that a workflow the doctor flagged does not deploy (use it for a workflow it could not parse).
+- `fires_on: none` declares that a workflow the doctor flagged does not deploy (use it for a workflow it could not parse). `gate: manual` is for hosts, where a person clicks "promote" in a dashboard; a workflow that an event starts automatically cannot be gated manual, and the doctor treats it as ungated.
 - `previews_on: label` means previews start only when a human applies a label (RC-1); branch previews that start for every push are `all-branches` and ungated.
 - A host config file with no entry in `git_integrated_hosts` is **unattested** and counts as an ungated deploy. "No git integration" is an entry too: `previews_on: none`, `production_on: none`.
 - Even a repository with no deploy files needs the `deploy_surface` stamp once, because dashboards are invisible to the repo.

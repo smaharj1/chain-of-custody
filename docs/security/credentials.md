@@ -13,7 +13,7 @@ No mutating cloud, database or deploy credential, and no credential of yours for
 | GitHub CLI | `cred.gh.hosts` | `hosts.yml` logins, with the token in the file or in the OS keychain. A login that is only the bot is fine |
 | git | `cred.git.config` (`cred.git.credential-helper`, `cred.git.extraheader`, `cred.git.url-credential`, `cred.git.ssh-command`), `cred.git.credentials-file`, `cred.git.submodules` | Credential helpers at system, global, local and worktree level, `http.*.extraheader` (what `actions/checkout` leaves behind), URL rewrites and remotes with embedded credentials, `core.sshCommand` with a key, `~/.git-credentials`, and the same inside submodule and per-worktree configs |
 | netrc | `cred.netrc` | `~/.netrc`, `_netrc`, `$NETRC` |
-| SSH | `cred.ssh.agent`, `cred.ssh.keys`, `cred.ssh.identity-files` | `SSH_AUTH_SOCK` set at all, agent sockets in known places (1Password, gpg-agent, launchd, systemd), `IdentityAgent`, private keys in `~/.ssh` (unencrypted is an error, passphrase-protected a warning) and keys named by `IdentityFile` outside it |
+| SSH | `cred.ssh.agent`, `cred.ssh.keys`, `cred.ssh.identity-files`, `cred.ssh.control-sockets` | `SSH_AUTH_SOCK` set at all, agent sockets in known places (1Password, gpg-agent, launchd, systemd), `IdentityAgent`, private keys in `~/.ssh` (unencrypted is an error, passphrase-protected a warning), keys named by `IdentityFile` outside it, and ControlMaster sockets (a live authenticated session needs no key) |
 | Containers | `cred.docker.socket`, `cred.docker.config`, `cred.docker.contexts`, `cred.groups` | Docker, podman and containerd sockets (a socket is root on the machine), registry logins and credential helpers, remote docker contexts, membership of the docker, lxd, libvirt or disk groups |
 | Kubernetes | `cred.kube` | Contexts in `~/.kube/config` and `$KUBECONFIG`, and the in-cluster service account token |
 | Other clouds and hosts | `cred.files.*` | gcloud, Azure, Terraform Cloud, Vault, Fly, Vercel, Netlify, Wrangler, Railway, doctl, Pulumi, Firebase, Supabase, Stripe, Heroku, GitLab, Helm |
@@ -34,6 +34,8 @@ Say these out loud to yourself before you trust a clean run:
 - **Your running processes.** On Linux a process can read the environment of the same user's other processes; an IDE or terminal you left open may hold tokens the doctor never sees.
 - **An unlocked keychain.** On macOS, `security find-internet-password` hands over the stored GitHub password for the logged-in user, with no helper configured. The Linux secret service is the same through D-Bus.
 - **Browser sessions and cookies**, a cloud console you are signed into, an `ssh` connection you left open with agent forwarding.
+- **Tunnels that are already up.** A running `ssh -L`, `kubectl port-forward` or `aws ssm start-session` makes a production database reachable on localhost with no credential file anywhere. The guards deny starting one (Phase 2); the doctor does not list listening ports.
+- **Secrets held by an IDE or a terminal multiplexer** (VS Code secret storage, a tmux session where you are logged in).
 - **Dashboard settings** on a git-integrated host (see [deploy-surface.md](deploy-surface.md)).
 
 `cred.same-user` says so while `agent_isolation` is `none`. The answer is not a cleverer scan; it is to stop sharing the identity:

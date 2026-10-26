@@ -124,6 +124,14 @@ class WorkflowDetection(SurfaceCase):
         self.assertEqual(trig[0]["gate"], "none")
         self.assertIn("no required reviewers", " ".join(trig[0]["problems"]))
 
+    def test_a_manual_gate_cannot_hold_for_a_workflow_an_event_starts(self):
+        repo0 = self.repo_with({".github/workflows/deploy.yml": DEPLOY_ON_PUSH})
+        cfg = self.attest(repo0, deploy_triggers=[{"workflow": ".github/workflows/deploy.yml", "fires_on": "push:main", "gate": "manual"}])
+        repo = self.repo_with({".github/workflows/deploy.yml": DEPLOY_ON_PUSH}, cfg)
+        ctx, surface, trig = self.triggers(repo)
+        self.assertEqual(trig[0]["gate"], "none")
+        self.assertIn("cannot hold", " ".join(trig[0]["problems"]))
+
     def test_declared_not_deploying_is_accepted(self):
         repo0 = self.repo_with({".github/workflows/deploy.yml": DEPLOY_ANY_BRANCH})
         cfg = self.attest(repo0, deploy_triggers=[{"workflow": ".github/workflows/deploy.yml", "fires_on": "none", "gate": "manual"}])
@@ -329,6 +337,15 @@ class AttestationAndFingerprint(SurfaceCase):
                  "helm/values.yaml", "kustomization.yaml", "Chart.yaml", ".github/workflows/x.yml"]
         got = set(deploy.surface_files(names))
         self.assertEqual(got, set(names))
+
+    def test_monorepo_subdirectory_configs_count_but_root_only_names_do_not(self):
+        names = ["apps/web/vercel.json", "services/api/fly.toml", "services/api/Dockerfile.prod", "deploy/k8s/app.yaml", "infra/serverless.yml", "apps/web/wrangler.toml"]
+        got = set(deploy.surface_files(names + ["src/app.yaml", "docs/template.yaml", "apps/web/.github/workflows/x.yml", "src/CNAME"]))
+        self.assertEqual(got, set(names))
+
+    def test_a_nested_vercel_json_needs_an_attestation(self):
+        repo = self.repo_with({"apps/web/vercel.json": "{}"})
+        self.assertFails(self.check_one(self.ctx(repo), "deploy.surface"), "deploy.host.vercel")
 
     def test_infrastructure_as_code_is_detected(self):
         repo = self.repo_with({"infra/main.tf": "", "cdk.json": "{}", "Pulumi.yaml": "x"})

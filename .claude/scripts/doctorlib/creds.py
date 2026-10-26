@@ -1069,6 +1069,38 @@ def gather_ssh_identity(ctx: Context) -> List[Dict[str, str]]:
     return out
 
 
+@gatherer("ssh_control_sockets")
+def gather_ssh_control(ctx: Context) -> List[str]:
+    """Sockets under ~/.ssh (ControlMaster): an already-authenticated session that any process of this user can reuse, with no key."""
+    out = []  # type: List[str]
+    base = ctx.home_path(".ssh")
+    for dirpath, dirnames, filenames in os.walk(base):
+        depth = os.path.relpath(dirpath, base).count(os.sep) + (0 if dirpath == base else 1)
+        if depth >= 2:
+            dirnames[:] = []
+        for n in filenames + dirnames:
+            p = os.path.join(dirpath, n)
+            try:
+                if stat.S_ISSOCK(os.lstat(p).st_mode):
+                    out.append(_tilde(ctx, p))
+            except OSError:
+                pass
+    for p in glob.glob(ctx.host_path("/tmp/ssh-*/*")) + glob.glob(ctx.host_path("/tmp/cm-*")):
+        try:
+            if stat.S_ISSOCK(os.lstat(p).st_mode):
+                out.append(p)
+        except OSError:
+            pass
+    return sorted(set(out))
+
+
+@check("cred.ssh.control-sockets", "credentials")
+def check_ssh_control(ctx: Context) -> List[Result]:
+    out = [failed("cred.ssh.control-sockets", "%s is a live SSH connection socket: reusing it needs no key or password" % s,
+                  "close the master connection (`ssh -O exit`) and run the agent as another user") for s in ctx.fact("ssh_control_sockets")]
+    return out or [passed("cred.ssh.control-sockets", "no SSH ControlMaster sockets")]
+
+
 @check("cred.ssh.identity-files", "credentials")
 def check_ssh_identity(ctx: Context) -> List[Result]:
     out = [failed("cred.ssh.identity-files", "~/.ssh/config points at a private key outside ~/.ssh: %s (%s)" % (k["path"], k["state"]),

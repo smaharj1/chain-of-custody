@@ -72,9 +72,22 @@ IAC_FILES = [("*.tf", "terraform"), ("*.tofu", "opentofu"), ("cdk.json", "cdk"),
              ("terragrunt.hcl", "terragrunt"), ("*/terragrunt.hcl", "terragrunt")]
 
 
+# Patterns only the repository root can honour (GitHub reads only the root `.github/`; these names mean something else deeper down).
+_ROOT_ONLY_PREFIXES = (".github/", ".circleci/", ".buildkite/", ".woodpecker/", ".do/", ".spacelift/", ".vercel/", ".argocd/")
+_ROOT_ONLY_NAMES = ("app.yaml", "template.yaml", "CNAME", ".nojekyll", "bin/*.ts", "docs/CNAME", ".platform.app.yaml", "Jenkinsfile", ".gitlab-ci.yml", ".travis.yml",
+                    "bitbucket-pipelines.yml", "azure-pipelines.yml", ".drone.yml", "appveyor.yml", ".woodpecker.yml", "atlantis.yaml", "atlantis.yml")
+
+
 def _match(rel: str, pattern: str) -> bool:
-    # fnmatch's `*` crosses `/`, which is what the floor patterns want (k8s/* covers k8s/a/b.yaml)
-    return fnmatch.fnmatchcase(rel, pattern)
+    """fnmatch with gitignore-like depth: `fnmatch`'s `*` crosses `/` (k8s/* covers k8s/a/b.yaml); a bare name matches at any depth
+    (a monorepo keeps apps/web/vercel.json and services/api/fly.toml); root-only names and prefixes stay at the root."""
+    if fnmatch.fnmatchcase(rel, pattern):
+        return True
+    if pattern.startswith(_ROOT_ONLY_PREFIXES) or pattern in _ROOT_ONLY_NAMES:
+        return False
+    if "/" not in pattern:
+        return fnmatch.fnmatchcase(rel.rsplit("/", 1)[-1], pattern)
+    return fnmatch.fnmatchcase(rel, "*/" + pattern)
 
 
 def surface_files(files: List[str]) -> List[str]:
@@ -398,6 +411,10 @@ def evaluate(ctx: Context, surface: Dict[str, Any]) -> Dict[str, Any]:
                 t["gate"] = gate if gate in GATES else "none"
                 if uncovered:
                     t["problems"].append("fires on %s, which the attestation does not list" % ", ".join(uncovered))
+                    t["gate"] = "none"
+                if t["gate"] == "manual" and wf["fires_on"]:
+                    t["problems"].append("gate manual cannot hold for a workflow that fires on %s; use gated-by-environment, or fires_on: none if it does not deploy"
+                                         % ", ".join(wf["fires_on"]))
                     t["gate"] = "none"
                 if t["gate"] == "gated-by-environment":
                     if not wf["parsed"]:
