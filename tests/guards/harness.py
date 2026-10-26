@@ -96,8 +96,15 @@ class Fixtures(object):
         r.write("justfile", "test:\n    pytest -q\n\nship:\n    terraform apply\n")
         r.write("scripts/evil.sh", "#!/bin/sh\nterraform apply\n")
         r.write("scripts/ok.sh", "#!/bin/sh\necho fine\nnpm test\n")
+        r.write("scripts/tracked_deploy.py", "import subprocess\nsubprocess.run(['terraform', 'apply'])\n")
         r.git("add", "-A")
         r.git("commit", "-q", "-m", "fixtures")
+        # agent-authored (untracked) scripts
+        r.write("scripts/untracked_deploy.py", "import subprocess\nsubprocess.run(['terraform', 'apply'])\n")
+        r.write("scripts/untracked_ok.py", "print('hello')\n")
+        r.write("scripts/untracked_push.js", "require('child_process').execSync('git push origin main')\n")
+        r.write("scripts/untracked_writes_settings.py", "open('.claude/settings.json', 'w').write('{}')\n")
+        r.write("scripts/untracked_sdk.py", "import claude_agent_sdk\n")
         return r
 
     def cleanup(self) -> None:

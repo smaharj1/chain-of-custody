@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from kitlib import gitutil, levels  # noqa: E402
 
-from doctorlib import (ci, codeowners, creds, deploy, github, levelcalc, secrets, settings, versions)  # noqa: E402,F401
+from doctorlib import (ci, codeowners, creds, deploy, github, guardchecks, levelcalc, secrets, settings, versions)  # noqa: E402,F401
 from doctorlib.model import CHECKS, ERROR, FAIL, UNKNOWN, WARN, Context, Result, default_reach, default_run, run_checks  # noqa: E402
 
 SCHEMA = "doctor.v1"

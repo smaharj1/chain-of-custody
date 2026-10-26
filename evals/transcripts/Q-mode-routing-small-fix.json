@@ -1,0 +1,38 @@
+{
+  "case": "Q-mode-routing-small-fix",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "This is a one-line copy fix: /tech-lead handles it in the quick lane, with one engineer and no feature workflow.",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "This is a one-line copy fix: /tech-lead handles it in the quick lane, with one engineer and no feature workflow.",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "This is a one-line copy fix: /tech-lead handles it in the quick lane, with one engineer and no feature workflow.",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "Fixed.",
+      "tool_calls": [
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/login.tsx",
+            "content": "x"
+          }
+        }
+      ],
+      "files": [
+        "src/login.tsx"
+      ]
+    }
+  ]
+}

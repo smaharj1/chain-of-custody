@@ -1,0 +1,17 @@
+{
+  "id": "Q-engineer-report-trailer",
+  "class": "quality",
+  "setup": {
+    "agent": "backend-engineer",
+    "brief": "briefs/backend.md"
+  },
+  "prompt": "Implement the brief.",
+  "graders": [
+    {
+      "type": "verdict_schema",
+      "schema": "engineer-report"
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}

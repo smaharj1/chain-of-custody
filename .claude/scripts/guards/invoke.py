@@ -47,7 +47,7 @@ class Inv(object):
     """One program invocation after unwrapping."""
 
     __slots__ = ("name", "raw", "args", "dyn", "env", "env_dyn", "wrappers", "cwd", "cmd", "origin", "depth",
-                 "name_dynamic", "xargs", "stdin_text")
+                 "name_dynamic", "xargs", "stdin_text", "cwd_unknown")
 
     def __init__(self, name: str, raw: str, args: List[str], dyn: List[bool], env: Dict[str, str], cwd: str,
                  cmd: Optional[Cmd], origin: str, depth: int, wrappers: Optional[List[str]] = None,
@@ -65,6 +65,7 @@ class Inv(object):
         self.depth = depth
         self.name_dynamic = name_dynamic
         self.xargs = False
+        self.cwd_unknown = False     # a `cd` to a directory computed at run time came earlier: relative paths mean nothing
         self.stdin_text = cmd.stdin_text if cmd is not None else None
 
     @property
@@ -81,9 +82,10 @@ class Inv(object):
 class InlineCode(object):
     """Code given to an interpreter on the command line or on stdin. `extra` is everything else the program is handed
     (its arguments and its piped input), because `os.system(sys.argv[1])` keeps the command out of the code."""
-    __slots__ = ("lang", "code", "inv", "dynamic", "extra")
+    __slots__ = ("lang", "code", "inv", "dynamic", "extra", "from_file")
 
-    def __init__(self, lang: str, code: str, inv: Inv, dynamic: bool, extra: str = "") -> None:
+    def __init__(self, lang: str, code: str, inv: Inv, dynamic: bool, extra: str = "", from_file: bool = False) -> None:
+        self.from_file = from_file     # the code is an agent-authored script file, not -c / -e text
         self.lang = lang
         self.code = code
         self.inv = inv
@@ -206,6 +208,7 @@ def _options(args: Sequence[str], dyn: Sequence[bool], with_arg: Set[str], flags
 
 class _Ctx(object):
     def __init__(self, ana: Analysis, base_env: Mapping[str, str], home: str) -> None:
+        self.cwd_unknown = False
         self.ana = ana
         self.base_env = base_env
         self.home = home
@@ -263,10 +266,14 @@ def _emit(ctx: _Ctx, sc: Script, cmd: Cmd, cwd: str, depth: int, origin: str, ou
     _dispatch(ctx, sc, cmd, name_raw, args, dyn, env, env_dyn, cwd, depth, origin, [], first.dynamic)
     _record_vfs(ctx, sc, cmd, cwd)
     low = _lc_base(name_raw)
-    if low in ("cd", "pushd", "chdir") and args and not dyn[0]:
-        target = args[0] if not args[0].startswith("-") or len(args) == 1 and args[0] == "-" else (args[1] if len(args) > 1 else "")
-        if target and target != "-":
-            cwd2 = paths.lexical(target, cwd, ctx.home)
+    if low in ("cd", "pushd", "chdir", "popd"):
+        opts = [a for a in args if not (a.startswith("-") and a != "-")]
+        if low == "popd" or (opts and opts[0] == "-") or any(dyn):
+            ctx.cwd_unknown = True
+        elif opts:
+            cwd2 = paths.lexical(opts[0], cwd, ctx.home)
+        elif low == "cd":
+            cwd2 = ctx.home
     return cwd2
 
 
@@ -332,6 +339,7 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
 
     inv = Inv(name, name_raw, args, dyn, inv_env, cwd, cmd, origin, depth, list(wrappers), name_dynamic)
     inv.env_dyn = env_dyn
+    inv.cwd_unknown = ctx.cwd_unknown
 
     # ---- wrappers that run another program -------------------------------------------------------------
     if name in WRAPPERS and name_raw.rsplit("/", 1)[-1].lower() == name:
@@ -605,6 +613,10 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
         ana.invs.append(inv)
         _just(ctx, inv, depth)
         return
+    if "/" in name_raw and not name_dynamic and "\x00" not in name_raw:
+        ana.invs.append(inv)
+        _exec_path(ctx, inv, script)
+        return
     if name in ("turbo", "nx", "lerna", "rush", "wireit") and args:
         ana.invs.append(inv)
         m2 = None
@@ -624,6 +636,24 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
         _expand_scripts_everywhere(ctx, cwd, names, depth, "%s:%%s" % name)
         return
     ana.invs.append(inv)
+
+
+def _exec_path(ctx: _Ctx, inv: Inv, script) -> None:
+    """`./scripts/deploy.sh` or `/tmp/run.sh` run directly: follow the file like `sh file` (or the interpreter on its shebang line)."""
+    text = _read_script(ctx, inv.raw, inv.cwd)
+    if text is None or "\x00" in text[:2000]:
+        return
+    first = text.split("\n", 1)[0]
+    if first.startswith("#!"):
+        m = re.search(r"(python|node|ruby|perl|php)", first)
+        if m and not re.search(r"\b(ba|z|da|k)?sh\b", first):
+            ctx.ana.scripts.append(ScriptFile(m.group(1), paths.lexical(inv.raw, inv.cwd, ctx.home), inv))
+            return
+    key = (paths.lexical(inv.raw, inv.cwd, ctx.home), "exec")
+    if key in ctx.visited or inv.depth > MAX_EXPANSION_DEPTH:
+        return
+    ctx.visited.add(key)
+    script(text, "script " + os.path.basename(inv.raw))
 
 
 def _npx_tool(pkg: str) -> str:

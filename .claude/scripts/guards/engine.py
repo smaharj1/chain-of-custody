@@ -12,7 +12,7 @@ import re
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from . import g_config, g_critic, g_exec, g_file, g_git, g_halt, g_infra
-from .lib import UNSET, BASH_TOOLS, EDIT_TOOLS, Ctx, Decision
+from .lib import UNSET, BASH_TOOLS, EDIT_TOOLS, Ctx, Decision, deny
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MANIFEST_PATH = os.path.join(HERE, "hooks.manifest.json")
@@ -90,6 +90,9 @@ def evaluate(hook: Mapping[str, Any], env: Optional[Mapping[str, str]] = None, s
              manifest: Optional[Mapping[str, Any]] = None, entry_id: Optional[str] = None, ctx: Optional[Ctx] = None) -> Optional[Decision]:
     man = manifest or load_manifest()
     c = ctx or Ctx(hook, env=env, state=state, config=config)
+    if c.tool_name in BASH_TOOLS and "\x00" in c.command:
+        # a NUL byte truncates the command in execve, so what the shell runs and what the guard parses could differ
+        return deny("guard-exec", "nul-byte", "the command contains a NUL byte; no legitimate command does")
     ask = None   # type: Optional[Decision]
     entries = entries_for(man, c.event or "PreToolUse", c.tool_name, entry_id)
     for e in entries:

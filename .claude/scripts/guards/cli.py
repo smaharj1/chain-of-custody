@@ -5,7 +5,7 @@ import json
 import os
 import sys
 import hashlib
-from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO
+from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
 
 from kitlib import jsonio, runstate
 
@@ -160,6 +160,21 @@ class _StubState(object):
         return False
 
 
+def evaluate_for_caller(tool: str, tool_input: Mapping[str, Any], caller: str = "unknown", cwd: Optional[str] = None,
+                        env: Optional[Mapping[str, str]] = None, config: Any = None) -> Tuple[Ctx, Optional[Decision]]:
+    """Run the guards for a synthetic call, with no repository and an in-memory session registry. `caller` is one of
+    engineer, critic, unknown, conductor (the registered conductor session). Used by `explain` and by tools/evals/run_local.py."""
+    hook = {"session_id": "explain-session", "cwd": cwd or os.getcwd(), "hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": dict(tool_input)}
+    records = {}   # type: Dict[str, Any]
+    if caller in ("engineer", "critic", "infra-engineer", "security-reviewer", "design-critic"):
+        hook["agent_id"] = "explain-agent"
+        hook["agent_type"] = {"engineer": "backend-engineer", "critic": "code-reviewer"}.get(caller, caller)
+    elif caller == "conductor":
+        records["explain-session"] = {"session_id": "explain-session", "role": "conductor"}
+    ctx = Ctx(hook, env=env, state=_StubState(records), config=config)
+    return ctx, engine.evaluate(hook, env=env, ctx=ctx)
+
+
 def _explain(args: List[str], stdout: TextIO, stderr: TextIO, env: Optional[Mapping[str, str]]) -> int:
     caller = "unknown"
     tool = "Bash"
@@ -176,16 +191,7 @@ def _explain(args: List[str], stdout: TextIO, stderr: TextIO, env: Optional[Mapp
             rest.append(args[i])
             i += 1
     text = " ".join(rest)
-    hook = {"session_id": "explain-session", "cwd": os.getcwd(), "hook_event_name": "PreToolUse", "tool_name": tool}
-    records = {}   # type: Dict[str, Any]
-    if caller in ("engineer", "critic"):
-        hook["agent_id"] = "explain-agent"
-        hook["agent_type"] = "backend-engineer" if caller == "engineer" else "code-reviewer"
-    elif caller == "conductor":
-        records["explain-session"] = {"session_id": "explain-session", "role": "conductor"}
-    hook["tool_input"] = {"command": text} if tool == "Bash" else {"file_path": text, "content": ""}
-    ctx = Ctx(hook, env=env, state=_StubState(records))
-    dec = engine.evaluate(hook, env=env, ctx=ctx)
+    ctx, dec = evaluate_for_caller(tool, {"command": text} if tool == "Bash" else {"file_path": text, "content": ""}, caller, env=env)
     stdout.write("caller: %s (%s)\n" % (ctx.caller.kind, ctx.caller.reason))
     if dec is None:
         stdout.write("decision: allow\n")

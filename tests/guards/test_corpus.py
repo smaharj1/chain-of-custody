@@ -21,7 +21,8 @@ import unittest
 
 from tests.guards.harness import CORPUS_DIR, Fixtures, evaluate_row
 
-FILES = ["git.json", "file.json", "infra.json", "exec.json", "critic.json", "callers.json", "adversarial.json", "allow.json"]
+FILES = ["git.json", "file.json", "infra.json", "exec.json", "critic.json", "callers.json", "adversarial.json", "adversarial2.json", "adversarial3.json",
+         "allow.json"]
 
 
 class CorpusTests(unittest.TestCase):

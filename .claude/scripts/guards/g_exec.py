@@ -93,6 +93,9 @@ def _basename_lc(raw: str) -> str:
 
 
 def check_bash(ctx: Ctx) -> Optional[Decision]:
+    if ctx.tool_input.get("dangerouslyDisableSandbox") or ctx.tool_input.get("dangerously_disable_sandbox"):
+        return deny(G, "sandbox-escape", "dangerouslyDisableSandbox runs the command outside the sandbox (B3: allowUnsandboxedCommands is false); a human "
+                    "runs unsandboxed commands")
     ana = ctx.analysis
     for p in ana.problems:
         d = _problem(ctx, ana, p)
@@ -108,9 +111,11 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
             return d
     for sf in ana.scripts:
         content = ana.vfs.get(sf.path)
-        if content is not None:
+        if content is None and paths.agent_authored(sf.path):
+            content = paths.safe_read(sf.path, 256 * 1024)
+        if content is not None:      # written in this command, or untracked/modified: agent-authored, so judged like inline code
             from .invoke import InlineCode
-            d = _inline(ctx, InlineCode(sf.lang, content, sf.inv, False))
+            d = _inline(ctx, InlineCode(sf.lang, content, sf.inv, False, " ".join(sf.inv.args), True))
             if d:
                 return d
         d = _script_file(ctx, sf, ana)
@@ -404,7 +409,7 @@ def _inline(ctx: Ctx, ic) -> Optional[Decision]:
         return deny(G, "inline-command", "inline %s code runs `%s`; the verbs the guards deny are denied through an interpreter too (CS-6)" % (low_lang, m.group(0)[:40]))
     if CLOUD_SDK_RE.search(norm):
         return deny(G, "sdk-inline", "inline %s code uses a cloud SDK: agents have no cloud credentials (B2) and an SDK call is not a verb the guard can classify" % low_lang)
-    if ctx.is_subagent and not _trivial(ic):
+    if ctx.is_subagent and not ic.from_file and not _trivial(ic):
         return deny(G, "inline-interpreter", "inline %s code (-c / -e) is refused for engineers and critics: an interpreter walks around every verb guard (CS-6). Write "
                     "a script file and run it, or use the project's own commands" % low_lang)
     return None

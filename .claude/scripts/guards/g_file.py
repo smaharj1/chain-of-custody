@@ -80,8 +80,16 @@ def _physical_aliases(path: str, aliases: Dict[str, str]) -> str:
     return cur
 
 
+GUARD_BASENAMES = ("settings.json", "settings.local.json", "loop.config.md", ".mcp.json", "codeowners", "hooks.json", "plugin.json")
+
+
 def _judge(ctx: Ctx, text: str, dynamic: bool, cwd: str, via: str, tree: Any = False,
-           aliases: Optional[Dict[str, str]] = None) -> Optional[Decision]:
+           aliases: Optional[Dict[str, str]] = None, unknown_cwd: bool = False) -> Optional[Decision]:
+    if unknown_cwd and text and not text.startswith(("/", "~")) and "\x00" not in text:
+        parts = [x.lower() for x in text.replace("\\", "/").split("/") if x not in ("", ".")]
+        if parts and (parts[0] in (".claude", ".git", ".github", "..") or parts[-1] in GUARD_BASENAMES):
+            return deny(G, "dynamic-target", "%s %s after a `cd` to a directory computed at run time: the guard cannot tell which file that is, and it names a "
+                        "guardrail location" % (via, text[:60]))
     if dynamic or "\x00" in text:
         static = text.replace("\x00", "").lower()
         if any(s in static for s in SUSPICIOUS_STATIC):
@@ -560,7 +568,7 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
             tree = t.tree and inv.name in ("rm", "rmdir", "mv", "chmod", "chown", "shred", "git", "rsync", "chgrp", "trash")
             if t.tree == "children" or (t.tree and inv.name == "find"):
                 tree = "children"      # `find . -name x -delete` is not `rm -rf .`: only a start path that IS a guardrail directory counts
-            d = _judge(ctx, t.text, t.dynamic, inv.cwd, via, tree=tree, aliases=aliases)
+            d = _judge(ctx, t.text, t.dynamic, inv.cwd, via, tree=tree, aliases=aliases, unknown_cwd=inv.cwd_unknown)
             if d:
                 return d
     for ic in ana.inline:
@@ -569,8 +577,12 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
             return deny(G, "script-writes-protected", "inline %s code names %s and writes files; agents do not modify guardrail paths (H6)" % (ic.lang, why))
     for sf in ana.scripts:
         content = ana.vfs.get(sf.path)
-        if content is not None:       # a script this very command wrote: agent-authored right now, so it is scanned like inline code
+        authored = content is not None
+        if content is None and paths.agent_authored(sf.path):
+            content = paths.safe_read(sf.path, 256 * 1024)
+            authored = content is not None
+        if authored:       # a script this command wrote, or one that is untracked or modified: agent-authored, so it is scanned like inline code
             why = scan_code(content)
             if why:
-                return deny(G, "script-writes-protected", "%s, written by this command, names %s and writes files (H6)" % (os.path.basename(sf.path), why))
+                return deny(G, "script-writes-protected", "%s (written or changed by the agent) names %s and writes files (H6)" % (os.path.basename(sf.path), why))
     return None

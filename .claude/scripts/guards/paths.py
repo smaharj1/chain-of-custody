@@ -305,3 +305,25 @@ def safe_read(path: str, limit: int = MAX_READ) -> Optional[str]:
             return fh.read()
     except OSError:
         return None
+
+
+def agent_authored(path: str) -> bool:
+    """True when a script file is not a reviewed, committed one: untracked, modified, or outside any repository.
+    Reviewed scripts (tracked and unchanged) are trusted at the base sha; what the agent wrote or edited is scanned."""
+    p = os.path.realpath(path)
+    root = find_root(p)
+    if root is None:
+        return True
+    try:
+        import subprocess
+        proc = subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--", p], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=10, shell=False)
+        if proc.returncode != 0:
+            return True
+        if proc.stdout.strip():
+            return True
+        tracked = subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=false", "ls-files", "--error-unmatch", "--", p], stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, timeout=10, shell=False)
+        return tracked.returncode != 0
+    except (OSError, ValueError):
+        return True

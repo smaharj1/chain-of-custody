@@ -355,7 +355,9 @@ def _pattern_remove(value: str, pattern: str, prefix: bool, longest: bool) -> st
 # static evaluation of pure producer pipelines
 
 def _echo_text(args: Sequence[str]) -> str:
-    interpret = False
+    """zsh's echo (and sh's on macOS) interprets backslash escapes by default; bash's does not. The analyser takes the
+    interpreting reading unless -E is given, because that is the one that can reveal a command the other hides."""
+    interpret = True
     newline = True
     i = 0
     while i < len(args) and re.match(r"^-[neE]+$", args[i]):
