@@ -1,0 +1,57 @@
+# CODEOWNERS for a repo that runs the Chain of Custody loop (report section 6.1 H3/H6, B4).
+# Copy to .github/CODEOWNERS, replace every @PLACEHOLDER, commit it through a pull request.
+#
+# It only means something if the branch ruleset has require_code_owner_review on
+# (.claude/templates/security/rulesets/). The LAST matching rule wins, so the catch-all comes first.
+#
+# Rules for owners:
+#   - never list the bot (the GitHub App or machine user); its approval must not count;
+#   - use a team, or a small set of humans, for guardrail paths, not the whole org;
+#   - on a solo install every rule names you, and you merge your own changes through the
+#     pull_request-mode bypass (docs/security/rulesets.md).
+
+# Default: every file needs one of these.
+*                       @PLACEHOLDER-owner
+
+# Guardrails (H6): settings, hooks, agents, skills, loop.config, scripts the kit runs.
+/.claude/               @PLACEHOLDER-guardrail-owners
+/.mcp.json              @PLACEHOLDER-guardrail-owners
+/.claude-plugin/        @PLACEHOLDER-guardrail-owners
+/plugin/                @PLACEHOLDER-guardrail-owners
+/skills/                @PLACEHOLDER-guardrail-owners
+/scripts/               @PLACEHOLDER-guardrail-owners
+
+# CI and the CODEOWNERS file itself: a workflow is code that runs with your tokens.
+/.github/               @PLACEHOLDER-guardrail-owners
+
+# Infrastructure as code and the deploy-surface floor (H3, H4). Keep whichever exist in your repo.
+/infra/                 @PLACEHOLDER-infra-owners
+*.tf                    @PLACEHOLDER-infra-owners
+/cdk.json               @PLACEHOLDER-infra-owners
+/bin/*.ts               @PLACEHOLDER-infra-owners
+/packages/infra/        @PLACEHOLDER-infra-owners
+/Pulumi*.yaml           @PLACEHOLDER-infra-owners
+/serverless.yml         @PLACEHOLDER-infra-owners
+/sst.config.ts          @PLACEHOLDER-infra-owners
+/amplify/               @PLACEHOLDER-infra-owners
+/amplify.yml            @PLACEHOLDER-infra-owners
+/Dockerfile*            @PLACEHOLDER-infra-owners
+/docker-compose*        @PLACEHOLDER-infra-owners
+/fly.toml               @PLACEHOLDER-infra-owners
+/vercel.json            @PLACEHOLDER-infra-owners
+/netlify.toml           @PLACEHOLDER-infra-owners
+/wrangler.toml          @PLACEHOLDER-infra-owners
+/render.yaml            @PLACEHOLDER-infra-owners
+/railway.json           @PLACEHOLDER-infra-owners
+/Procfile               @PLACEHOLDER-infra-owners
+/k8s/                   @PLACEHOLDER-infra-owners
+/helm/                  @PLACEHOLDER-infra-owners
+kustomization.yaml      @PLACEHOLDER-infra-owners
+Chart.yaml              @PLACEHOLDER-infra-owners
+.terraform.lock.hcl     @PLACEHOLDER-infra-owners
+
+# Other H3 paths. Uncomment and adapt: migrations, auth, payments, lockfiles, package scripts.
+# /migrations/          @PLACEHOLDER-data-owners
+# /src/auth/            @PLACEHOLDER-security-owners
+# /src/payments/        @PLACEHOLDER-security-owners
+# /package.json         @PLACEHOLDER-guardrail-owners
