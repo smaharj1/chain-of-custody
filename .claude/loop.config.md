@@ -83,6 +83,57 @@ enforce_engineer_git_hook: true  # if true, keep the shipped PreToolUse hook (.c
                                  # `git commit` from the conductor's. The "engineers are git-read-only"
                                  # boundary itself is protocol convention (engineer-protocol §8).
                                  # If false, you accept the residual risk with no hook backstop at all.
+
+# --- Boundary (security model, report §5) ---
+# Attestations are things the repo cannot show; a human commits them under H6.
+# Everything here is read by `python3 .claude/scripts/doctor.py`.
+autonomy_level: L1               # L0 | L1 | L2 | L3 | L4 | L5   (report §6.2). The level you ask for; the doctor prints the
+                                 #   EFFECTIVE level, which is lower whenever a prerequisite or cap fails. Run
+                                 #   `python3 .claude/scripts/doctor.py --level` to see each cap and its reason.
+                                 #   L0 assist | L1 supervised local loop (today's V1) | L2 push-branch | L3 draft-PR factory
+                                 #   L4 async factory | L5 low-risk auto-merge. L4 and L5 need docs/baseline/evidence.json.
+github_repo: ""                  # owner/name of the GitHub repo the doctor reads rulesets from. Empty = derive from `origin`.
+bot:
+  kind: none                     # none | github-app | machine-user-pat   (report §5.1 B1). The identity the agent pushes as.
+                                 #   github-app        required at L3+
+                                 #   machine-user-pat  acceptable at L2 only, a fine-grained PAT that expires within 14 days
+                                 #   never a PAT that belongs to a human
+  login: ""                      # the bot's GitHub login (for an App, `<slug>[bot]`). Never a human's login.
+  id: ""                         # numeric id of the App or machine user, as it would appear in a ruleset's bypass_actors.
+  token_expires: ""              # machine-user-pat only: the PAT's expiry date, YYYY-MM-DD. Must be at most 14 days away.
+solo_maintainer: false           # true on a one-human install. The human admin may then bypass rulesets in pull_request mode
+                                 #   only (RC-9); the bot never may. false (default) means no bypass actors at all.
+deploy_triggers: []              # HUMAN ATTESTATION (report §8.4, B5): every workflow that deploys, found by the doctor or declared.
+                                 #   - workflow: .github/workflows/deploy.yml
+                                 #     fires_on: "push:main"            # push:main | push:branches | tag | release | workflow_run | ...
+                                 #     gate: gated-by-environment       # or: none
+                                 # A deploy on a bot-pushable ref with gate none caps the level at L1; on main, at L4.
+git_integrated_hosts: []         # HUMAN ATTESTATION: hosts that deploy from git with no workflow in the repo (dashboard config).
+                                 #   - host: vercel
+                                 #     previews_on: none               # none | label | all-branches | pull-requests
+                                 #     production_on: main
+                                 #     gate: none                      # none | gated-by-environment | manual
+deploy_surface:
+  attested_at: ""                # date (YYYY-MM-DD) the human last attested deploy_triggers and git_integrated_hosts.
+  fingerprint: ""                # sha256 printed by `doctor --deploy-surface`. A change to any deploy-surface file makes it stale
+                                 #   and the attestation void until a human re-attests (report §8.4).
+sandbox_verified: ""             # date (YYYY-MM-DD) the human confirmed the OS sandbox really is active (V19). Empty = unverified,
+                                 #   which keeps the level at L1.
+agent_isolation: none            # none | separate-os-user | devcontainer | container   (report §5.1 B3). What the human attests
+                                 #   keeps the agent away from their credentials. A devcontainer or container with no credentials
+                                 #   also satisfies the managed-settings requirement at L3.
+managed_settings_verified: ""    # date (YYYY-MM-DD) managed settings (allowManagedHooksOnly, disableBypassPermissionsMode) were
+                                 #   installed for the OS user that runs the loop. Needed at L3+ unless agent_isolation is a container.
+platform_attested: []            # GitHub features the human confirmed are available on this repo's plan, for what the doctor
+                                 #   cannot read (report section 8.4, V27). Unknown means unavailable. Names: rulesets,
+                                 #   code_owner_review, required_status_checks, bot_no_bypass, environment_reviewers,
+                                 #   apply_human_dispatch (IaC apply only by a human-started workflow), g3_ci_only (held-out
+                                 #   tests run only in CI, RC-6), push_rulesets.
+factory_approvers: []            # logins of the humans whose labels count (`factory:go`, `plan-ok`, `preview`). The label-guard
+                                 #   workflow template removes the label when anyone else applies it (RC-20).
+promotion_attested: ""           # date (YYYY-MM-DD) the human confirmed the §6.3 promotion bar is met. Needed for L5.
+mcp_allowed_servers: []          # names of MCP servers or plugins the human accepts in a loop run (report section 5.6), for
+                                 #   example a read-only docs server. Any other deploy-capable server caps the level at L1.
 ```
 
 ## Notes
