@@ -63,8 +63,12 @@ OBFUSCATION_RE = re.compile(r"(\b(exec|eval|compile)\s*\(|\bFunction\s*\(|new\s+
 DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from|zlib|decompress|rot13|codecs\.decode|\bchr\b|String\.fromCharCode|"
                        r"\\x[0-9a-f]{2}|bytes\.fromhex|marshal|pickle)", re.I)
 
-LOOPCTL_READ = {"validate", "status", "render", "doctor", "help", "--help", "-h", "version", "--version"}
-LOOPCTL_FLAG_READ = {"reconcile": "--dry-run", "migrate-plan": "--check", "cost": "--projection", "evidence": "--check", "lock": "status"}
+# Kept in step with `loopctl/cli.py` (READ_COMMANDS, FLAG_READ, WRITE_FLAGS); tests/loopctl/test_guard_alignment.py compares them.
+LOOPCTL_READ = {"validate", "status", "render", "doctor", "audit", "report", "help", "--help", "-h", "version", "--version"}
+LOOPCTL_FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
+                     "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",)}
+# a flag that makes a command a write even when a read flag is also present (`migrate-plan --check --write`)
+LOOPCTL_WRITE_FLAGS = ("--apply", "--write", "--force")
 
 NPX_DEV = {"tsc", "eslint", "prettier", "jest", "vitest", "mocha", "playwright", "cypress", "tsx", "ts-node", "next", "vite", "nuxt", "astro",
            "remix", "nx", "turbo", "prisma", "drizzle-kit", "tailwindcss", "postcss", "esbuild", "rollup", "webpack", "babel", "nodemon",
@@ -335,11 +339,10 @@ def _env(inv: Inv) -> Optional[Decision]:
     return None
 
 
-def _loopctl(ctx: Ctx, inv: Inv) -> Optional[Decision]:
-    sub = None   # type: Optional[str]
+def _loopctl_parse(inv: Inv):
+    """(command word, positional words after loopctl, flags) for a loopctl invocation, else None."""
     args = inv.args
     nm = inv.name
-    rest = []   # type: List[str]
     if nm in ("loopctl", "loopctl.py"):
         rest = list(args)
     elif nm == "py-module:loopctl" or (nm.startswith("py-module:") and nm.split(":")[1].startswith("loopctl")):
@@ -354,16 +357,41 @@ def _loopctl(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     else:
         return None
     pos = [a for a in rest if not a.startswith("-")]
-    sub = pos[0].lower() if pos else ""
-    flags = [a for a in rest if a.startswith("-")]
-    is_read = sub in LOOPCTL_READ or not sub
-    if sub in LOOPCTL_FLAG_READ and not is_read:
-        need = LOOPCTL_FLAG_READ[sub]
-        is_read = (need in flags) or (need in pos[1:2])
-    if is_read:
+    first = next((k for k, a in enumerate(rest) if not a.startswith("-")), len(rest))
+    # loopctl takes no option before the command except --help/--version; anything else there is not a clean invocation
+    odd = [a for a in rest[:first] if a not in ("-h", "--help", "--version")]
+    flags = [a for a in rest[first:] if a.startswith("-")]
+    if odd:
+        flags.append("--force")      # poison: treated as a write (loopctl itself refuses such an invocation)
+    return (pos[0].lower() if pos else ""), pos, flags
+
+
+def loopctl_is_read(inv: Inv) -> Optional[bool]:
+    """None if `inv` is not a loopctl invocation; True if it is a read-only loopctl command; False if it may write state.
+
+    The command is the first word that does not start with `-` (loopctl accepts no option with a separate value before it, so this
+    is the word loopctl itself runs). A read flag only counts when no write flag is present."""
+    parsed = _loopctl_parse(inv)
+    if parsed is None:
+        return None
+    sub, pos, flags = parsed
+    if any(f in LOOPCTL_WRITE_FLAGS or f.split("=", 1)[0] in LOOPCTL_WRITE_FLAGS for f in flags):
+        return False
+    if sub in LOOPCTL_READ or not sub:
+        return True
+    need = LOOPCTL_FLAG_READ.get(sub)
+    if need:
+        return any(n in flags for n in need) or any(n in pos[1:2] for n in need)
+    return False
+
+
+def _loopctl(ctx: Ctx, inv: Inv) -> Optional[Decision]:
+    read = loopctl_is_read(inv)
+    if read is None or read:
         return None
     if ctx.kind == "conductor":
         return None
+    sub = _loopctl_parse(inv)[0]
     who = "an engineer or critic" if ctx.is_subagent else ("a driver child" if ctx.caller.role else "a session that is not the registered conductor")
     return deny(G, "loopctl-write", "loopctl %s changes the run state; only the registered conductor session may (RC-13, CS-25). Called by %s. Without this rule an "
                 "engineer could replay `loopctl set ...`" % (sub, who))

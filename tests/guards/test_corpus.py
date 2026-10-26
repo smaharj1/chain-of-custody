@@ -7,6 +7,7 @@ Every row in tests/guards/corpus/*.json is `{caller, command or path, expected d
     infra.json      guard-infra: the verb classifier, tunnels, publish, credentials, MCP
     exec.json       guard-exec: claude and SDK launches, interpreters, pipes to shells, loopctl writes (RC-13)
     critic.json     guard-critic-write, guard-halt, ConfigChange
+    loopctl.json    loopctl read, flag-read and write commands by caller, and under HALT (Phase 4a)
     callers.json    caller classification: roster, plugin prefix, registered and unknown sessions, --agent sessions
     adversarial.json  bypass attempts that cross guards: wrappers, quoting, env tricks, paths, symlinks, case
     allow.json      ordinary development commands that must be allowed (the false-positive corpus)
@@ -22,7 +23,7 @@ import unittest
 from tests.guards.harness import CORPUS_DIR, Fixtures, evaluate_row
 
 FILES = ["git.json", "file.json", "infra.json", "exec.json", "critic.json", "callers.json", "adversarial.json", "adversarial2.json", "adversarial3.json",
-         "adversarial4.json", "adversarial5.json", "allow.json"]
+         "adversarial4.json", "adversarial5.json", "loopctl.json", "allow.json"]
 
 
 class CorpusTests(unittest.TestCase):
