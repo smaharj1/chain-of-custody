@@ -18,11 +18,16 @@ from .helpers import BoundaryCase
 MANIFEST = os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "hooks.manifest.json")
 
 
+def _read(path, mode="r"):
+    with open(path, mode) as fh:
+        return fh.read()
+
+
 class GuardWiring(BoundaryCase):
     GROUPS = {"settings"}
 
     def repo_with_guards(self, live_settings=None, staged=True):
-        text = open(MANIFEST).read()
+        text = _read(MANIFEST)
         manifest = json.loads(text)
         files = {".claude/scripts/guards/hooks.manifest.json": text}
         if staged:
@@ -36,7 +41,7 @@ class GuardWiring(BoundaryCase):
         return ctx, self.results(ctx)
 
     def test_active_wiring_passes_everything(self) -> None:
-        repo, manifest = self.repo_with_guards(live_settings=wiring.build_settings(manifest := json.loads(open(MANIFEST).read())))
+        repo, manifest = self.repo_with_guards(live_settings=wiring.build_settings(manifest := json.loads(_read(MANIFEST))))
         ctx, res = self.run_checks(repo)
         for rid in ("guards.manifest", "guards.wiring", "guards.on-failure"):
             self.assertClean(res, rid)
@@ -61,7 +66,7 @@ class GuardWiring(BoundaryCase):
         self.assertEqual(hit[0].severity, "warn")
 
     def test_partial_wiring_is_an_error(self) -> None:
-        manifest = json.loads(open(MANIFEST).read())
+        manifest = json.loads(_read(MANIFEST))
         live = wiring.build_settings(manifest)
         live["hooks"]["PreToolUse"].pop(0)           # the Bash guard is gone
         repo, _ = self.repo_with_guards(live_settings=live)
@@ -71,7 +76,7 @@ class GuardWiring(BoundaryCase):
         self.assertIn("inconsistent", hit[0].message)
 
     def test_a_changed_command_counts_as_missing(self) -> None:
-        manifest = json.loads(open(MANIFEST).read())
+        manifest = json.loads(_read(MANIFEST))
         live = wiring.build_settings(manifest)
         live["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = live["hooks"]["PreToolUse"][0]["hooks"][0]["command"].replace("exit 2", "exit 0")
         repo, _ = self.repo_with_guards(live_settings=live)
@@ -79,7 +84,7 @@ class GuardWiring(BoundaryCase):
         self.assertFails(res, "guards.wiring")
 
     def test_missing_on_failure_is_an_error(self) -> None:
-        manifest = json.loads(open(MANIFEST).read())
+        manifest = json.loads(_read(MANIFEST))
         live = wiring.build_settings(manifest)
         for g in live["hooks"]["PreToolUse"]:
             for h in g["hooks"]:
@@ -91,7 +96,7 @@ class GuardWiring(BoundaryCase):
         self.assertIn("RC-30", hit[0].message)
 
     def test_hooks_in_local_or_user_settings_count(self) -> None:
-        manifest = json.loads(open(MANIFEST).read())
+        manifest = json.loads(_read(MANIFEST))
         repo, _ = self.repo_with_guards(live_settings={"permissions": {"allow": []}})
         repo.write(".claude/settings.local.json", json.dumps(wiring.build_settings(manifest)))
         ctx, res = self.run_checks(repo)
@@ -105,14 +110,14 @@ class GuardWiring(BoundaryCase):
         self.assertFails(res, "guards.wiring")
 
     def test_stale_staged_file(self) -> None:
-        text = open(MANIFEST).read()
+        text = _read(MANIFEST)
         repo = self.kit_repo(files={".claude/scripts/guards/hooks.manifest.json": text, ".claude/settings.v2.json": "{}\n"})
         ctx, res = self.run_checks(repo)
         hit = self.assertFails(res, "guards.manifest")
         self.assertIn("differs", hit[0].message)
 
     def test_a_manifest_naming_a_missing_guard(self) -> None:
-        manifest = json.loads(open(MANIFEST).read())
+        manifest = json.loads(_read(MANIFEST))
         manifest["entries"][0]["guards"].append("not-a-guard")
         repo = self.kit_repo(files={".claude/scripts/guards/hooks.manifest.json": json.dumps(manifest)})
         ctx, res = self.run_checks(repo)
@@ -133,7 +138,7 @@ class GuardWiring(BoundaryCase):
 
     def test_selftest_passed(self) -> None:
         repo, _ = self.repo_with_guards()
-        sha = hashlib.sha256(open(MANIFEST, "rb").read()).hexdigest()
+        sha = hashlib.sha256(_read(MANIFEST, "rb")).hexdigest()
         self.record(repo, ok=True, cases=15, at="2026-10-26T00:00:00Z", manifest_sha256=sha, failures=[])
         ctx, res = self.run_checks(repo)
         self.assertClean(res, "guards.selftest")
@@ -146,7 +151,7 @@ class GuardWiring(BoundaryCase):
         self.assertEqual(hit[0].severity, "warn")
 
     def test_failed_selftest_caps_at_l0(self) -> None:
-        repo, _ = self.repo_with_guards(live_settings=wiring.build_settings(json.loads(open(MANIFEST).read())))
+        repo, _ = self.repo_with_guards(live_settings=wiring.build_settings(json.loads(_read(MANIFEST))))
         self.record(repo, ok=False, cases=15, failures=["git push is denied: expected deny, got allow"])
         ctx, res = self.run_checks(repo)
         hit = self.assertFails(res, "guards.selftest")

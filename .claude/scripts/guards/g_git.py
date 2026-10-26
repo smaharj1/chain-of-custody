@@ -78,15 +78,16 @@ ALWAYS_DENIED = {
     "pack-refs": "pack-refs rewrites ref storage", "prune": "prune deletes unreachable objects", "prune-packed": "deletes objects",
 }
 RULE_NAME = {"update-ref": "update-ref", "filter-branch": "filter-branch", "filter-repo": "filter-branch", "replace": "replace",
-             "rebase": "rebase", "credential": "credential"}
+             "rebase": "rebase", "credential": "credential", "hook": "hook"}
+NEVER_RUN_RULE = "never-run"      # every other subcommand in ALWAYS_DENIED: external programs, servers, GUIs, foreign VCS
 
 # harmless `-c key=value` overrides (everything else is denied; core.* and alias.* have their own rule id)
 SAFE_C_KEYS = [
     r"user\.(name|email|signingkey)$", r"color\.[a-z.]+$", r"advice\.[a-z]+$", r"init\.defaultbranch$", r"commit\.gpgsign$",
-    r"tag\.gpgsign$", r"pull\.(rebase|ff)$", r"log\.[a-z.]+$", r"diff\.(algorithm|context|renames|colormoved|wserrorhighlight|"
+    r"tag\.gpgsign$", r"log\.[a-z.]+$", r"diff\.(algorithm|context|renames|colormoved|wserrorhighlight|"
     r"noprefix|mnemonicprefix|submodule)$", r"status\.[a-z.]+$", r"column\.[a-z.]+$", r"help\.[a-z.]+$", r"gc\.auto$",
-    r"fetch\.(prune|prunetags|parallel)$", r"merge\.(ff|conflictstyle|stat)$", r"submodule\.recurse$", r"protocol\.version$",
-    r"rebase\.autostash$", r"push\.default$", r"push\.autosetupremote$", r"branch\.sort$", r"tag\.sort$", r"i18n\.[a-z]+$",
+    r"fetch\.(prune|prunetags|parallel)$", r"merge\.(ff|conflictstyle|stat)$", r"protocol\.version$",
+    r"rebase\.autostash$", r"push\.autosetupremote$", r"branch\.sort$", r"tag\.sort$", r"i18n\.[a-z]+$",
     r"credential\.helper$-never-match",
 ]
 SAFE_C_RE = [re.compile(p, re.I) for p in SAFE_C_KEYS]
@@ -359,7 +360,7 @@ def _check_git(ctx: Ctx, inv: Inv, depth: int) -> Optional[Decision]:
 
     handler = _HANDLERS.get(sub)
     if sub in ALWAYS_DENIED:
-        return deny(G, RULE_NAME.get(sub, sub), "git %s is never run by an agent: %s" % (sub, ALWAYS_DENIED[sub]))
+        return deny(G, RULE_NAME.get(sub, NEVER_RUN_RULE), "git %s is never run by an agent: %s" % (sub, ALWAYS_DENIED[sub]))
     if handler is not None:
         return handler(ctx, g)
     if sub in READ_SUBS:
@@ -480,7 +481,7 @@ def _is_shared_ref(ctx: Ctx, ref: str) -> bool:
 
 def _h_reset(ctx: Ctx, g: _Git) -> Optional[Decision]:
     rest = g.rest
-    hard = any(a in ("--hard", "--merge", "--keep") or _abbrev(a, "--hard", 3) or _abbrev(a, "--merge", 4) for a in rest)
+    hard = any(a in ("--hard", "--merge", "--keep") or _abbrev(a, "--hard", 3) or _abbrev(a, "--merge", 4) or _abbrev(a, "--keep", 4) for a in rest)
     pos = _positionals(rest)
     if hard:
         d = _need(ctx, 3, "reset --hard", "reset")
@@ -641,8 +642,7 @@ def _h_branch(ctx: Ctx, g: _Git) -> Optional[Decision]:
 def _h_tag(ctx: Ctx, g: _Git) -> Optional[Decision]:
     flags = _flags(g.rest)
     pos = _positionals(g.rest, ("-m", "-F", "-u", "--sort", "--format", "--contains", "--points-at", "--merged", "--no-merged", "-n", "--column"))
-    if any(f == "-f" or f == "--force" or _abbrev(f, "--force", 4) or (f.startswith("-") and not f.startswith("--") and "f" in f[1:]
-                                                                          and not any(ch in f[1:] for ch in "mFu")) for f in flags):
+    if any(f == "--force" or _abbrev(f, "--force", 4) or _cluster_has(f, "f", "mFu") for f in flags):
         return deny(G, "tag-force", "git tag -f moves an existing tag (a release marker, H5)")
     listing = any(f in ("-l", "--list", "--contains", "--points-at", "--merged", "--no-merged", "--sort", "-v", "--verify") or f.startswith(("--sort=", "--format=", "-n", "--contains=", "--points-at="))
                   for f in flags)
@@ -891,9 +891,8 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
         return deny(G, "push-tags", "pushing tags is a release (H5)")
     branch = _current_branch(ctx, g)
     if not specs:
-        specs = [branch or ""]
-        if not branch:
-            return deny(G, "push-refspec", "git push with no refspec on a detached HEAD")
+        return deny(G, "push-refspec", "git push with no refspec pushes whatever push.default and the remote's push config say (matching, upstream, ...); "
+                    "name the branch: git push origin feat/<slug>")
     for spec in specs:
         d = _refspec_ok(ctx, spec, branch)
         if d:
@@ -1060,12 +1059,17 @@ def _check_github_http(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     mutating = False
     args = inv.args
     for k, a in enumerate(args):
-        low = a.lower()
-        if low in ("-x", "--request", "--method") and k + 1 < len(args) and args[k + 1].upper() != "GET":
+        if a in ("-X", "--request", "--method") and k + 1 < len(args) and args[k + 1].upper() != "GET":
             mutating = True
-        if low.startswith(("-d", "--data", "-f", "--form", "-t", "--upload-file", "--json", "--post")) and low not in ("-f", "--fail", "--fail-with-body"):
+        elif a.startswith("-X") and len(a) > 2 and a[2:].upper() != "GET":
             mutating = True
-        if low in ("put", "post", "patch", "delete") and inv.name in ("http", "https", "xh", "httpie"):
+        elif a.startswith("--request=") and a.split("=", 1)[1].upper() != "GET":
+            mutating = True
+        elif a.startswith(("--data", "--form", "--upload-file", "--json", "--post")):
+            mutating = True
+        elif a.startswith("-") and not a.startswith("--") and any(ch in "dFT" for ch in a[1:]) and not a.startswith("-X"):
+            mutating = True          # curl: -d data, -F form, -T upload (-f is --fail and is fine)
+        elif a.lower() in ("put", "post", "patch", "delete") and inv.name in ("http", "https", "xh", "httpie"):
             mutating = True
     if mutating:
         return deny(G, "gh-api-write", "a non-GET request to the GitHub API (report §5.9: gh api non-GET is denied; the same goes for curl)")

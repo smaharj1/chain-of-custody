@@ -296,6 +296,8 @@ def is_report_path(abs_path: str) -> bool:
 
 def safe_read(path: str, limit: int = MAX_READ) -> Optional[str]:
     """Read a small regular file as text; None if it is missing, not regular, or too big."""
+    if "\x00" in path:        # a path with a run-time-computed part: there is nothing to read
+        return None
     try:
         st = os.stat(path)
         import stat as _stat

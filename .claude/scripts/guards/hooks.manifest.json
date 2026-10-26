@@ -7,7 +7,7 @@
     {"id": "pre-edit", "event": "PreToolUse", "matcher": "Edit|Write|MultiEdit|NotebookEdit",
      "guards": ["halt", "file", "main-edit", "critic"], "blocking": true, "timeout": 10},
     {"id": "pre-mcp", "event": "PreToolUse", "matcher": "mcp__.*",
-     "guards": ["halt", "infra"], "blocking": true, "timeout": 10},
+     "guards": ["halt", "file", "infra"], "blocking": true, "timeout": 10},
     {"id": "pre-dispatch", "event": "PreToolUse", "matcher": "Agent|Task|Workflow",
      "guards": ["halt"], "blocking": true, "timeout": 10},
     {"id": "post-untrusted", "event": "PostToolUse", "matcher": "WebFetch|WebSearch|mcp__.*|Read|Bash",

@@ -218,7 +218,20 @@ class _Ctx(object):
 def analyze(command: str, cwd: str, base_env: Optional[Mapping[str, str]] = None, home: Optional[str] = None) -> Analysis:
     ana = Analysis()
     ctx = _Ctx(ana, base_env if base_env is not None else os.environ, home or paths.home_dir(base_env))
-    _script(ctx, command, cwd, 0, "top", {})
+    from . import shellparse
+
+    def reader(path: str) -> Optional[str]:
+        if "\x00" in path:
+            return None
+        lp = paths.lexical(path, cwd, ctx.home)
+        if lp in ana.vfs:
+            return ana.vfs[lp]
+        return paths.safe_read(lp, 64 * 1024)
+    shellparse.set_file_reader(reader)
+    try:
+        _script(ctx, command, cwd, 0, "top", {})
+    finally:
+        shellparse.set_file_reader(None)
     return ana
 
 
@@ -317,9 +330,9 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
     if name_dynamic and NUL in name_raw:
         pure = name_raw.replace(NUL, "")
         if not pure:
-            ana.problem("opaque-command", "the command name is computed at run time")
+            ana.problem("opaque-command", "the command name is computed at run time", "pure:" + origin)
         else:
-            ana.problem("opaque-command", "the command name is partly computed at run time")
+            ana.problem("opaque-command", "the command name is partly computed at run time", "partial:" + origin)
         base = _lc_base(pure) if pure else ""
         name = base
     inv_env = dict(env)

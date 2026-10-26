@@ -53,6 +53,8 @@ def _file_guard(ctx: Ctx) -> Optional[Decision]:
         return g_file.check_edit(ctx)
     if ctx.tool_name in BASH_TOOLS:
         return g_file.check_bash(ctx)
+    if ctx.tool_name.startswith("mcp__"):
+        return g_file.check_mcp_paths(ctx)
     return None
 
 

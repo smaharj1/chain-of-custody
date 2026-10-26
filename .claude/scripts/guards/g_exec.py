@@ -57,6 +57,8 @@ EXEC_API_RE = re.compile(r"(os\.system|os\.popen|os\.exec|os\.spawn|subprocess|c
 CRED_FILE_RE = re.compile(r"(^|/)(\.env\.(production|prod|staging|live)(\..*)?|id_(rsa|ed25519|ecdsa|dsa)|[^/]*\.(pem|p12|pfx|jks)|\.netrc|\.git-credentials|"
                           r"\.pypirc|\.npmrc|(private|secret|server|tls|ssl|signing|jwt|client|service|deploy)[^/]*\.key)$|/(secrets?|keys|certs|ssl|tls|private)/[^/]*\.key$", re.I)
 CRED_DIR_RE = re.compile(r"(^|/)(\.aws|\.ssh|\.kube|\.azure|\.gnupg|\.config/gh|\.config/gcloud|\.docker)(/|$)", re.I)
+KIT_INTERNALS_RE = re.compile(r"(\b(from|import)\s+(kitlib|guards|doctorlib)\b|\brequire\(['\"][^'\"]*(kitlib|guards)|register_session|unregister_session|clear_halt|set_halt|"
+                              r"acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|RunState\b|loopctl/(sessions|run\.json|HALT|lock|nonces|taint|events))", re.I)
 OBFUSCATION_RE = re.compile(r"(\b(exec|eval|compile)\s*\(|\bFunction\s*\(|new\s+Function|__import__|\bvm\.run)", re.I)
 DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from|zlib|decompress|rot13|codecs\.decode|\bchr\b|String\.fromCharCode|"
                        r"\\x[0-9a-f]{2}|bytes\.fromhex|marshal|pickle)", re.I)
@@ -137,6 +139,10 @@ def _problem(ctx: Ctx, ana, p) -> Optional[Decision]:
         return None
     if p.kind == "opaque-command":
         verbs = ("apply", "destroy", "deploy", "push", "delete", "publish", "up", "install", "merge", "force", "prune")
+        typed_here = p.detail in ("pure:top", "pure:subst", "pure:procsub")
+        if typed_here:
+            return deny(G, "opaque-command", "%s. A command whose whole name is computed at run time (`$cmd`, `$(...)`, `\"$@\"`) runs whatever a variable or a file holds, "
+                        "unseen (CS-6); name the program, or put the logic in a script file the guard can read" % p.message)
         if ctx.is_subagent or any(a in verbs for inv in ana.invs for a in inv.args):
             return deny(G, "opaque-command", "%s. Subagents may not run commands whose name is built at run time, and nobody may when it carries a "
                         "deploy-class verb (CS-6)" % p.message)
@@ -186,6 +192,12 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
                 rest = [x for x in inv.args if x != a]
                 if not any(x in ("--selftest", "--explain", "--help", "-h") for x in rest) or any(x in ("register-session", "clear-halt", "set-halt", "unregister-session") for x in rest):
                     return deny(G, "guards-cli", "the guards' state commands (register-session, set-halt, clear-halt) are human commands: run them with `!`")
+    if name.startswith("py-module:") and re.match(r"py-module:(guards|kitlib|doctorlib)(\.|$)", name):
+        if name.startswith("py-module:guards") and any(x in inv.args for x in ("--selftest", "--explain")) and not any(
+                x in inv.args for x in ("register-session", "clear-halt", "set-halt", "unregister-session")):
+            pass
+        else:
+            return deny(G, "guards-cli", "python -m %s reaches the kit's internals (the session registry, HALT, the lock): those are written by loopctl and by humans, not by an agent" % name[10:])
     d = _persistence_and_config(ctx, inv)
     if d:
         return d
@@ -391,10 +403,13 @@ def _inline(ctx: Ctx, ic) -> Optional[Decision]:
     scan = command_scan_text(code)
     if SDK_RE.search(norm) or CLAUDE_CALL_RE.search(scan) or CLAUDE_SHELL_RE.search(scan):
         return deny(G, "claude", "inline %s code launches `claude` or the Agent SDK (CS-2)" % low_lang)
+    if not ic.from_file and KIT_INTERNALS_RE.search(norm):
+        return deny(G, "kit-internals", "inline %s code reaches the kit's own libraries or its run state (the session registry, HALT, the lock, the nonce). An agent that can "
+                    "register its own session defeats the caller classification (report §5.7); loopctl and humans write that state" % low_lang)
     if SDK_ANTHROPIC_INLINE_RE.search(norm):
         return deny(G, "sdk-inline", "inline %s code imports the Anthropic SDK; an SDK script is a way to start a session with no hooks (CS-2). Run a reviewed script file "
                     "instead" % low_lang)
-    if OBFUSCATION_RE.search(norm) and DECODE_RE.search(norm):
+    if DECODE_RE.search(norm) and (OBFUSCATION_RE.search(norm) or (not ic.from_file and (g_file.WRITE_RE.search(norm) or g_file.WRITE_RE.search(g_file.normalise_code(code, join=False))))):
         return deny(G, "obfuscated-code", "inline %s code decodes and executes a string (exec/eval + base64/hex/chr); the guard cannot read it, so it is refused" % low_lang)
     if ic.dynamic:
         if ctx.is_subagent:

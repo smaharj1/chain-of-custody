@@ -46,7 +46,7 @@ _SENT_BACK = {v: k for k, v in _SENT.items()}
 
 _NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(\+?)=")
-SAFE_ENV_KEYS = ("HOME", "PWD", "OLDPWD", "TMPDIR", "USER", "LOGNAME", "SHELL", "PATH", "LANG", "TERM",
+SAFE_ENV_KEYS = ("HOME", "PWD", "TMPDIR", "USER", "LOGNAME", "SHELL", "PATH", "LANG", "TERM",
                  "EDITOR", "HOSTNAME", "TMP", "TEMP")
 
 
@@ -449,9 +449,25 @@ def _tr_expand(spec: str) -> str:
     return "".join(out)
 
 
+FILE_READER = None   # type: Any   # set by invoke: (path) -> Optional[str], so `$(cat script.txt)` and `$(< script.txt)` can be read
+
+
+def set_file_reader(fn: Any) -> None:
+    global FILE_READER
+    FILE_READER = fn
+
+
 def _stage(name: str, args: Sequence[str], data: Optional[str]) -> Optional[str]:
     """One pure pipeline stage. None = not a pure stage we can evaluate."""
     name = name.lower()
+    if name == "cat" and args and data is None and FILE_READER is not None and all(not a.startswith("-") for a in args):
+        parts = []
+        for a in args:
+            t = FILE_READER(a)
+            if t is None:
+                return None
+            parts.append(t)
+        return "".join(parts)
     if name == "echo":
         return _echo_text(args)
     if name == "printf":
@@ -505,6 +521,10 @@ def static_eval(cmds: Sequence["Cmd"], allow_final_redirect: bool = False) -> Op
     them for `$(...)`)."""
     top = [c for c in cmds if c.words or c.stdin_text is not None]
     if not top:
+        only = [c for c in cmds if c.redirs]
+        if len(only) == 1 and len(cmds) == 1 and FILE_READER is not None and all(r.op == "<" and r.target is not None and not r.target.dynamic for r in only[0].redirs) \
+                and len(only[0].redirs) == 1:
+            return FILE_READER(only[0].redirs[0].target.text)      # $(< file)
         return None
     # a single pipeline: each command's pipe_prev is the previous one
     chain = [top[0]]

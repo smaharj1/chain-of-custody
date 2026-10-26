@@ -252,7 +252,10 @@ class Ctx(object):
     @property
     def analysis(self) -> invoke.Analysis:
         if self._analysis is None:
-            self._analysis = invoke.analyze(self.command, self.cwd, self.env, self.home)
+            env = dict(self.env)
+            env["PWD"] = self.cwd          # the shell's cwd is the hook's cwd, whatever directory the hook process itself was started in
+            env.pop("OLDPWD", None)
+            self._analysis = invoke.analyze(self.command, self.cwd, env, self.home)
         return self._analysis
 
 

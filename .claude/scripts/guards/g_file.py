@@ -47,7 +47,7 @@ WRITER_CMDS = {"rm", "mv", "cp", "chmod", "chown", "chgrp", "tee", "sed", "perl"
                "sponge", "rsync", "mkdir", "patch", "gsed", "ruby", "python", "python3", "sh", "bash", "zsh"}
 CHILD_PROBES = ["settings.json", "hooks/x", "scripts/guards/x", "agents/x", "skills/x", "commands/x", "rules/x", "workflows/x",
                 "loop.config.md", "x"]
-SUSPICIOUS_STATIC = (".claude", ".git", "settings", ".mcp", "codeowners", ".github", ".husky", ".envrc")
+SUSPICIOUS_STATIC = (".claude", ".git", "settings", ".mcp", "codeowners", ".github", ".husky", ".envrc", "loopctl", "hooks/", "/hooks")
 
 
 def _is_engineer_like(ctx: Ctx) -> bool:
@@ -155,6 +155,16 @@ def _target(ti) -> str:
     return ""
 
 
+def _targets(ti) -> List[str]:
+    """Every path-like field of the tool input: judging only the first would let a second, unused one carry the guarded path."""
+    out = []   # type: List[str]
+    for k in ("file_path", "notebook_path", "path"):
+        v = ti.get(k)
+        if isinstance(v, str) and v and v not in out:
+            out.append(v)
+    return out
+
+
 def _new_text(ti, tool: str, current: Optional[str]) -> Optional[str]:
     """What the file will contain after the tool runs, or None if it cannot be worked out."""
     if tool == "Write":
@@ -207,7 +217,17 @@ def _loop_config_check(ctx: Ctx, path: str, tool: str) -> Optional[Decision]:
 def _package_json_check(ctx: Ctx, path: str, tool: str) -> Optional[Decision]:
     cur = paths.safe_read(paths.physical(path, ctx.cwd, ctx.home), 1 << 20)
     new = _new_text(ctx.tool_input, tool, cur)
-    if cur is None or new is None:
+    if new is None:
+        return None
+    if cur is None:           # a new package.json (a new workspace package): lifecycle scripts are what run on install
+        try:
+            doc = json.loads(new)
+        except ValueError:
+            return None
+        sc = doc.get("scripts") if isinstance(doc, dict) else None
+        hooks = [k for k in (sc or {}) if k in ("preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly", "prepack", "postpack")] if isinstance(sc, dict) else []
+        if hooks or (isinstance(doc, dict) and any(k in doc for k in ("husky", "simple-git-hooks"))):
+            return deny(G, "package-scripts", "a new package.json with lifecycle scripts (%s) runs code on install; engineers do not add them (report §5.9)" % ", ".join(hooks[:3]))
         return None
     try:
         a, b = json.loads(cur), json.loads(new)
@@ -224,17 +244,19 @@ def _package_json_check(ctx: Ctx, path: str, tool: str) -> Optional[Decision]:
 
 def check_edit(ctx: Ctx) -> Optional[Decision]:
     """Self-modification protection for Edit, Write, MultiEdit and NotebookEdit."""
-    raw = _target(ctx.tool_input)
-    if not raw:
-        return None
-    return _judge_edit_path(ctx, raw, ctx.cwd, "%s to" % ctx.tool_name, ctx.tool_name)
+    for raw in _targets(ctx.tool_input):
+        d = _judge_edit_path(ctx, raw, ctx.cwd, "%s to" % ctx.tool_name, ctx.tool_name)
+        if d:
+            return d
+    return None
 
 
 def check_main_edit(ctx: Ctx) -> Optional[Decision]:
-    raw = _target(ctx.tool_input)
-    if not raw:
-        return None
-    return _main_edit(ctx, raw)
+    for raw in _targets(ctx.tool_input):
+        d = _main_edit(ctx, raw)
+        if d:
+            return d
+    return None
 
 
 def _judge_edit_path(ctx: Ctx, raw: str, cwd: str, via: str, tool: str) -> Optional[Decision]:
@@ -338,8 +360,11 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
     if name == "tee":
         out.extend(Target(a, d) for a, d in P())
     elif name in ("cp", "install", "rsync", "ditto", "scp", "mv", "gcp", "cpio"):
-        pos = P(("-t", "--target-directory", "-S", "--suffix", "-m", "--mode", "-o", "--owner", "-g", "--group", "-e", "--rsh", "--exclude",
-                 "--include", "--filter", "-f"))
+        if name == "rsync":
+            arg_opts = ("-e", "--rsh", "--exclude", "--include", "--filter", "-f", "--exclude-from", "--include-from", "--files-from", "-T", "--temp-dir")
+        else:      # `cp -f` and `mv -f` are plain flags; treating them as taking a value would hide a source (mv -f .claude/settings.json /tmp)
+            arg_opts = ("-t", "--target-directory", "-S", "--suffix", "-m", "--mode", "-o", "--owner", "-g", "--group")
+        pos = P(arg_opts)
         tdir = None
         for k, a in enumerate(args):
             if a in ("-t", "--target-directory") and k + 1 < len(args):
@@ -373,11 +398,14 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
         else:
             out.extend(Target(a, d) for a, d in P(("-s", "-r", "--size", "--reference", "-m", "-d", "-t", "-c")))
     elif name in ("chmod", "chown", "chgrp"):
-        pos = P()
-        out.extend(Target(a, d, True) for a, d in pos[1:])
-        if _flag_has(args, "", ("--reference",)):
-            out.extend(Target(a, d, True) for a, d in pos)
+        # a symbolic mode may start with '-' (chmod -x file), so every word that is not a known option is a candidate target
+        known = {"-R", "-v", "-f", "-c", "-h", "-H", "-L", "-P", "--recursive", "--verbose", "--silent", "--quiet", "--changes", "--no-dereference", "--preserve-root"}
+        out.extend(Target(a, d, True) for a, d in zip(args, dyn) if a not in known and not a.startswith("--reference"))
     elif name in ("sed", "gsed"):
+        for a in args:
+            m = re.search(r"(?:^|[;{}/\s])w\s+([^\s;}]+)\s*$|/w\s*([^\s;}]+)\s*$", a)
+            if m and not a.startswith("-"):
+                out.append(Target(m.group(1) or m.group(2), False))
         inplace = _flag_has(args, "i", ("--in-place",)) or any(a.startswith("-i") for a in args)
         if inplace:
             has_script_flag = any(a in ("-e", "-f", "--expression", "--file") or a.startswith(("--expression=", "--file=")) for a in args)
@@ -405,12 +433,16 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
                 out.append(Target(a.split("=", 1)[1], dyn[k]))
             elif a.startswith("-o") and len(a) > 2 and not a.startswith("--"):
                 out.append(Target(a[2:], dyn[k]))
+        if any(a in ("-O", "--remote-name", "--remote-name-all", "-J") or (a.startswith("-") and not a.startswith("--") and "O" in a[1:] and a != "-o") for a in args):
+            out.append(Target(".", False, "children"))       # the file lands in the working directory
     elif name == "wget":
         for k, a in enumerate(args):
             if a in ("-O", "-o", "-P", "--output-document", "--output-file", "--directory-prefix", "-a") and k + 1 < len(args):
                 out.append(Target(args[k + 1], dyn[k + 1]))
             elif a.startswith(("--output-document=", "--directory-prefix=", "--output-file=")):
                 out.append(Target(a.split("=", 1)[1], dyn[k]))
+        if not any(a in ("-O", "-P", "--output-document", "--directory-prefix") or a.startswith(("--output-document=", "--directory-prefix=", "-O")) for a in args):
+            out.append(Target(".", False, "children"))
     elif name in ("tar", "bsdtar", "gtar", "unzip", "7z", "7za", "unar", "ar"):
         for k, a in enumerate(args):
             if a in ("-C", "--directory", "-d", "-o") and k + 1 < len(args):
@@ -419,6 +451,11 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
                 out.append(Target(a.split("=", 1)[-1] if "=" in a else a[2:], dyn[k], "children"))
             elif a.startswith("-o") and name in ("7z", "7za") and len(a) > 2:
                 out.append(Target(a[2:], dyn[k], "children"))
+        extracting = (name in ("unzip", "7z", "7za", "unar") or (name in ("tar", "bsdtar", "gtar") and any(
+            a == "--extract" or (a.startswith("-") and not a.startswith("--") and "x" in a[1:]) or (not a.startswith("-") and "x" in a and args.index(a) == 0)
+            for a in args[:2])))
+        if extracting and not any(a in ("-C", "--directory", "-d") or a.startswith(("--directory=", "-o")) for a in args):
+            out.append(Target(".", False, "children"))
         if name in ("tar", "bsdtar", "gtar"):
             create = any(re.match(r"^-?[A-Za-z]*c[A-Za-z]*f?$", a) for a in args[:1] if a and not a.startswith("--")) or "--create" in args
             if create:
@@ -487,14 +524,28 @@ def _git_targets(inv: Inv) -> List[Target]:
                 out.extend(Target(x, False, False, "patch") for x in _patch_targets(t))
         if text:
             out.extend(Target(x, False, False, "patch") for x in _patch_targets(text))
-    elif sub in ("diff", "log", "show", "format-patch"):
+    elif sub in ("diff", "log", "show", "format-patch", "archive"):
         for k, a in enumerate(rest):
             if a.startswith("--output="):
                 out.append(Target(a.split("=", 1)[1], rdyn[k]))
-            elif a == "--output" and k + 1 < len(rest):
+            elif a in ("--output", "-o") and k + 1 < len(rest) and sub in ("archive", "diff", "log", "show", "format-patch"):
                 out.append(Target(rest[k + 1], rdyn[k + 1]))
-            elif sub == "format-patch" and a in ("-o", "--output-directory") and k + 1 < len(rest):
+            elif sub == "format-patch" and a in ("--output-directory",) and k + 1 < len(rest):
                 out.append(Target(rest[k + 1], rdyn[k + 1]))
+    elif sub in ("clone", "init", "bundle", "checkout-index", "worktree", "submodule", "sparse-checkout"):
+        pos = _pos(rest, rdyn, ("-b", "--branch", "-c", "--config", "--template", "--prefix", "--reference", "-o", "--origin", "--depth", "--separate-git-dir"))
+        if sub == "worktree":
+            pos = pos[1:] if pos and pos[0][0] in ("add", "move", "remove", "repair") else []
+        if sub == "bundle":
+            pos = pos[1:2] if pos and pos[0][0] == "create" else []
+        if sub == "submodule":
+            pos = pos[2:3] if pos and pos[0][0] == "add" else []
+        if sub in ("clone",):
+            pos = pos[1:2]
+        out.extend(Target(a, d, "children") for a, d in pos[:1])
+        for k, a in enumerate(rest):
+            if a.startswith("--prefix=") and sub == "checkout-index":
+                out.append(Target(a.split("=", 1)[1], rdyn[k], "children"))
     return out
 
 
@@ -519,22 +570,24 @@ def _link_aliases(ctx: Ctx, invs: Sequence[Inv]) -> Dict[str, str]:
 PROT_RE = re.compile(r"(\.claude/(settings|hooks|scripts|agents|skills|commands|rules|workflows|loop\.config)|settings(\.local)?\.json|"
                      r"\.mcp\.json|\.git/(hooks|config|info|loopctl)|\.github/(workflows|codeowners)|codeowners|\.claude-plugin|\.husky|"
                      r"\.bashrc|\.zshrc|\.zprofile|\.profile|\.gitconfig|\.ssh/|\.aws/|\.netrc)", re.I)
-WRITE_RE = re.compile(r"(open\s*\([^)]*['\"][^'\"]*[wax+]|write_text|write_bytes|\.write\s*\(|writefile|appendfile|createwritestream|copyfile|"
+WRITE_RE = re.compile(r"(open\s*\([^\n]{0,400}?['\"][bt]?[wax+][bt+]?['\"]|write_text|write_bytes|\.write\s*\(|writefile|appendfile|createwritestream|copyfile|"
                       r"rename|unlink|rmsync|rmtree|rm -|shutil\.|os\.system|os\.popen|subprocess|child_process|execsync|spawn|\bexec\s*\(|"
-                      r"sed -i|\btee\b|>>?\s*['\"]?[\w./~$-]|fs\.|file_put_contents|fopen|system\s*\(|`)", re.I)
+                      r"sed -i|\btee\b|>>?\s*['\"]?[\w./~$-]|fs\.|file_put_contents|fopen|system\s*\()", re.I)
 
 
-def normalise_code(code: str) -> str:
-    """Undo the cheap ways to hide a path inside a string: concatenation, join, escapes."""
+def normalise_code(code: str, join: bool = True) -> str:
+    """Undo the cheap ways to hide a path inside a string: escapes, concatenation and (with `join`) path joins."""
     c = code
     try:
         c = re.sub(r"\\x([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), c)
         c = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), c)
+        c = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), c)
     except ValueError:
         pass
     for _ in range(4):
         c2 = re.sub(r"""['"]\s*\+\s*['"]""", "", c)
-        c2 = re.sub(r"""['"]\s*\)?\s*[,/]\s*(?:r|b|f)?['"]""", "/", c2)
+        if join:
+            c2 = re.sub(r"""['"]\s*\)?\s*[,/]\s*(?:r|b|f)?['"]""", "/", c2)
         c2 = re.sub(r"""['"]\s*['"]""", "", c2)
         if c2 == c:
             break
@@ -543,10 +596,11 @@ def normalise_code(code: str) -> str:
 
 
 def scan_code(code: str) -> Optional[str]:
-    """Reason string if inline code looks like it writes a protected path, else None."""
+    """Reason string if inline code looks like it writes a protected path, else None. The path is looked for in the joined form
+    (os.path.join('.claude','settings.json')) and the write call in both, since joining also fuses `'path','w'`."""
     n = normalise_code(code)
-    if PROT_RE.search(n) and WRITE_RE.search(n):
-        m = PROT_RE.search(n)
+    m = PROT_RE.search(n)
+    if m and (WRITE_RE.search(n) or WRITE_RE.search(normalise_code(code, join=False))):
         return m.group(0)
     return None
 
@@ -575,6 +629,11 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
         why = scan_code(ic.code)
         if why:
             return deny(G, "script-writes-protected", "inline %s code names %s and writes files; agents do not modify guardrail paths (H6)" % (ic.lang, why))
+        if (WRITE_RE.search(normalise_code(ic.code)) or WRITE_RE.search(normalise_code(ic.code, join=False))) and not ic.from_file and (paths.classify(os.path.join(ic.inv.cwd, "x"), ctx.home)
+                                                                          or paths.classify(os.path.join(ic.inv.cwd, "settings.json"), ctx.home)
+                                                                          or ic.inv.cwd_unknown):
+            return deny(G, "script-writes-protected", "inline %s code writes files from %s, which is (or may be) a guardrail directory (H6)" %
+                        (ic.lang, "a directory computed at run time" if ic.inv.cwd_unknown else os.path.basename(ic.inv.cwd)))
     for sf in ana.scripts:
         content = ana.vfs.get(sf.path)
         authored = content is not None
@@ -585,4 +644,22 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
             why = scan_code(content)
             if why:
                 return deny(G, "script-writes-protected", "%s (written or changed by the agent) names %s and writes files (H6)" % (os.path.basename(sf.path), why))
+    return None
+
+
+PATHISH_KEY = re.compile(r"(path|file|dir|folder|destination|target|source|dest|output|filename)", re.I)
+
+
+def check_mcp_paths(ctx: Ctx) -> Optional[Decision]:
+    """An MCP filesystem server is another way to write a file. Any path-like string argument of an MCP tool is judged like an Edit target."""
+    ti = ctx.tool_input
+    for k, v in list(ti.items())[:40]:
+        vals = [v] if isinstance(v, str) else (v[:20] if isinstance(v, list) else [])
+        if not PATHISH_KEY.search(str(k)):
+            continue
+        for item in vals:
+            if isinstance(item, str) and item and len(item) < 1000 and "\n" not in item:
+                d = _judge(ctx, item, False, ctx.cwd, "%s (%s) to" % (ctx.tool_name, k))
+                if d:
+                    return d
     return None

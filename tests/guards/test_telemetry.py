@@ -14,6 +14,11 @@ from kitlib import runstate
 from tests.helpers import BaseTestCase
 
 
+def _read(path):
+    with open(path) as fh:
+        return fh.read()
+
+
 class TelemetryTests(BaseTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -40,14 +45,14 @@ class TelemetryTests(BaseTestCase):
 
     def test_no_hash_chain_and_no_command_text(self) -> None:
         self.fire("PostToolUse", tool_name="Bash", tool_use_id="t1", tool_input={"command": "echo hunter2 ghp_" + "A" * 36}, tool_response={"stdout": "hunter2"})
-        raw = open(self.st.event_path("s-sess-1")).read()
+        raw = _read(self.st.event_path("s-sess-1"))
         self.assertNotIn("hunter2", raw)
         self.assertNotIn("prev", json.loads(raw))
         self.assertNotIn("hash", json.loads(raw))
 
     def test_secrets_are_redacted_at_write_time(self) -> None:
         self.fire("PostToolUse", tool_name="Bash", tool_use_id="ghp_" + "B" * 36, tool_response={})
-        raw = open(self.st.event_path("s-sess-1")).read()
+        raw = _read(self.st.event_path("s-sess-1"))
         self.assertNotIn("ghp_" + "B" * 36, raw)
         self.assertIn("REDACTED", raw)
 

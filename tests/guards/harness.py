@@ -59,6 +59,7 @@ class Fixtures(object):
             repo.git("config", "alias.shove", "push origin")
             repo.git("config", "alias.pp", "!git push")
             repo.git("config", "alias.st", "status")
+            repo.git("config", "alias.badq", '!echo "unterminated')
         self.state = runstate.RunState(self.main.common_dir()).ensure()
         self.state.register_session(SESSIONS["conductor"], "conductor")
         self.state.register_session("sess-driver-eng", "backend-engineer")
