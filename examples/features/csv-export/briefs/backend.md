@@ -5,8 +5,8 @@
 **Authored by**: Tech Lead
 **Date**: 2026-07-08
 **Iteration**: 1
-**max_review_rounds**: 2
-**tool_call_budget**: protocol default (~80 tool calls — see `.claude/context/engineer-protocol.md` section 4)
+**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md` (default 2). There is no tool-call budget (`.claude/context/engineer-protocol.md` section 4)
+**Report path**: `docs/features/csv-export/reports/backend.md`
 
 > *Illustrative example for the fictional TaskFlow project — see [`examples/README.md`](../../../README.md). The files this brief points the engineer at are invented; no engineer was ever dispatched against it.*
 
@@ -48,7 +48,8 @@ Implement `GET /api/boards/:boardId/tasks/export` exactly per `api-contract.md`:
 - [ ] Unassigned tasks -> empty `assignee` field; timestamps ISO 8601 UTC.
 - [ ] One info log line per export via `req.log` (`boardId`, row count, duration ms). No `console.*`.
 - [ ] Lint clean. Existing tests still pass. Domain verification commands all PASS.
-- [ ] Tech Lead's `code-review:code-review` skill returns no blockers (within `max_review_rounds`).
+- [ ] The independent `code-reviewer` agent returns no blockers (within the retry cap).
+- [ ] Report's `## Primer Delta` and `## Doc Delta` filled in; the new endpoint is documented where the project documents endpoints.
 
 ## Out of Scope
 
@@ -56,6 +57,10 @@ Implement `GET /api/boards/:boardId/tasks/export` exactly per `api-contract.md`:
 - Schema or migration changes (`packages/db/`) — none are needed; if you think one is, that's an `ESCALATION_NEEDED`, not a migration.
 - Streaming responses, `.xlsx`, time-entry export.
 - Adding a CSV library dependency — the design explicitly calls for a small pure helper.
+
+## Clarifications
+
+- (none at dispatch)
 
 ## Notes from Tech Lead / Architect
 
@@ -65,6 +70,6 @@ Implement `GET /api/boards/:boardId/tasks/export` exactly per `api-contract.md`:
 
 ---
 
-## Iteration 2 Addendum (only filled in for re-dispatch after review)
+## Iteration 2 Addendum (only filled in when the engineer is resumed after review)
 
 > Not used — iteration 1 was approved.

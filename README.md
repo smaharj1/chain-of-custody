@@ -84,8 +84,11 @@ cp -r /tmp/chain-of-custody/.claude .
 .claude/loop.jsonl
 .claude/orchestrate.lock
 .claude/settings.local.json
+.claude/launch.json
 .claude/worktrees/
 ```
+
+(`.claude/launch.json` is the desktop app's preview config. It holds per-machine ports and commands, so keep it out of git.)
 
 Do commit `build-plan.json` and `BUILD_PLAN.md` when they appear. They're the build plan, and the loop needs them to pick up where it left off.
 
@@ -104,11 +107,11 @@ claude
 
 That's it. There are no templates to fill in and no setup questionnaire. The agents work out what they need to know about your project on their own (see [How the agents learn your project](#how-the-agents-learn-your-project)).
 
-**Optional:** copy the human-readable guides too, so they sit next to your code. `/planner` uses `choosing-your-stack.md` if it finds it and recommends a stack on its own if it doesn't.
+**Optional:** copy the human-readable guides too, so they sit next to your code. (`choosing-your-stack.md` now lives inside `.claude/context/`, so it comes along with the folder you already copied; `/planner` reads it from there.)
 
 ```bash
 mkdir -p docs
-cp /tmp/chain-of-custody/docs/{choosing-your-stack,getting-started,faq}.md docs/
+cp /tmp/chain-of-custody/docs/{getting-started,faq}.md docs/
 ```
 
 Links in those guides to `GLOSSARY.md`, this README, and `examples/` point back at the kit, so keep your clone around or bookmark the repo.
@@ -125,7 +128,7 @@ The loop runs on its own between checkpoints, but some things can't be automated
 | **Secrets** | When an item needs an API key (payments, email), the loop stops and asks. No agent can invent a credential. |
 | **Security blocks** | If the security reviewer finds a Critical or High issue, the item won't be marked done until you fix it or record a waiver with a reason. |
 | **The very first item** | On a new project, item one is the skeleton every later item copies. If something looks off, say so then rather than ten items later. |
-| **Publishing** | Finished work stays on your machine. When you're happy, ask Claude to push it. |
+| **Publishing** | Finished work stays on your machine. The kit's safety hook blocks `git push` for every agent, so Claude can't publish for you: when you're happy, Claude prints the exact `git push` (and PR) commands and you run them yourself. |
 
 ## How it works
 
@@ -189,7 +192,7 @@ How often the loop stops for you, how much work it may do per run, and the comma
 | **Admin App Engineer** | Yes | An admin dashboard |
 | **Infra Engineer** | Yes | Infrastructure-as-code |
 | **Design Critic** | No | Reviews the design before any code is written |
-| **Code Reviewer** | No | Independent review of each change inside `/orchestrate` (interactive work uses the code-review skill instead) |
+| **Code Reviewer** | No | Independent review of every change, in a clean context, in the interactive lanes and inside `/orchestrate` alike |
 | **Security Reviewer** | No | Security audit. Runs automatically in the loop on items touching sign-in, payments, file uploads, or user input; run it yourself before a deploy or PR otherwise |
 
 The reviewers only read. They report problems and never edit code themselves.
@@ -232,17 +235,15 @@ On an empty folder, start with `/planner`, not `/pm`. Engineers normally copy pa
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code), installed and signed in. Any recent version works (the kit uses agent definitions in `.claude/agents/`, PreToolUse hooks, and the Skill tool).
 - `git`. The loop builds each item on a branch and merges it locally.
 - `python3` on your PATH. The two safety hooks use it, and without it they quietly switch themselves off, which removes the git guardrails.
-- **Permissions set up before long loop runs.** Claude Code asks before running any command it hasn't been allowed to run, regardless of the loop's autonomy setting, so an unattended run will stall at the first new command. The kit ships an empty allowlist on purpose. Before a long run, add your project's run, test, and build commands to `permissions.allow` in `.claude/settings.json`. The Planner offers to do this for you. For interactive work the prompts are normal.
+- **Permissions set up before long loop runs.** Claude Code asks before running any command it hasn't been allowed to run, regardless of the loop's autonomy setting, so an unattended run will stall at the first new command. The kit ships an empty allowlist on purpose, and the agents never edit your settings files (that would let them widen their own permissions). Before a long run, the Planner prints a proposed snippet of your project's run, test, and build commands; you paste it into `.claude/settings.local.json`. See [`platform-notes.md`](.claude/context/platform-notes.md). For interactive work the prompts are normal.
 
 **Recommended**
 
-- **context7 MCP** for up-to-date library docs. ⚠️ The agent files expect it installed as a **plugin** named `context7` (tools named `mcp__plugin_context7_context7__*`). If you install it as a plain MCP server instead, the tools are named `mcp__context7__*` and you'll need to update the `tools:` line in all eight agent files, or the agents silently lose access to docs.
-- **superpowers plugin** (`superpowers:brainstorming`), which `/pm` and `/planner` use for interviews. Both work without it.
-- **code-review plugin** (`code-review:code-review`), the Tech Lead's review skill. There's a manual fallback.
+- **A documentation MCP** (optional) for up-to-date library docs. The agents don't require any particular one: without it they fall back to fetching the library's own docs. To give an agent a docs tool, add the tool's name to that agent's `tools:` line and remove `mcp__*` from its `disallowedTools:` (both edits; the deny wins). Details in [`platform-notes.md`](.claude/context/platform-notes.md).
 
 **Optional**
 
-- A browser-preview MCP so checkpoints can include screenshots, and push notifications for checkpoint alerts. Without them the loop describes the demo in text and flags checkpoints in the transcript.
+- A browser-preview MCP so checkpoints can include screenshots (the bundled `/run` skill is the next fallback), and a push-notification tool for checkpoint alerts. Without them the loop describes the demo in text and flags checkpoints in the transcript.
 
 ## Using Codex or Cursor
 
@@ -266,8 +267,8 @@ Copy the adapter your tool loads along with `.claude/`.
 
 **Which files are yours and which are the kit's:**
 
-- **Yours, written by the agents:** `.claude/CLAUDE.md`, `.claude/context/*.md` (except the two protocol files), `.claude/loop.config.md`, `.claude/settings.json`. Review and correct them freely. Never overwrite them when updating the kit.
-- **The kit's, safe to replace on update:** `.claude/agents/`, `.claude/commands/`, `.claude/context/engineer-protocol.md`, `.claude/context/primer-protocol.md`, `.claude/hooks/`, `.claude/spec/`, `.claude/templates/`, `.claude/KIT_VERSION`. You can edit the templates, but an update will overwrite your changes, so keep a note of them.
+- **Yours, written by the agents:** `.claude/CLAUDE.md`, `.claude/context/*.md` (except the kit-logic files listed in the tree below), `.claude/loop.config.md`, `.claude/settings.json`. Review and correct them freely. Never overwrite them when updating the kit.
+- **The kit's, safe to replace on update:** `.claude/agents/`, `.claude/commands/`, the kit-logic files in `.claude/context/` (the protocols, rules and `choosing-your-stack.md`), `.claude/hooks/`, `.claude/spec/`, `.claude/templates/`, `.claude/KIT_VERSION`. You can edit the templates, but an update will overwrite your changes, so keep a note of them.
 
 ## Updating the kit
 
@@ -306,6 +307,12 @@ Your copy records its version in `.claude/KIT_VERSION`, and every change is list
   context/                           # Primers: project knowledge (agent-written)
     engineer-protocol.md             #   Shared rules for all engineers (kit logic)
     primer-protocol.md               #   How agents write and maintain primers (kit logic)
+    probe-protocol.md                #   How to prove an unknown repo's commands safely (kit logic)
+    migrations.md                    #   Expand, backfill, contract; down-migration data-loss classes (kit logic)
+    local-dev-rules.md               #   Dialect parity, process groups, ports (kit logic)
+    model-profiles.md                #   quality / balanced / economy model routing (kit logic)
+    platform-notes.md                #   Permissions snippet, capabilities, docs tools, hooks (kit logic)
+    choosing-your-stack.md           #   Stack recommendations by project type (kit logic)
     architect.md                     #   System architecture
     backend.md                       #   Backend patterns
     database.md                      #   Schema + migrations
@@ -325,6 +332,7 @@ Your copy records its version in `.claude/KIT_VERSION`, and every change is list
     api-contract.md
     brief.md
     build-plan.md
+    domain-glossary.md               #   Copy to docs/domain-glossary.md in your project: what your domain words mean
   metrics.jsonl                      # Interactive telemetry (auto-created, gitignored)
   loop.jsonl                         # Loop telemetry (auto-created, gitignored)
   orchestrate.lock                   # Run lock (auto-created, gitignored)
@@ -332,7 +340,6 @@ build-plan.json                      # The build plan (commit this)
 BUILD_PLAN.md                        # Readable view of the plan (commit this)
 docs/
   getting-started.md                 # Plain-language guide
-  choosing-your-stack.md             # Stack recommendations by project type
   faq.md                             # Testing, CI, deploying, teams, non-web projects
   features/<feature-slug>/           # Created per feature; scratch space, not long-term
     requirements.md
@@ -366,7 +373,7 @@ V1. The build loop runs items **one at a time**. Running items in parallel and a
 - [Getting started](docs/getting-started.md): a plain-language walkthrough, no coding experience assumed
 - [Glossary](GLOSSARY.md): every term used here, explained
 - [FAQ](docs/faq.md): testing, CI, deploying, teams, monorepos, non-web projects
-- [Choosing your stack](docs/choosing-your-stack.md): what technology to use if you don't know
+- [Choosing your stack](.claude/context/choosing-your-stack.md): what technology to use if you don't know
 - [Examples](examples/README.md): filled-in documents for a fictional project, to calibrate against
 
 ## License
