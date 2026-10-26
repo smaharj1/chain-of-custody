@@ -1,0 +1,26 @@
+{
+  "schema": "kit-hooks-manifest/1",
+  "doc": "Single source of the guard wiring (report §7.1, IMP-13). wiring.py turns this into .claude/settings.v2.json now and into the plugin hooks.json in Phase 9. Edit this file, run `python3 .claude/scripts/guards/wiring.py --write`, never edit the outputs by hand.",
+  "entries": [
+    {"id": "pre-bash", "event": "PreToolUse", "matcher": "Bash",
+     "guards": ["halt", "file", "git", "infra", "exec", "critic"], "blocking": true, "timeout": 10},
+    {"id": "pre-edit", "event": "PreToolUse", "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+     "guards": ["halt", "file", "main-edit", "critic"], "blocking": true, "timeout": 10},
+    {"id": "pre-mcp", "event": "PreToolUse", "matcher": "mcp__.*",
+     "guards": ["halt", "infra"], "blocking": true, "timeout": 10},
+    {"id": "pre-dispatch", "event": "PreToolUse", "matcher": "Agent|Task|Workflow",
+     "guards": ["halt"], "blocking": true, "timeout": 10},
+    {"id": "post-untrusted", "event": "PostToolUse", "matcher": "WebFetch|WebSearch|mcp__.*|Read|Bash",
+     "guards": ["injection"], "blocking": false, "timeout": 10},
+    {"id": "post-telemetry", "event": "PostToolUse", "matcher": "*",
+     "guards": ["telemetry"], "blocking": false, "async": true, "timeout": 10},
+    {"id": "subagent-start", "event": "SubagentStart", "guards": ["telemetry"], "blocking": false, "timeout": 10},
+    {"id": "subagent-stop", "event": "SubagentStop", "guards": ["telemetry"], "blocking": false, "timeout": 10},
+    {"id": "permission-denied", "event": "PermissionDenied", "guards": ["telemetry"], "blocking": false, "timeout": 10},
+    {"id": "config-change", "event": "ConfigChange", "guards": ["config-change"], "blocking": true, "timeout": 10},
+    {"id": "session-start-canary", "event": "SessionStart", "matcher": "startup|resume|clear|compact",
+     "script": "session_start.py", "blocking": false, "timeout": 10},
+    {"id": "session-start-selftest", "event": "SessionStart", "matcher": "startup|resume|clear|compact",
+     "guards": ["selftest"], "blocking": false, "timeout": 10}
+  ]
+}
