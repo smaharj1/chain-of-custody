@@ -81,9 +81,12 @@ The design ends with a `## Slices` section: an ordered DAG of **PR-sized slices*
 - one user-visible vertical slice, with at most 3 acceptance checks;
 - at most 2 engineers preferred (3 at most), at most 1 migration;
 - at most `max_item_loc` estimated changed lines (default 400 in `.claude/loop.config.md`); a slice you size `L` must be split;
-- described by what it touches (domains, paths, whether it changes the schema or dependencies) and a risk note (auth, payments, uploads, user input).
+- described by what it touches (domains, paths, whether it changes the schema or dependencies) and a risk note (auth, payments, uploads, user input);
+- marked **human-gated** when it touches a path a human must review before merge (migrations, auth or payments code, infrastructure, `.github/`, `.claude/`, lockfiles or dependency manifests, test or CI config, deploy files; the list is in `.claude/context/delivery.md`). The Tech Lead lists those paths in the PR audit block, and the reviewer reads them first.
 
 Order them walking skeleton first, then thicken. Expand, backfill and contract of one migration are three slices. The format is in `.claude/templates/technical-design.md`.
+
+Slices are also the delivery units. By default the interactive lane ships a feature as one PR (`delivery` in `.claude/loop.config.md`; `.claude/context/delivery.md`). If slices should merge separately, say so in the slice order: the Tech Lead then stacks one branch and PR per slice, each based on the previous slice's branch. Name the docs the feature must update (README, API reference, environment variables, runbook) in the design, so each brief can carry them and the engineers' `## Doc Delta` has something to be checked against.
 
 ### Write `docs/features/<slug>/api-contract.md`
 
@@ -124,7 +127,7 @@ This is the *only* artifact from this feature that lives forever. The feature fo
 
 ## Phase D — Hand to Tech Lead
 
-Once both artifacts are written and `DESIGN_APPROVED` from the design-critic, tell the user: **"Design locked. Both artifacts saved. Design-critic approved. Switch to `/tech-lead` to dispatch engineers."** Do not silently switch.
+Once both artifacts are written and `DESIGN_APPROVED` from the design-critic, tell the user (and, in the same message, say how the work will be delivered: one PR or stacked slice PRs, and which slices are human-gated): **"Design locked. Both artifacts saved. Design-critic approved. Switch to `/tech-lead` to dispatch engineers."** Do not silently switch.
 
 ## Phase E — Escalation Mode (design rethink)
 

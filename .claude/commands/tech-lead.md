@@ -23,6 +23,7 @@ If you're unsure which lane: ask one short question. ("Is this a feature or a sm
 - `.claude/context/engineer-protocol.md` — to know what subagents expect from your briefs and reports
 - `.claude/context/primer-protocol.md` — you write primers in two places (pre-dispatch readiness, and A.8 step 5 after a pattern ships); this is how
 - `.claude/context/model-profiles.md` — which model each dispatch gets (`model_profile` in `.claude/loop.config.md`, default `quality`: no per-invocation model needed)
+- `.claude/context/delivery.md` — how finished work leaves the machine: `git_autonomy` and `delivery` from `.claude/loop.config.md`, the WIP commit per engineer, the verify run, the PR audit block, and the commands the human runs. Read it once per session; steps A.5, A.6, A.8 and B.3 below refer to it
 - Awareness of each domain primer (`.claude/context/<domain>.md`) so you know which engineer handles what
 
 You do **not** memorize the engineer-domain primers — engineers read those. You read the primers' tables of contents enough to route work correctly.
@@ -89,7 +90,7 @@ Per dispatched engineer, write `docs/features/<slug>/briefs/<engineer>.md` from 
 
 ### A.5 Surface the dispatch plan
 
-**Branch check first**: run `git branch --show-current`. If it reports `main`/`master`, ask the user to create a feature branch (`git checkout -b feat/<slug>`) before you dispatch — engineers cannot branch (protocol §8), and the on-main hook (`guard-main-edit.sh`) will block their edits to app source.
+**Branch check first**: run `git branch --show-current`. If it reports `main`/`master`: with `git_autonomy: none` (the default in `.claude/loop.config.md`), ask the user to create a feature branch (`git checkout -b feat/<slug>`) before you dispatch; with `branch` or `branch+commit`, create it yourself (`git switch -c feat/<slug>`) and say so. Engineers cannot branch (protocol §8), and the on-main hook (`guard-main-edit.sh`) will block their edits to app source.
 
 Before invoking subagents, tell the user:
 
@@ -105,7 +106,7 @@ For each engineer in dispatch order:
 
 1. Invoke via `Agent` tool with the matching `subagent_type` and a prompt that points to the brief path. Keep the `agent_id` the call returns: every later contact with that engineer (a clarification answer, a review retry, a `PARTIAL` continuation) is a **resume by `agent_id`** (SendMessage), never by name and never a fresh dispatch.
 2. When the engineer returns, read the report's `Status`:
-   - `APPROVED` -> dispatch the `code-reviewer` agent on the engineer's diff (see A.7).
+   - `APPROVED` -> with `git_autonomy: branch+commit`, make this engineer's WIP commit first (`.claude/context/delivery.md` step 2: stage by path, never `git add -A`; trailers `Feature`, `Engineer`, `Report`), so the next engineer's diff cannot be mixed up with this one. Then dispatch the `code-reviewer` agent on the engineer's diff (see A.7).
    - `PARTIAL` -> engineer was not converging or hit a turn limit. Either resume it to continue, split the brief, or accept partial work if the remaining scope is trivial.
    - `NEEDS_CLARIFICATION` -> answer the gap (or escalate to PM/Architect). **Write the answer into the brief's `## Clarifications` section first**, so the record exists, then resume the engineer by `agent_id`. Re-dispatch fresh only if the resume fails.
    - `CONTRACT_DEVIATION` -> backend edited `api-contract.md`. Re-read it and update **frontend** briefs before dispatching them.
@@ -118,7 +119,7 @@ For each engineer in dispatch order:
 
 Dispatch the **`code-reviewer`** agent (`subagent_type: code-reviewer`, clean context) on the engineer's diff. It is the same reviewer the `/orchestrate` loop uses: independent of the engineer and of you, with a parseable verdict. Pass:
 
-- The list of files the engineer changed (from their report)
+- The list of files the engineer changed (from their report), and the commit range `<previous WIP commit>..<this WIP commit>` when you made WIP commits
 - The brief path
 - The api-contract path (if applicable)
 - The technical-design path
@@ -141,7 +142,8 @@ Once all dispatched engineers return `APPROVED`:
 4. Suggest verification steps for the user (manual smoke test, deploy commands).
 5. **Post-feature primer update.** Read the `## Primer Delta` section of **every** report you collected (engineer-protocol §11) plus any `## Primer Staleness` from review, and **apply them now** — you hold the diffs, the reports, and the whole picture, and per `.claude/context/primer-protocol.md` this is your contract, not the user's. Don't rely on inferring the delta from the file list: the engineer already told you. Also fix any exemplar pointer the feature invalidated (renamed or deleted file), and promote a new exemplar when this feature shipped a better one. Route to `/architect` only when the pattern needs an architectural call rather than a write-down. All deltas `NONE` and no new pattern → nothing to do, which is the common case for routine work.
 6. **Record telemetry** (see section C).
-7. Surface a commit/PR suggestion, with the exact commands. Do **not** run any write git operation yourself, and never `git push`: publishing is the human's step.
+7. **Deliver** (`.claude/context/delivery.md`, steps 3-8). Commit the primer updates from step 5 on the branch, run `python3 .claude/scripts/verify.py --json > .claude/pr/<slug>.verify.json` and handle a failure by its `failure_class`, run the security review if the feature is sensitive, then `python3 .claude/scripts/pr_prepare.py init`, fill the audit block, and run `pr_prepare.py prepare`. It prints the exact commands for the configured `delivery` (`local`: merge locally; `push-branch`: push; `draft-pr`: push and open a draft PR). Show them to the user and stop. With `git_autonomy: none`, also ask the user to commit first and give the paths. Whatever the setting: you run no write git beyond the branch and WIP commits that `git_autonomy` allows, and **you never `git push`, open a PR or merge**; publishing is the human's step, and `pr_prepare.py` does not do it either.
+8. **After the push**, if CI fails and the user pastes the failure, fix it within `max_ci_fix_attempts` (delivery.md, "CI-fix"). Workflows, tests and lockfiles stay untouched while fixing.
 
 > The feature folder (`docs/features/<slug>/`) is now scratch. The canonical references for future work are the **primers** (`.claude/context/*.md`) plus the **code itself**. Keeping the primers true is the last thing you do before calling the feature done (step 5) — after that, this feature folder is finished.
 
@@ -173,7 +175,7 @@ No feature folder. Just an in-message brief naming:
 
 ### B.3 Dispatch + optional review
 
-0. **Branch check**: if `git branch --show-current` reports `main`/`master`, ask the user to branch first (`git checkout -b quick/<short-name>`) — the on-main hook blocks engineer edits to app source.
+0. **Branch check**: if `git branch --show-current` reports `main`/`master`, branch first: ask the user (`git checkout -b quick/<short-name>`) when `git_autonomy` is `none`, otherwise do it yourself (`git switch -c quick/<short-name>`) — the on-main hook blocks engineer edits to app source.
 1. Invoke the engineer subagent. Pass the in-message brief verbatim.
 2. When it returns, dispatch the `code-reviewer` agent on the diff, **unless the change is trivial by the mechanical rule below**. When in doubt: review.
 3. If review flags blockers, resume the engineer by `agent_id`. Cap at `max_retries_per_item` (default 2).
@@ -188,7 +190,7 @@ No feature folder. Just an in-message brief naming:
    Anything else gets the review. If the user says "skip review" for a change that fails this rule, say so plainly and run it; they can still read the diff themselves.
 4. **Primer delta.** Read the engineer's `## Primer Delta` and apply it, same as A.8 step 5. Usually `NONE` for a quick task — but not always, and this is the lane where drift accumulates unnoticed: "make this page nicer" is exactly how a styling convention gets established with no design doc anywhere to record it.
 5. Record telemetry (section C).
-6. Suggest commit/PR with the exact commands. Don't run write git, and never push.
+6. Deliver as in A.8 step 7, in the quick form (`.claude/context/delivery.md`, "Lane B"): a WIP commit when `git_autonomy` is `branch+commit`, verify, then `pr_prepare.py init`, fill, `prepare`, and show the user the commands it prints. Never push, never open the PR.
 
 ### B.4 When to escalate quick to full
 
@@ -237,6 +239,7 @@ When the **Orchestrator** runs your dispatch logic for a single build-plan item,
 - **Run security review on sensitive items.** Per `security_review` in `.claude/loop.config.md`: dispatch the **`security-reviewer` Agent** on items touching auth / payments / uploads / user input (or every item if configured). `SECURITY_BLOCKED` (any Critical/High) → hard-stop (`security_blocked`); the item does not reach `done`.
 - **Map engineer signals to loop control** (per `.claude/spec/loop-engineering.md` §6.1): `NEEDS_CLARIFICATION` → answer from the plan into the brief's `## Clarifications` and resume (hard-stop only if the plan cannot answer); `CONTRACT_INCONSISTENCY` → hard-stop; `CONTRACT_DEVIATION` → re-read contract + regenerate frontend briefs + continue; `DESIGN_DEVIATION` → record + flag for ratification + continue; `PARTIAL` (engineer not converging) → resume or split the remaining scope within `max_retries_per_item`, else the retry table in `orchestrate.md`; review retries capped by `max_retries_per_item`.
 - **Infra is never fully autonomous** — an infra-touching item forces a checkpoint regardless of the autonomy dial.
+- **Delivery is not yours here.** The Orchestrator owns branches, merges and verification in the loop (`.claude/commands/orchestrate.md`); skip A.8 step 7 and the `git_autonomy` WIP commits. `.claude/context/delivery.md` is for the interactive lanes.
 
 The two interactive lanes above are for a human invoking `/tech-lead` directly.
 
