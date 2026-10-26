@@ -11,7 +11,7 @@
 - `.claude/commands/architect.md`: slices are marked human-gated when they touch an always-human path; slices are the delivery units (one PR by default, stacked PRs when they should merge separately); the design names the docs the feature must update; the hand-off message says how the work will be delivered.
 - `docs/delivery.md` (new): human guide: setup, verify.py and pr_prepare.py usage, both JSON contracts, the audit block, limits.
 - Config schema `kitlib/schema/3-pr-delivery.json`; `.claude/loop.config.md` and `examples/loop.config.md` regenerated. `.gitignore`: `.claude/pr/` (PR bodies and saved verify results; not committed, because a committed body would carry a head sha that the commit itself makes stale).
-- Tests (about 160, 11 s of work, run in parallel by `tools/test.sh`): `tests/verify/` (definition at the base sha, stages, environment scrub, process groups, ports, native dev server, gate toggle, log redaction, CLI, hardening, and the hello-loop fixture run end to end for F1-F3 using its own `verify.json`), `tests/pr_prepare/` (body rules, disguise corpus, paths, trailers, git checks, reports, H3, verify result, CI-fix, init, CLI, never-pushes), `tests/test_delivery_templates.py`.
+- Tests (148, about 30 s of work in total, run in parallel by `tools/test.sh`; the whole suite is 1015 tests in about 25 s): `tests/verify/` (definition at the base sha, stages, environment scrub, process groups, ports, native dev server, gate toggle, log redaction, CLI, hardening, and the hello-loop fixture run end to end for F1-F3 using its own `verify.json`), `tests/pr_prepare/` (body rules, disguise corpus, paths, trailers, git checks, reports, H3, verify result, CI-fix, init, CLI, never-pushes), `tests/test_delivery_templates.py`.
 
 ## Upgrade impact
 
