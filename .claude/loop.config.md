@@ -17,6 +17,9 @@ max_retries_per_item: 2          # caps three within-item loops INDEPENDENTLY (e
                                  # split re-dispatches. Worst case is bounded by max_tool_calls_per_item.
 max_consecutive_failures: 2      # circuit breaker: consecutive `blocked` items (no `done` between) -> hard-stop
                                  #   counts FAILED ITEMS, not within-item retries
+max_design_rounds: 2             # design-critic rounds per design (L-34). Round 2 is limited to the
+                                 # round-1 blockers plus any NEW Critical; still blocked after the last
+                                 # round is a hard-stop (interactive: surfaced to the user).
 
 # --- Budget: measurable hard caps (the REAL guards — always honored) ---
 # These are the ceilings the conductor can actually COUNT, so they are what truly stops a
@@ -59,12 +62,17 @@ security_review: sensitive       # sensitive (default) | every_item | off
                                  # only the user can grant it, at the hard-stop or unblock step).
 
 # --- Local database ---
-db_local: sqlite                 # sqlite (default, zero-setup) | postgres
+db_local: sqlite                 # sqlite | postgres. The local engine must match PRODUCTION (DEC-8):
+                                 # sqlite only if prod is SQLite or libSQL; otherwise postgres, in-process
+                                 # first (PGlite / embedded-postgres), then a container. Set it explicitly.
+                                 # No matching engine available: doctor error, level capped at L1.
+                                 # See .claude/context/local-dev-rules.md
 db_ephemeral: <command>          # EXECUTION-CRITICAL (hard-stop if left as <command>): how to spin
                                  # a throwaway per-item DB + how the DATABASE_URL override reaches the
                                  # verify subprocess (document the exact commands in local-dev.md)
-                                 #   sqlite: copy/delete a temp .db file
-                                 #   postgres: template clone or disposable container
+                                 #   postgres: CREATE DATABASE ... TEMPLATE <seeded> (seconds), or a
+                                 #             disposable container
+                                 #   sqlite (only if prod is SQLite): copy/delete a temp .db file
 
 # --- Git ---
 git_strategy: branch-off-main-merge-on-pass   # the only V1 strategy
@@ -76,13 +84,32 @@ infra_gated_behind_local: true   # deploy/IaC milestones won't start until the a
                                  # infra-touching items always force a checkpoint regardless of autonomy
 
 # --- Safety: engineer git boundary ---
-enforce_engineer_git_hook: true  # if true, keep the shipped PreToolUse hook (.claude/hooks/guard-git.sh)
-                                 # wired. HONEST SCOPE: the hook blocks only universally-forbidden
-                                 # shared-history ops (push, rebase, non-feat force-delete, shared
-                                 # hard-reset) for EVERY actor — it cannot tell an engineer's
-                                 # `git commit` from the conductor's. The "engineers are git-read-only"
-                                 # boundary itself is protocol convention (engineer-protocol §8).
-                                 # If false, you accept the residual risk with no hook backstop at all.
+enforce_engineer_git_hook: true  # documents whether you keep the shipped PreToolUse hook
+                                 # (.claude/hooks/guard-git.sh) wired. NOTHING READS THIS VALUE: the hook
+                                 # is on or off by its entry in .claude/settings.json, not by this flag.
+                                 # HONEST SCOPE: the hook blocks only universally-forbidden shared-history
+                                 # ops (push, rebase, non-feat force-delete, shared hard-reset) for EVERY
+                                 # actor; it cannot tell an engineer's `git commit` from the conductor's.
+                                 # The "engineers are git-read-only" boundary itself is protocol convention
+                                 # (engineer-protocol §8). The hook FAILS OPEN (allows) when python3 is
+                                 # missing or the command cannot be parsed, until the v2 guards (Phase 2)
+                                 # replace it. If false, you accept the residual risk with no hook backstop.
+
+# --- Model and effort routing (see .claude/context/model-profiles.md) ---
+model_profile: quality           # quality | balanced | economy (§11.4). Which model each role runs on.
+                                 #   quality  = opus for every engineer and critic (default; frontmatter as shipped)
+                                 #   balanced = sonnet for the frontend engineers, opus for the rest
+                                 #   economy  = sonnet engineers; opus kept for the three reviewers (experimental)
+                                 # The conductor passes a per-invocation model, and omits it when
+                                 # CLAUDE_CODE_SUBAGENT_MODEL_FORCE is set. Stays `quality` until fixture data shows parity.
+
+# --- Slicing and the quick lane (planning rules; the mechanical checks arrive with loopctl) ---
+max_item_loc: 400                # estimated changed lines per plan item (L-35). The Planner splits anything
+                                 # bigger; an item sized L must be split. Planning rule now; loopctl validate
+                                 # checks it later.
+quick_lane_max_loc: 30           # quick lane (/tech-lead Lane B): the largest change that may skip review (CO-20).
+                                 # Also required: no always-human path, no new dependency, no schema, no auth or
+                                 # payments. Anything else gets a code-reviewer pass.
 ```
 
 ## Notes
@@ -90,6 +117,7 @@ enforce_engineer_git_hook: true  # if true, keep the shipped PreToolUse hook (.c
 - **Sequential only (V1).** The Orchestrator runs exactly one item at a time. Parallel execution is deferred (it reintroduces migration-number collisions and merge races).
 - **Budgets: measurable caps are the real guards.** The token budgets are best-effort estimates the executor cannot actually measure — they only trigger a pause when work is *clearly* over. The hard, enforceable ceilings are `max_items_per_run`, `max_tool_calls_per_item`, `max_tool_calls_per_run`, and `max_retries_per_item`, all counted from the conductor's own tool calls. Never present the token numbers as a guarantee.
 - **Security runs in the loop.** `security_review` gates `done`: for `sensitive` items (auth / payments / uploads / user input) the conductor dispatches the `security-reviewer` agent on the diff, and any Critical/High finding is a hard-stop. An unattended run that ships user-facing features should not set this to `off`.
-- **Independent review in the loop.** In the autonomous loop the conductor *authored* the design + briefs + dispatch, so it runs code review through a **fresh-context `code-reviewer` subagent** (not the in-context Skill) to keep the reviewer independent of the author. The interactive Tech-Lead keeps the Skill because a human is the backstop there.
+- **Independent review in the loop.** In the autonomous loop the conductor *authored* the design + briefs + dispatch, so it runs code review through a **fresh-context `code-reviewer` subagent** to keep the reviewer independent of the author. The interactive Tech-Lead uses the same agent: one reviewer in every lane.
 - **Two readiness gates at startup.** (1) *Autonomy primers* still containing placeholders (`<!-- ... -->`, `TODO(primer)`) → the preamble derives them (`.claude/context/primer-protocol.md`); whatever genuinely can't be known yet **downgrades** autonomy to `per-feature` (you can still run). (2) *Execution-critical config* (`verify_tests`, `verify_run`, `db_ephemeral`, and the run/test/ephemeral commands in `local-dev.md`) still as `<command>` → **hard-stop**. Neither gate is a task for you — the Planner writes these as plan outputs.
-- **Capabilities the loop expects.** A screenshot capability for auto-demo (e.g. a browser-preview MCP such as `Claude_Browser` — `preview_start`, `navigate`, screenshot) and a notification path for checkpoints (a push-notification capability if the environment provides one). Both have text fallbacks if absent (route + HTTP check; transcript banner) — see `orchestrate.md` Run Preamble step 5.
+- **Capabilities the loop expects.** A way to *see* the running app for auto-demo and a way to *notify* you at checkpoints. Neither is assumed: the preamble picks the best one available, in a fixed fallback order (browser-preview MCP if one is present, then the bundled `/run` skill, then a route plus HTTP status check as text; a push-notification tool if present, then a clearly marked banner in the transcript). See `orchestrate.md` Run Preamble step 8 and `.claude/context/platform-notes.md`.
+- **Settings are yours, not the agents'.** The agents never edit `.claude/settings.json` or `settings.local.json`. Where a run would pause on permission prompts, the Planner and Orchestrator print a snippet for you to apply (`.claude/context/platform-notes.md`, Permissions snippet).

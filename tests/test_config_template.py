@@ -28,6 +28,28 @@ def normalize(text):
     return "\n".join(ln.lstrip() if ln.lstrip().startswith("#") else ln for ln in text.split("\n"))
 
 
+# Phase 0b rewrote the comments (never the keys or defaults) of these v1 keys and the Notes prose,
+# to tell the truth about what they do (report §19.6, F-19/L-20) and to apply DEC-8. The frozen
+# v1 files in tests/data/v1/ stay as they were, so the text-level round trip below skips exactly
+# these blocks; keys, defaults and order are still compared in full.
+REWRITTEN_IN_0B = ("enforce_engineer_git_hook", "db_local", "db_ephemeral")
+
+
+def comparable(text):
+    """Drop the Notes prose and the value-plus-comment blocks of the keys listed above."""
+    text = text.split("\n## Notes")[0]
+    out, skipping = [], False
+    for ln in text.split("\n"):
+        if any(ln.startswith(n + ":") for n in REWRITTEN_IN_0B):
+            skipping = True
+            continue
+        if skipping and ln.startswith(" ") and ln.lstrip().startswith("#"):
+            continue
+        skipping = False
+        out.append(ln)
+    return "\n".join(out)
+
+
 def v1_values(path):
     text = read(path)
     data = miniyaml.parse(config.extract_yaml_block(text)[0])
@@ -74,15 +96,16 @@ class V1RoundTrip(unittest.TestCase):
         self.assertEqual([k for k in generated if k in v1], v1_order)
 
     def test_v1_full_config_text_matches_apart_from_comment_column(self):
-        want = normalize(read(os.path.join(DATA, "loop.config.md")))
+        want = normalize(comparable(read(os.path.join(DATA, "loop.config.md"))))
         # later phases add keys; compare only the v1 part by rendering a registry of v1 alone
         v1_only = registry.load_files([os.path.join(registry.SCHEMA_DIR, "v1.json")])
-        got = normalize(configgen.render(v1_only, example=False))
+        got = normalize(comparable(configgen.render(v1_only, example=False)))
         self.assertEqual(got, want)
 
     def test_v1_example_config_round_trips_exactly(self):
         v1_only = registry.load_files([os.path.join(registry.SCHEMA_DIR, "v1.json")])
-        self.assertEqual(configgen.render(v1_only, example=True), read(os.path.join(DATA, "loop.config.example.md")))
+        self.assertEqual(comparable(configgen.render(v1_only, example=True)),
+                         comparable(read(os.path.join(DATA, "loop.config.example.md"))))
 
     def test_v1_files_load_with_current_registry_and_defaults_fill_new_keys(self):
         cfg = config.load_text(read(os.path.join(DATA, "loop.config.md")), self.reg)
@@ -95,7 +118,7 @@ class V1RoundTrip(unittest.TestCase):
     def test_every_comment_line_of_v1_is_present(self):
         v1_only = registry.load_files([os.path.join(registry.SCHEMA_DIR, "v1.json")])
         got = set(l.strip() for l in configgen.render(v1_only).split("\n"))
-        for line in read(os.path.join(DATA, "loop.config.md")).split("\n"):
+        for line in comparable(read(os.path.join(DATA, "loop.config.md"))).split("\n"):
             if line.strip().startswith("#") or "#" in line:
                 self.assertIn(line.strip(), got)
 

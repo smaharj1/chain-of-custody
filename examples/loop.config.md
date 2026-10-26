@@ -9,6 +9,7 @@ autonomy: per-milestone          # pause at milestone boundaries
 # --- Retry & circuit breaker ---
 max_retries_per_item: 2          # within-item verify retries before `blocked`
 max_consecutive_failures: 2      # consecutive blocked items -> hard-stop
+max_design_rounds: 2             # design-critic rounds before a hard-stop
 
 # --- Budget: measurable hard caps (the real guards) ---
 max_items_per_run: 25            # hard global ceiling on items per run
@@ -30,10 +31,11 @@ verify_run: pnpm dev             # boot web (5173) + admin (5174) + API (3001), 
 security_review: sensitive       # run security-reviewer on auth / payments / uploads / user-input items
 
 # --- Local database ---
-db_local: sqlite                 # SQLite at ./.data/dev.db (prod is Postgres 16 on RDS)
-db_ephemeral: cp ./.data/dev.db /tmp/taskflow-item-$ID.db
-                                 # verify subprocess gets DATABASE_URL=file:/tmp/taskflow-item-$ID.db;
-                                 # delete the copy after verify (see local-dev.md, Ephemeral Per-Item DB)
+db_local: postgres               # in-process Postgres (PGlite); prod is Postgres 16 on RDS
+db_ephemeral: pnpm db:ephemeral $ID
+                                 # CREATE DATABASE taskflow_item_$ID TEMPLATE taskflow_seeded; verify subprocess
+                                 # gets DATABASE_URL pointing at it; drop it after verify (see local-dev.md,
+                                 # Ephemeral Per-Item DB)
 
 # --- Git ---
 git_strategy: branch-off-main-merge-on-pass   # the only V1 strategy; conductor never pushes
@@ -42,12 +44,20 @@ git_strategy: branch-off-main-merge-on-pass   # the only V1 strategy; conductor 
 infra_gated_behind_local: true   # CDK milestones wait until the app runs locally; infra items force a checkpoint
 
 # --- Safety: engineer git boundary ---
-enforce_engineer_git_hook: true  # PreToolUse hook blocks git-write Bash for engineer subagents
+enforce_engineer_git_hook: true  # keep guard-git.sh wired: blocks push/rebase/shared hard-reset for every
+                                 # actor, fails open without python3 (engineer git-read-only is convention)
+
+# --- Model and effort routing (see .claude/context/model-profiles.md) ---
+model_profile: quality           # opus for engineers and critics (see model-profiles.md)
+
+# --- Slicing and the quick lane ---
+max_item_loc: 400                # estimated changed lines per item; larger items are split
+quick_lane_max_loc: 30           # largest quick-lane change that may skip review
 ```
 
 ## Notes
 
 - **Sequential only (V1).** One item at a time; parallel execution is deferred.
-- **Durable-DB apply happens at merge.** After an item merges to local main, the Orchestrator runs `pnpm db:migrate` against `./.data/dev.db`. Verification always runs against the ephemeral copy, never the durable DB.
+- **Durable-DB apply happens at merge.** After an item merges to local main, the Orchestrator runs `pnpm db:migrate` against the durable local dev database. Verification always runs against the per-item ephemeral database (a template clone of the seeded one), never the durable DB. TaskFlow's production database is Postgres, so the local one is Postgres too (in-process), not SQLite.
 - **Measurable caps are the real guards.** The token numbers are best-effort estimates; the tool-call and item ceilings are what actually stop a runaway.
 - **Security runs in the loop.** `sensitive` items (Clerk auth, Stripe billing, uploads, user input) get a `security-reviewer` pass before `done`; Critical/High findings hard-stop.
