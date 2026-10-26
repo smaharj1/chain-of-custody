@@ -1,4 +1,5 @@
-"""CI lint results as doctor checks (L3 needs split CI, report §8.4, DEC-39). The rules live in `ci_lint.py`."""
+"""CI lint results as doctor checks (L3 needs split CI, report §8.4, DEC-39). The rules live in `ci_lint.py`; its `infra.*` rules
+(Phase 6, `infra/ci_rules.py`) are reported here too."""
 from __future__ import annotations
 
 import os
@@ -8,7 +9,7 @@ from typing import List
 from .model import Context, Result, check, failed, passed, skipped, ERROR, WARN
 
 
-@check("ci.lint", "ci", emits=("ci.",))
+@check("ci.lint", "ci", emits=("ci.", "infra."))
 def check_ci_lint(ctx: Context) -> List[Result]:
     wdir = ctx.repo_path(".github", "workflows")
     if not os.path.isdir(wdir):

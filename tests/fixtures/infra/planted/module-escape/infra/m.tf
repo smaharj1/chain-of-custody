@@ -1,0 +1,3 @@
+module "outside" {
+  source = "../../../elsewhere"
+}

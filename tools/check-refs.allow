@@ -51,3 +51,7 @@ tools/check-skills.py
 tools/evals*
 docs/security/managed-settings.md
 docs/security/platform-requirements.md
+
+# 6-infra-ci: files the infra CI templates are installed as, in the user's project (not in the kit repo).
+.github/workflows/infra-*.yml
+.claude/infra-policy.json
