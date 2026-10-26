@@ -142,12 +142,21 @@ class Hostile(BaseTestCase):
 
     def test_bad_repo_names(self):
         for repo in ("widgets", "a/b/c", "acme/wid gets", "", "acme/;rm -rf ~", "acme/$(id)", "acme/`id`", "acme/x\nrm", "-rf/x",
-                     "../x", "acme/..", "./x", "acme/x.git", "a" * 40 + "/x", "acme/" + "b" * 101, "acme/x|y", "acme/x&y", "acme/x\n", "acme/x\r", "acme/‮x"):
+                     "../x", "acme/..", "./x", "acme/x.git", "a" * 40 + "/x", "acme/" + "b" * 101, "acme/x|y", "acme/x&y", "acme/x\n", "acme/x\r", "-rf/x", "acme/-x", ".o/x", "acme/‮x"):
             with self.subTest(repo=repo):
                 rec = Recorder()
                 rc, out, err = run_main(["apply", "--repo", repo, "--apply"], runner=rec)
                 self.assertEqual(rc, 2)
                 self.assertEqual(rec.calls, [])
+
+    def test_check_repo_directly_rejects_names_that_could_be_options(self):
+        # argparse already rejects `--repo -rf/x`, so this calls the check itself: other callers (repo_script.py) pass the value straight in
+        for repo in ("-rf/x", "acme/-x", "-/x", ".o/x", "acme/x\n"):
+            with self.subTest(repo):
+                with self.assertRaises(labels.LabelError):
+                    labels.check_repo(repo)
+        self.assertEqual(labels.check_repo("acme/.github"), "acme/.github")
+        self.assertEqual(labels.check_repo("a-b/c_d.e"), "a-b/c_d.e")
 
     def test_bad_label_names(self):
         tmp = self.tmpdir()

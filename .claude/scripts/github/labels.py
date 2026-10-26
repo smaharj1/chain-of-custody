@@ -56,6 +56,8 @@ def check_repo(repo: str) -> str:
     owner, name = repo.split("/")
     if owner in (".", "..") or name in (".", "..") or name.endswith(".git"):
         raise LabelError("--repo must be OWNER/NAME, not a path or a .git name")
+    if owner.startswith(("-", ".")) or name.startswith("-"):
+        raise LabelError("--repo must not start with '-' (it could be read as an option)")
     return repo
 
 
