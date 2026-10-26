@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Chain of Custody
 
+> **Advisory runtime.** Outside Claude Code this workflow is guidance, not enforcement. The kit's guards, subagents and unattended loop run only in Claude Code. The parity table is in `AGENTS.md`; read it before relying on this.
+
 Use the repository's `.claude/` files as the canonical source for roles,
 commands, protocols, templates, and quality gates. This rule makes the same
 workflow available in Cursor; it does not duplicate those definitions.
@@ -27,3 +29,6 @@ implementation. Preserve the artifact handoff chain:
 Do not bypass design critique, code review, security review when required, or
 primer-defined verification. Keep changes scoped to the active brief and
 surface missing or conflicting requirements.
+
+Parity: Cursor does not load `.claude/agents/`, does not run the kit's git/edit hooks, and
+cannot run the unattended `/orchestrate` loop. The full table is in `AGENTS.md`.

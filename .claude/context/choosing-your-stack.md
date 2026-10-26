@@ -64,7 +64,7 @@ If you have no other information, start here. You can change individual pieces l
 - **Payments** — Stripe if you charge money.
 - **IaC** — only relevant if you manage your own cloud servers. Most beginners can skip this and use a managed host (Vercel, Supabase). Delete the infra agent if so.
 
-See [GLOSSARY.md](../GLOSSARY.md) for fuller definitions.
+See [GLOSSARY.md](../../GLOSSARY.md) for fuller definitions.
 
 ---
 

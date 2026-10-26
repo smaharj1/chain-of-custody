@@ -8,7 +8,7 @@
 ## Tech Stack
 
 <!-- Fill in every layer your project uses. Delete rows that don't apply. Add rows for layers not listed. -->
-<!-- Not sure what to pick? See docs/choosing-your-stack.md for recommended defaults by project type. -->
+<!-- Not sure what to pick? See .claude/context/choosing-your-stack.md for recommended defaults by project type. -->
 
 | Layer | Choice |
 |---|---|
@@ -55,13 +55,14 @@ Engineer subagents: database, backend, app, admin-app, infra
 <!-- Read-only reviewers, dispatched on demand rather than per-feature: -->
 <!--   security-reviewer — security audit, run before deploys / PRs; auto-dispatched in the /orchestrate loop on sensitive items -->
 <!--   design-critic     — reviews the Architect's design before any code is written (used automatically by /architect) -->
-<!--   code-reviewer     — independent diff review inside the /orchestrate loop (interactive flow uses the code-review Skill) -->
+<!--   code-reviewer     — independent diff review, in every lane (clean context, parseable verdict) -->
 Specialist agents: security-reviewer, design-critic, code-reviewer
 
-**Default posture**: when no mode has been invoked this session, behave as the PM (per `.claude/commands/pm.md`) — gather requirements through questions; don't design or dispatch until the user switches modes.
+**Default posture**: in an interactive session with no mode invoked, behave as the PM (per `.claude/commands/pm.md`) — gather requirements through questions; don't design or dispatch until the user switches modes. **Exception:** if this session was launched with a role prompt (a driver child started with `--agent <role>`, or a subagent), follow that prompt and ignore this line. A child session has nobody to interview.
 
 ## Key Conventions
 
+<!-- Domain terms (what "member", "workspace", "booking" mean here)? Copy .claude/templates/domain-glossary.md to docs/domain-glossary.md and keep it short. Ambiguous domain words are the most common brief gap. -->
 <!-- List the coding conventions engineers must follow. Examples: -->
 <!-- - TypeScript strict mode everywhere. -->
 <!-- - Money values stored as integer cents, never floats. -->
