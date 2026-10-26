@@ -20,3 +20,16 @@ docs/design/loop-engineering.md
 
 # Human-committed evidence gate (IMP-1): absent in the kit repo by design, so docs may name it.
 docs/baseline/evidence.json
+
+# 0b-prose: files that live in a user's project, not in the kit.
+.claude/launch.json
+docs/domain-glossary.md
+
+# 0b-prose: moved to .claude/context/choosing-your-stack.md (IMP-20). CHANGELOG entries are history;
+# docs/getting-started.md is a hot file the conductor updates at merge (see changelog.d/0b-prose.md).
+docs/choosing-your-stack.md
+
+# 0b-prose: paths other Wave A phases build. Remove each entry when its phase merges.
+.claude/scripts/probe_run.py          # until Phase 1 merges
+docs/security/secrets-policy.md       # until Phase 1 merges
+tools/baseline/summarize.py           # until Phase 0a merges
