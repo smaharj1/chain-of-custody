@@ -1,6 +1,6 @@
 # Infrastructure: apply is always a human decision
 
-**No autonomy level unlocks infrastructure apply, deploy or destroy (H4).** The agent writes infrastructure code. CI checks the source, makes a plan after a policy check, and a human approves the plan that gets applied. This page states that as policy; the CI templates that implement it are in the infra CI phase, and the doctor already refuses to let the pieces it can see go wrong (IMP-25).
+**No autonomy level unlocks infrastructure apply, deploy or destroy (H4).** The agent writes infrastructure code. CI checks the source, makes a plan after a policy check, and a human approves the plan that gets applied. This page states that as policy; the CI templates that implement it are described in [infra-ci.md](infra-ci.md), and the doctor already refuses to let the pieces it can see go wrong (IMP-25).
 
 ## The rule
 
@@ -43,4 +43,4 @@ Which job may hold what is in [split-ci.md](split-ci.md). `ci_lint.py` enforces 
 | `ci.oidc-with-pr-code` | `id-token: write` together with PR code |
 | `deploy.surface` | an apply that runs on push |
 
-Not built here, because they need a live cloud account: the plan, policy and apply workflows themselves, and drift detection. They are TEMPLATE work in the infra CI phase and are applied by a human.
+The plan, policy, apply and drift workflows are templates in `.claude/templates/infra/` ([infra-ci.md](infra-ci.md)). They need a live cloud account to run, so they are installed and first run by a human.

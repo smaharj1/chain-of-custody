@@ -1,0 +1,86 @@
+# infra-drift: the scheduled drift routine (report section 8.3, CO-39). It plans and reports. It NEVER applies.
+#
+# Install as .github/workflows/infra-drift.yml. On a schedule it runs `terraform plan -detailed-exitcode` of `main`
+# with the read-only role and opens (or updates) one issue when the real infrastructure no longer matches the code.
+# It runs main's reviewed code, so it can hold the OIDC token and `issues: write` (report section 8.4, `drift` row).
+# It uses -lock=false because the read-only role cannot write the state lock. The issue lists resource addresses and
+# actions only, never values.
+#
+# Repository variables: INFRA_DRIFT_ROLE_ARN (see .claude/templates/security/oidc/aws-drift-readonly.trust.json,
+# environment `drift`), AWS_REGION. Set TF_ROOT below. The label `infra-drift` is created on first use.
+name: infra-drift
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-drift
+  cancel-in-progress: false
+
+env:
+  TF_ROOT: infra
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+
+jobs:
+  drift:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: drift
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: Assume the read-only role
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_DRIFT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-drift
+          role-duration-seconds: 3600
+      - name: terraform init
+        run: terraform -chdir="$TF_ROOT" init -lockfile=readonly
+      - name: terraform plan, detailed exit code
+        id: plan
+        run: |
+          set +e
+          terraform -chdir="$TF_ROOT" plan -lock=false -refresh=true -detailed-exitcode -out=tfplan -no-color
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          terraform -chdir="$TF_ROOT" show -json tfplan > plan.json
+      - name: Open or update the drift issue
+        if: ${{ steps.plan.outputs.exitcode == '2' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          python3 .claude/scripts/infra/gate.py plan-summary --plan-json plan.json --title "Infrastructure drift" > body.md
+          printf '\nFound by %s. Review it, then change the code or the infrastructure through the normal path. This workflow never applies.\n' "$RUN_URL" >> body.md
+          gh label create infra-drift --repo "$REPO" --color B60205 --description "Infrastructure differs from main" 2>/dev/null || true
+          existing="$(gh issue list --repo "$REPO" --label infra-drift --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body-file body.md
+          else
+            gh issue create --repo "$REPO" --label infra-drift --title "Infrastructure drift detected" --body-file body.md
+          fi

@@ -1,0 +1,209 @@
+# infra-apply (human-dispatch variant): for repositories whose GitHub plan has no Environment required reviewers.
+# Report section 8.4 (platform table, "Fallback when missing"), RC-2, RC-4. Install as .github/workflows/infra-apply.yml
+# (that file name is what .claude/templates/security/oidc/aws-apply-job-workflow-ref.trust.json pins).
+# The doctor calls this "apply gate = human dispatch" and caps IaC projects at L3 (docs/security/rulesets.md).
+#
+# This workflow runs ONLY when a person starts it by hand (workflow_dispatch). The bot has no `actions` scope, so it cannot.
+# It still checks: the actor and the triggering actor must be in factory_approvers and must not be a bot
+# (gate.py authorize), and the run must be on refs/heads/main.
+#
+# Two steps, both started by a human:
+#   1. mode = plan   makes a fresh plan of main (state lock and refresh on), runs policy, and prints a values-free summary and
+#                    a DIGEST in the run summary. Nothing is applied. Read it.
+#   2. mode = apply  with approved_digest = the digest you read. The run makes a fresh plan of main again and applies it ONLY if:
+#                    its digest equals approved_digest (so what is applied is what you read), the saved plan file still has
+#                    the sha256 recorded when it was made (verify-hash), and the planned commit is still the tip of main
+#                    (base-is-main). `terraform apply tfplan` then applies that file, by hash, in the same run.
+#
+# The OIDC trust for the roles is the workflow itself (job_workflow_ref), so every job here can reach both roles: the human
+# dispatch and the checks above are the gate, not job separation. Do not add triggers to this file. ci_lint refuses an apply
+# that a push to a branch other than main, a pull request, a comment or a schedule can start.
+#
+# Repository variables: FACTORY_APPROVERS, FACTORY_BOT_LOGIN, INFRA_PLAN_MAIN_ROLE_ARN, INFRA_APPLY_ROLE_ARN, AWS_REGION,
+# CONFTEST_VERSION, CONFTEST_SHA256. Set TF_ROOT below.
+name: infra-apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: plan makes and shows a plan; apply applies the plan whose digest you approved
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+      approved_digest:
+        description: "apply only: the digest from the plan run (sha256:...)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-apply
+  cancel-in-progress: false
+
+env:
+  TF_ROOT: infra
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+
+jobs:
+  authorize:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Require refs/heads/main
+        run: python3 .claude/scripts/infra/gate.py require-main-ref --ref "$GITHUB_REF"
+      - name: Require an approver who is not a bot
+        env:
+          APPROVERS: ${{ vars.FACTORY_APPROVERS }}
+          BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 .claude/scripts/infra/gate.py authorize --actor "$ACTOR" --actor "$TRIGGERING_ACTOR" --approvers "$APPROVERS" --bot "$BOT_LOGIN"
+      - name: The apply mode needs the digest
+        env:
+          MODE: ${{ inputs.mode }}
+          APPROVED_DIGEST: ${{ inputs.approved_digest }}
+        run: |
+          set -eu
+          case "$MODE" in plan) exit 0 ;; apply) ;; *) echo "mode must be plan or apply" >&2; exit 1 ;; esac
+          case "$APPROVED_DIGEST" in sha256:????????????????????????????????????????????????????????????????) ;; *) echo "approved_digest must be sha256:<64 hex>" >&2; exit 1 ;; esac
+
+  plan:
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      plan_sha256: ${{ steps.hash.outputs.plan_sha256 }}
+      planned_sha: ${{ steps.hash.outputs.planned_sha }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: Install conftest at the vetted version, checked by hash
+        env:
+          CONFTEST_VERSION: ${{ vars.CONFTEST_VERSION }}
+          CONFTEST_SHA256: ${{ vars.CONFTEST_SHA256 }}
+        run: |
+          set -eu
+          curl -sSfL -o conftest.tgz "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          echo "${CONFTEST_SHA256}  conftest.tgz" | sha256sum -c -
+          tar -xzf conftest.tgz conftest
+      - name: Assume the plan-main role
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_PLAN_MAIN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-plan-main
+          role-duration-seconds: 3600
+      - name: terraform init
+        run: terraform -chdir="$TF_ROOT" init -lockfile=readonly
+      - name: terraform plan of main, with the state lock and refresh on
+        run: |
+          set -eu
+          terraform -chdir="$TF_ROOT" plan -lock=true -refresh=true -out=tfplan -no-color
+          terraform -chdir="$TF_ROOT" show -json tfplan > "$TF_ROOT/plan.json"
+      - name: Policy on the plan JSON
+        run: ./conftest test --policy .claude/templates/infra/policy --namespace kit.infra.plan "$TF_ROOT/plan.json"
+      - name: Record what was planned and show it
+        id: hash
+        run: |
+          set -eu
+          echo "plan_sha256=$(python3 .claude/scripts/infra/gate.py hash-file "$TF_ROOT/tfplan")" >> "$GITHUB_OUTPUT"
+          echo "planned_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          python3 .claude/scripts/infra/gate.py plan-summary --plan-json "$TF_ROOT/plan.json" --title "Plan of main" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the plan for the apply job of this run
+        uses: actions/upload-artifact@v4 # pin to SHA
+        with:
+          name: infra-tfplan
+          path: ${{ env.TF_ROOT }}/tfplan
+          retention-days: 1
+
+  apply:
+    if: ${{ inputs.mode == 'apply' }}
+    needs: [authorize, plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout the planned commit
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Fetch the saved plan
+        uses: actions/download-artifact@v4 # pin to SHA
+        with:
+          name: infra-tfplan
+          path: ${{ env.TF_ROOT }}
+      - name: The saved plan is the file that was made
+        env:
+          EXPECTED: ${{ needs.plan.outputs.plan_sha256 }}
+        run: python3 .claude/scripts/infra/gate.py verify-hash --file "$TF_ROOT/tfplan" --sha256 "$EXPECTED"
+      - name: The planned commit is still the tip of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PLANNED_SHA: ${{ needs.plan.outputs.planned_sha }}
+        run: |
+          set -eu
+          main_sha="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          python3 .claude/scripts/infra/gate.py base-is-main --planned-sha "$PLANNED_SHA" --main-sha "$main_sha"
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: Assume the plan-main role to read the saved plan
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_PLAN_MAIN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-apply-digest
+          role-duration-seconds: 900
+      - name: terraform init
+        run: terraform -chdir="$TF_ROOT" init -lockfile=readonly
+      - name: What would be applied is what the human read
+        env:
+          APPROVED_DIGEST: ${{ inputs.approved_digest }}
+        run: |
+          set -eu
+          terraform -chdir="$TF_ROOT" show -json tfplan > "$TF_ROOT/applied.json"
+          actual="$(python3 .claude/scripts/infra/gate.py plan-digest --plan-json "$TF_ROOT/applied.json")"
+          if [ "$actual" != "$APPROVED_DIGEST" ]; then
+            echo "the plan changed since you read it: approved $APPROVED_DIGEST, this plan is $actual. Run mode=plan again." >&2
+            exit 1
+          fi
+      - name: Assume the apply role
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-apply
+          role-duration-seconds: 3600
+      - name: terraform apply of the saved plan
+        run: terraform -chdir="$TF_ROOT" apply -input=false tfplan
