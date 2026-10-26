@@ -40,7 +40,7 @@ DEFAULT_FIXTURE = os.path.join(KIT_ROOT, "examples", "hello-loop")
 
 # Never copied into a run: the answer key, the held-out checks and the maintainer docs.
 FIXTURE_EXCLUDE = ("reference-solution", "acceptance", "kit-overlay", "verify.json", "README.md",
-                   "__pycache__", ".data")
+                   "__pycache__", ".data", "plan")      # plan/: the v2 (loopctl) form of build-plan.json; V1 baseline runs use only the latter
 
 # Hook events the observation hook subscribes to. Event names are the documented ones for the
 # version floor (report §14); the first real run confirms them (docs/baseline/README.md).
