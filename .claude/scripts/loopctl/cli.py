@@ -268,7 +268,7 @@ def cmd_report(args: List[str], env: Mapping[str, str], out: Out) -> int:
     from . import report
     msg = None
     if a.message:
-        with open(a.message, "r", encoding="utf-8", errors="replace") as fh:
+        with open(_rel(a, a.message), "r", encoding="utf-8", errors="replace") as fh:
             msg = fh.read(1 << 16)
     res = report.read_report(os.path.abspath(a.repo), a.path, msg, a.slug)
     out.json(res.to_dict()) if a.json else out.text("report %s: %s%s" % (common.clean_text(a.path, 80), "OK" if res.ok else "MALFORMED",
@@ -645,9 +645,9 @@ def cmd_reconcile(args: List[str], env: Mapping[str, str], out: Out) -> int:
             raise Refused("gh failed: %s" % common.clean_text(proc.stderr.decode("utf-8", "replace"), 160))
         prs = reconcile.normalize_prs(json.loads(proc.stdout.decode("utf-8", "replace")))
     elif a.prs:
-        prs = reconcile.normalize_prs(common.strict_loads(_read_small(a.prs), max_depth=10))
+        prs = reconcile.normalize_prs(common.strict_loads(_read_small(_rel(a, a.prs)), max_depth=10))
     if a.rule_suites:
-        suites = common.strict_loads(_read_small(a.rule_suites), max_depth=10)
+        suites = common.strict_loads(_read_small(_rel(a, a.rule_suites)), max_depth=10)
     if a.apply:
         loop = _loop(a, env)
     else:
@@ -670,6 +670,11 @@ def cmd_reconcile(args: List[str], env: Mapping[str, str], out: Out) -> int:
             out.text("  %-5s %-28s %s" % (f.severity, f.id, common.clean_text(f.message, 200)))
         out.text("%d change(s) %s" % (len(rep.actions), "applied" if a.apply else "would be made (--apply does them)"))
     return EXIT_OK if not (rep.drift and not a.apply) else EXIT_FINDINGS
+
+
+def _rel(a: argparse.Namespace, path: str) -> str:
+    """A file named on the command line, relative to --repo (not to wherever the shell happens to be)."""
+    return path if os.path.isabs(path) else os.path.join(os.path.abspath(a.repo), path)
 
 
 def _read_small(path: str) -> str:

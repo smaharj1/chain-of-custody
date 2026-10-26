@@ -114,7 +114,7 @@ def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = N
     run = None
     try:
         run = ctx.rs.read_run()
-    except (ValueError, OSError):
+    except common.READ_ERRORS:
         run = None
     if run and isinstance(run.get("runId"), str):
         verdict = ctx.ledger().verdict(ctx.cfg, run["runId"])
@@ -166,7 +166,7 @@ def collect(ctx: Any, include_level: bool = False) -> Dict[str, Any]:
     run_rec = None
     try:
         run_rec = ctx.rs.read_run()
-    except (ValueError, OSError):
+    except common.READ_ERRORS:
         pass
     doc["run"]["record"] = run_rec
     items = []  # type: List[Dict[str, Any]]

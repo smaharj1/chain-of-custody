@@ -54,7 +54,7 @@ _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}\Z")
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9-]{0,40}\Z")
 _DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}\Z")
 _MIG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\Z")
-_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}\Z")
+_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}\Z")
 _ROUTE_RE = re.compile(r"^/[A-Za-z0-9._~%/:@?&=+,#-]{0,200}\Z")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}\Z")
 
@@ -70,6 +70,7 @@ class LoadedPlan(object):
         self.items = {}  # type: Dict[str, Dict[str, Any]]
         self.findings = []  # type: List[Finding]
         self.agents = []  # type: List[str]       # .claude/agents/*.md names at the same source
+        self.extra = {}  # type: Dict[str, Optional[str]]   # load_at_rev(extra=...): other files read in the same calls
 
     @property
     def name(self) -> Optional[str]:
@@ -149,55 +150,59 @@ def _worktree_agents(repo: str, lp: LoadedPlan) -> None:
         lp.agents = []
 
 
-def load_at_rev(repo: str, rev: str) -> LoadedPlan:
-    """Read plan/ as committed at `rev` (the base sha). No working-tree file is consulted."""
+def load_at_rev(repo: str, rev: str, extra: Sequence[str] = ()) -> LoadedPlan:
+    """Read plan/ as committed at `rev` (the base sha). No working-tree file is consulted. `extra` names more files to read in
+    the same git calls (the loop.config); their text lands in `lp.extra` (None when absent)."""
+    from . import gitio
     lp = LoadedPlan(rev)
-    proc = gitutil.run_git(["ls-tree", "-r", "-z", "--full-tree", rev, "--", PLAN_DIR, ".claude/agents"],
-                           cwd=repo, binary=True, pin_hooks=True, isolated=True)
-    if proc.returncode != 0:
+    try:
+        rows = gitio.ls_tree(repo, rev, [PLAN_DIR, ".claude/agents"] + list(extra))
+    except ValueError:
         lp.err("plan.missing", "cannot list %s at %s" % (PLAN_DIR, rev[:12]))
         return lp
-    entries = {}  # type: Dict[str, Tuple[str, str]]
-    for rec in proc.stdout.split(b"\0"):
-        if not rec:
-            continue
-        try:
-            meta, path = rec.decode("utf-8", "replace").split("\t", 1)
-            mode, typ, sha = meta.split()[:3]
-        except ValueError:
-            continue
-        entries[path] = (mode, sha)
+    entries = {str(r["path"]): r for r in rows}
     lp.agents = sorted(os.path.basename(p)[:-3] for p in entries
                        if p.startswith(".claude/agents/") and p.endswith(".md") and p.count("/") == 2)
+    wanted = {}  # type: Dict[str, str]
+    for path in extra:
+        r = entries.get(path)
+        if r is not None and r["mode"] in ("100644", "100755") and r["type"] == "blob" and 0 <= int(r["size"]) <= MAX_FILE_BYTES * 8:
+            wanted[path] = str(r["sha"])
+    for path, r in sorted(entries.items()):
+        if not path.startswith(PLAN_DIR + "/"):
+            continue
+        if r["mode"] == "120000":
+            lp.err("plan.not-regular", "%s is a symlink; refused" % common.clean_text(path, 100))
+        elif r["mode"] not in ("100644", "100755") or r["type"] != "blob":
+            lp.err("plan.not-regular", "%s is not a regular file" % common.clean_text(path, 100))
+        elif int(r["size"]) > MAX_FILE_BYTES or int(r["size"]) < 0:
+            lp.err("plan.too-big", "%s is larger than %d bytes" % (common.clean_text(path, 100), MAX_FILE_BYTES))
+        else:
+            wanted[path] = str(r["sha"])
+    blobs = gitio.cat_blobs(repo, list(wanted.values()), MAX_FILE_BYTES * 8)
+    for path in extra:
+        b = blobs.get(wanted.get(path, ""))
+        lp.extra[path] = b.decode("utf-8", "replace") if b is not None else None
 
-    def read_blob(path: str) -> Optional[str]:
-        mode, sha = entries[path]
-        if mode == "120000":
-            lp.err("plan.not-regular", "%s is a symlink; refused" % path)
-            return None
-        if mode not in ("100644", "100755"):
-            lp.err("plan.not-regular", "%s is not a regular file" % path)
-            return None
-        size = gitutil.run_git(["cat-file", "-s", sha], cwd=repo, pin_hooks=True, isolated=True)
-        if size.returncode != 0 or not size.stdout.strip().isdigit() or int(size.stdout.strip()) > MAX_FILE_BYTES:
-            lp.err("plan.too-big", "%s is larger than %d bytes" % (path, MAX_FILE_BYTES))
-            return None
-        blob = gitutil.run_git(["cat-file", "blob", sha], cwd=repo, binary=True, pin_hooks=True, isolated=True)
-        return blob.stdout.decode("utf-8", "replace") if blob.returncode == 0 else None
+    def text_of(path: str) -> Optional[str]:
+        b = blobs.get(wanted.get(path, ""))
+        return b.decode("utf-8", "replace") if b is not None else None
 
     if PLAN_FILE not in entries:
         lp.err("plan.missing", "%s does not exist at %s" % (PLAN_FILE, rev[:12]))
         return lp
-    text = read_blob(PLAN_FILE)
-    if text is not None:
-        lp.plan = _parse(text, PLAN_FILE, lp)
+    if PLAN_FILE in wanted:
+        t = text_of(PLAN_FILE)
+        if t is not None:
+            lp.plan = _parse(t, PLAN_FILE, lp)
     for path in sorted(entries):
         if not path.startswith(PLAN_DIR + "/") or path == PLAN_FILE:
             continue
         if not path.startswith(ITEMS_DIR + "/") or path.count("/") != 2:
             lp.err("plan.stray-file", "%s is not part of the plan layout" % common.clean_text(path, 100))
             continue
-        _load_item_file(lp, path.split("/")[-1], lambda p=path: read_blob(p))
+        if path in wanted:
+            _load_item_file(lp, path.split("/")[-1], lambda p=path: text_of(p))
     return lp
 
 
@@ -585,22 +590,23 @@ def critical_path(items: Dict[str, Dict[str, Any]], order: Sequence[str]) -> Lis
 
 
 def dag_width(items: Dict[str, Dict[str, Any]], order: Sequence[str]) -> Tuple[int, List[List[str]], List[str]]:
-    """(maximum antichain, the levels, one witness antichain). The maximum number of items that could run at once
-    is the size of the largest set of items with no dependency path between any two (Dilworth: n minus a maximum
-    matching of the transitive closure)."""
+    """(maximum antichain size, the levels, one maximum antichain). The maximum number of items that could run at once is the
+    size of the largest set of items with no dependency path between any two (Dilworth: n minus a maximum matching of the
+    transitive closure; the antichain itself comes from the minimum vertex cover, Koenig)."""
     ids = list(order)
-    idx = {i: k for k, i in enumerate(ids)}
     reach = {i: ancestors(items, i) for i in ids}   # i depends (transitively) on reach[i]
     adj = {i: sorted(reach[i], key=common.natural_key) for i in ids}
-    match_to = {}  # type: Dict[str, str]
+    match_right = {}  # type: Dict[str, str]     # right copy v -> left copy u
+    match_left = {}  # type: Dict[str, str]
 
     def augment(u: str, seen: Set[str]) -> bool:
         for v in adj[u]:
             if v in seen:
                 continue
             seen.add(v)
-            if v not in match_to or augment(match_to[v], seen):
-                match_to[v] = u
+            if v not in match_right or augment(match_right[v], seen):
+                match_right[v] = u
+                match_left[u] = v
                 return True
         return False
 
@@ -612,7 +618,22 @@ def dag_width(items: Dict[str, Dict[str, Any]], order: Sequence[str]) -> Tuple[i
             augment(u, set())
     finally:
         sys.setrecursionlimit(old)
-    width = len(ids) - len(match_to)
+    width = len(ids) - len(match_right)
+    # alternating reachability from the unmatched left vertices
+    zl = {u for u in ids if u not in match_left}
+    zr = set()  # type: Set[str]
+    todo = list(zl)
+    while todo:
+        u = todo.pop()
+        for v in adj[u]:
+            if v in zr or match_left.get(u) == v:
+                continue
+            zr.add(v)
+            w = match_right.get(v)
+            if w is not None and w not in zl:
+                zl.add(w)
+                todo.append(w)
+    witness = sorted((x for x in ids if x in zl and x not in zr), key=common.natural_key)
     level = {}  # type: Dict[str, int]
     for i in ids:
         level[i] = 1 + max([level[d] for d in _deps(items, i)] or [0])
@@ -621,13 +642,7 @@ def dag_width(items: Dict[str, Dict[str, Any]], order: Sequence[str]) -> Tuple[i
         while len(levels) < level[i]:
             levels.append([])
         levels[level[i] - 1].append(i)
-    # one witness: greedy by level, keeping only mutually independent items
-    witness = []  # type: List[str]
-    for lv in sorted(levels, key=lambda l: -len(l)):
-        for i in lv:
-            if all(i not in reach[j] and j not in reach[i] for j in witness):
-                witness.append(i)
-    return width, levels, sorted(witness, key=lambda i: idx[i])[:max(width, 0)] if width else []
+    return width, levels, witness
 
 
 # -- validation -----------------------------------------------------------------------------------------------------

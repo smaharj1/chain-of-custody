@@ -155,7 +155,7 @@ def execute(loop: Any, ap: AbortPlan, by: str, reason: str, session_id: Optional
     run_rec = None
     try:
         run_rec = ctx.rs.read_run()
-    except (ValueError, OSError):
+    except common.READ_ERRORS:
         pass
     run_id = (run_rec or {}).get("runId") or "run-%d" % int(common.now())
     ctx.rs.set_halt("abort: %s" % common.clean_text(reason or "no reason given", 120), by)       # 1. halt all dispatch

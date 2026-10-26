@@ -26,10 +26,6 @@ CONFIG_TEMPLATE = """# Loop Config
 ```yaml
 loopctl_tier2: %(tier2)s
 delivery: local
-max_retries_per_item: 2
-max_consecutive_failures: 2
-max_design_rounds: 2
-max_item_loc: 400
 %(extra)s
 ```
 """
@@ -127,6 +123,43 @@ class LoopRepo(object):
     def c(self, *args: str) -> Result:
         """A conductor command: adds --session."""
         return self.ctl(*(list(args) + ["--session", self.session]))
+
+    # -- the in-process API (about half the cost of a CLI call: no argument parsing, one Context for many calls) ----------------
+    def context(self) -> Any:
+        from loopctl.context import Context
+        return Context.build(self.path, self.env)
+
+    def loop(self, fresh: bool = False) -> Any:
+        from loopctl.state import Loop
+        if fresh or getattr(self, "_loop", None) is None:
+            self._loop = Loop(self.context())
+        return self._loop
+
+    def fast_start(self, by: str = "Pat") -> Any:
+        """Approve the plan and take the lock as the conductor, without the CLI's preflight (the CLI `run` has its own tests)."""
+        loop = self.loop(fresh=True)
+        loop.approve_plan(by)
+        ctx = loop.ctx
+        ctx.lock().acquire("run-1", self.session, ctx.repo, None, "rev")
+        ctx.rs.register_session(self.session, "conductor", registered_by="test")
+        ctx.rs.write_run({"runId": "run-1", "plan": self.plan_name, "baseSha": ctx.base_sha, "worktree": ctx.repo, "runner": "sequential",
+                          "conductor_session_id": self.session})
+        return loop
+
+    def walk(self, iid: str, *stages: str) -> None:
+        for st in stages:
+            self.loop().advance(iid, st, self.session)
+
+    def complete(self, iid: str, approve: bool = False) -> str:
+        """Drive an item to merged: the stages, a real --no-ff merge with the trailer, then advance. Returns the merge commit."""
+        loop = self.loop()
+        loop.begin(iid, self.session)
+        self.walk(iid, "design_review", "building", "verifying", "reviewing")
+        mc = self.do_merge(iid, file_content="work for %s\n" % iid)
+        if approve:
+            loop.approve("item", iid, "Pat")
+        loop.advance(iid, "merged", self.session, merge_commit=mc)
+        return mc
 
     def state(self) -> Any:
         from loopctl.context import Context

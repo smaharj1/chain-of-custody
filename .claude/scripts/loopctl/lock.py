@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import socket
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from kitlib import runstate
 
@@ -49,19 +49,28 @@ class RunLock(object):
         self.stale_min = float(stale_min)
 
     # -- reading ---------------------------------------------------------------------------------
+    def _read(self) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """("none", None) | ("ok", record) | ("corrupt", None). A lock file that exists but is not a JSON object is corrupt, and
+        corrupt counts as held, never as free."""
+        if not self.rs.lock_held():
+            return "none", None
+        try:
+            rec = self.rs.read_lock()
+        except common.READ_ERRORS:
+            return "corrupt", None
+        if not isinstance(rec, dict):
+            return ("corrupt", None) if self.rs.lock_held() else ("none", None)
+        return "ok", rec
+
     def status(self) -> Dict[str, Any]:
         out = {"held": False, "corrupt": False, "stale": False, "record": None, "age_min": None,
                "stale_after_min": self.stale_min}  # type: Dict[str, Any]
-        if not self.rs.lock_held():
+        kind, rec = self._read()
+        if kind == "none":
             return out
         out["held"] = True
-        try:
-            rec = self.rs.read_lock()
-        except (ValueError, OSError):
+        if kind == "corrupt":
             out["corrupt"] = True
-            return out
-        if rec is None:
-            out["held"] = False
             return out
         out["record"] = rec
         beat = runstate.parse_iso(rec.get("heartbeat", "")) if isinstance(rec.get("heartbeat"), str) else None
@@ -73,11 +82,8 @@ class RunLock(object):
         return out
 
     def holder(self) -> Optional[str]:
-        try:
-            rec = self.rs.read_lock()
-        except (ValueError, OSError):
-            return None
-        return rec.get("sessionId") if isinstance(rec, dict) else None
+        kind, rec = self._read()
+        return rec.get("sessionId") if kind == "ok" and rec else None
 
     def held_by(self, session_id: str) -> bool:
         return runstate.valid_id(session_id) and self.holder() == session_id
@@ -96,9 +102,8 @@ class RunLock(object):
         if self.rs.acquire_lock(rec):
             self.rs.append_event("loopctl", {"event": "lock_acquired", "runId": run_id, "sessionId": session_id})
             return rec
-        try:
-            cur = self.rs.read_lock()
-        except (ValueError, OSError):
+        kind, cur = self._read()
+        if kind == "corrupt":
             raise Refused("the run lock exists but cannot be read; treating it as held. Inspect %s; `lock steal --corrupt` replaces "
                           "it after you have looked" % self.rs.lock_path)
         if cur is None:
@@ -124,16 +129,15 @@ class RunLock(object):
               plan_rev: str = "") -> Dict[str, Any]:
         """Replace a stale lock. Refuses unless the lock is stale by `after_min` (never below 1 minute)."""
         minutes = max(1.0, float(after_min if after_min is not None else self.stale_min))
-        try:
-            cur = self.rs.read_lock()
-        except (ValueError, OSError):
-            cur = None
+        kind, cur = self._read()
+        if kind == "none":
+            raise Refused("there is no lock to steal; use `lock acquire`")
+        if kind == "corrupt":
             if not corrupt:
                 raise Refused("the lock is unreadable; inspect it, then `lock steal --corrupt`")
             expected = {}  # type: Dict[str, Any]
+            cur = None
         else:
-            if cur is None:
-                raise Refused("there is no lock to steal; use `lock acquire`")
             if corrupt:
                 raise Refused("--corrupt is only for an unreadable lock")
             if not is_stale(cur, common.now(), minutes, host_dead):

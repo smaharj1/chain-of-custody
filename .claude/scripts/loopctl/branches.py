@@ -10,16 +10,17 @@ worktree, only on the item's own branch, and never on a protected branch.
 """
 from __future__ import annotations
 
+import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from kitlib import gitutil
+from kitlib import gitutil, jsonio, runstate
 
 from . import common
 from .common import Refused, UsageError
 
-__all__ = ["BRANCH_RE", "feat_name", "dead_name", "blocked_name", "parse", "exists", "list_branches", "create", "rename",
+__all__ = ["delete_merged", "BRANCH_RE", "feat_name", "dead_name", "blocked_name", "parse", "exists", "list_branches", "create", "rename",
            "discard", "park", "sweep", "prune_dead"]
 
 BRANCH_RE = re.compile(r"^(feat|dead|blocked)/([a-z0-9][a-z0-9-]{0,40})-a([0-9]{1,4})(?:-([0-9]{1,3}))?\Z")
@@ -88,6 +89,20 @@ def create(repo: str, name: str, base_sha: str) -> None:
         raise Refused("git branch failed: %s" % common.clean_text(r.stderr, 120))
 
 
+def _deadlog_path(repo: str) -> Optional[str]:
+    rs = runstate.RunState.for_path(repo)
+    return os.path.join(rs.root, "dead-branches.json") if rs is not None else None
+
+
+def _deadlog(repo: str) -> Dict[str, float]:
+    p = _deadlog_path(repo)
+    try:
+        d = jsonio.read_json_opt(p) if p else None
+    except common.READ_ERRORS:
+        d = None
+    return {k: float(v) for k, v in d.items() if isinstance(k, str) and isinstance(v, (int, float))} if isinstance(d, dict) else {}
+
+
 def rename(repo: str, old: str, new: str) -> None:
     po, pn = parse(old), parse(new)
     if not po or not pn:
@@ -99,6 +114,26 @@ def rename(repo: str, old: str, new: str) -> None:
     r = _git(repo, ["branch", "-m", old, new])
     if r.returncode != 0:
         raise Refused("git branch -m failed: %s" % common.clean_text(r.stderr, 120))
+    if pn[0] == "dead":                     # retention counts from the day it became dead, not from its last commit
+        p = _deadlog_path(repo)
+        if p:
+            log = _deadlog(repo)
+            log[new] = common.now()
+            for k in [k for k in log if not exists(repo, k)]:
+                del log[k]
+            jsonio.ensure_dir(os.path.dirname(p))
+            jsonio.atomic_write_json(p, log, 0o600)
+
+
+def delete_merged(ctx: Any, branch: str, integration: Optional[str]) -> bool:
+    """Delete a feat/* branch that is fully merged into the integration branch (`git branch -d` refuses anything else).
+    "Merged branches are deleted after pass" (L-3)."""
+    p = parse(branch)
+    if not p or p[0] != "feat" or not integration or not exists(ctx.repo, branch) or current(ctx.repo) == branch:
+        return False
+    if not gitutil.is_ancestor("refs/heads/" + branch, "refs/heads/" + integration, ctx.repo, isolated=True):
+        return False
+    return _git(ctx.repo, ["branch", "-d", branch]).returncode == 0
 
 
 def _unique(repo: str, kind: str, slug: str, attempt: int) -> str:
@@ -163,10 +198,14 @@ def sweep(ctx: Any, live_branches: Sequence[str]) -> List[Dict[str, Any]]:
     actions = []  # type: List[Dict[str, Any]]
     live = set(live_branches)
     cur = current(ctx.repo)
+    ib = ctx.integration_branch()
     for b in list_branches(ctx.repo, ("feat",)):
         if b["name"] in live or b["name"] == cur:
             continue
-        actions.append({"action": "rename-dead", "branch": b["name"], "to": _unique(ctx.repo, "dead", b["slug"], b["attempt"])})
+        if ib and gitutil.is_ancestor("refs/heads/" + b["name"], "refs/heads/" + ib, ctx.repo, isolated=True):
+            actions.append({"action": "delete-merged", "branch": b["name"]})          # all of it is already on the integration branch
+        else:
+            actions.append({"action": "rename-dead", "branch": b["name"], "to": _unique(ctx.repo, "dead", b["slug"], b["attempt"])})
     return actions
 
 
@@ -176,6 +215,8 @@ def apply_sweep(ctx: Any, actions: Sequence[Dict[str, Any]]) -> List[str]:
         if a.get("action") == "rename-dead" and exists(ctx.repo, a["branch"]):
             rename(ctx.repo, a["branch"], a["to"])
             done.append("%s -> %s" % (a["branch"], a["to"]))
+        elif a.get("action") == "delete-merged" and delete_merged(ctx, a["branch"], ctx.integration_branch()):
+            done.append("deleted merged %s" % a["branch"])
     return done
 
 
@@ -184,8 +225,10 @@ def prune_dead(ctx: Any, retention_days: int, now: Optional[float] = None) -> Li
     now = common.now() if now is None else now
     pruned = []  # type: List[str]
     cur = current(ctx.repo)
+    log = _deadlog(ctx.repo)
     for b in list_branches(ctx.repo, ("dead",)):
-        if b["name"] == cur or not b["committed"] or now - b["committed"] < retention_days * 86400:
+        since = log.get(b["name"], b["committed"])
+        if b["name"] == cur or not since or now - since < retention_days * 86400:
             continue
         r = _git(ctx.repo, ["branch", "-D", b["name"]])
         if r.returncode == 0:

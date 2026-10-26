@@ -57,7 +57,7 @@ def collect_facts(ctx: Any, st: Any, iid: str, lane: str = "full") -> Dict[str, 
     run = None
     try:
         run = ctx.rs.read_run()
-    except (ValueError, OSError):
+    except common.READ_ERRORS:
         pass
     cost = None
     if run and isinstance(run.get("runId"), str):

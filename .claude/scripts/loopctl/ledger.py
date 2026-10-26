@@ -220,7 +220,7 @@ def projection(repo: str, n_items: int) -> Dict[str, Any]:
             continue
         try:
             d = jsonio.read_json(p)
-        except (ValueError, OSError):
+        except common.READ_ERRORS:
             continue
         if not isinstance(d, dict) or d.get("kind") != "run" or d.get("status") not in ("completed", "complete"):
             continue

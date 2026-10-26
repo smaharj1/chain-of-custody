@@ -26,6 +26,7 @@ from .common import Refused, UsageError
 __all__ = ["Context", "SCRIPTS_DIR"]
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_UNSET = object()
 
 
 def _resolve_base(repo: str, base: Optional[str]) -> Optional[str]:
@@ -37,17 +38,16 @@ def _resolve_base(repo: str, base: Optional[str]) -> Optional[str]:
         if not sha:
             raise UsageError("--base %s does not resolve to a commit" % common.clean_text(base, 60))
         return sha
-    if not gitutil.rev_parse("HEAD^{commit}", repo, isolated=True):
-        return None
-    for cand in ("origin/HEAD", "origin/main", "origin/master", "main", "master"):
-        tip = gitutil.rev_parse(cand + "^{commit}", repo, isolated=True)
-        if not tip:
+    wanted = ("refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master")
+    have = gitutil.run_git(["for-each-ref", "--format=%(refname)"] + list(wanted), cwd=repo, isolated=True, pin_hooks=True).stdout.split()
+    for cand in wanted:                      # the same order verify.py uses
+        if cand not in have:
             continue
-        proc = gitutil.run_git(["merge-base", "HEAD", tip], cwd=repo, isolated=True, pin_hooks=True)
+        proc = gitutil.run_git(["merge-base", "HEAD", cand], cwd=repo, isolated=True, pin_hooks=True)
         out = proc.stdout.strip()
         if proc.returncode == 0 and out:
             return out.splitlines()[0]
-    return gitutil.rev_parse("HEAD^{commit}", repo, isolated=True)   # no default branch: the repo's own HEAD is the base
+    return gitutil.rev_parse("HEAD^{commit}", repo, isolated=True)   # no default branch: the repo's own HEAD is the base (None if unborn)
 
 
 class Context(object):
@@ -64,6 +64,7 @@ class Context(object):
         self.plan_trusted = False
         self.plan_source = ""
         self._evidence = None  # type: Any
+        self._ib = _UNSET  # type: Any
 
     # -- construction ---------------------------------------------------------------------------------------------
     @classmethod
@@ -72,25 +73,32 @@ class Context(object):
         """`plan`: `base` (the committed plan at the base sha), `worktree` (a draft), `auto` (base, else the working tree,
         marked untrusted) or `none`."""
         c = cls()
-        top = gitutil.toplevel(path, isolated=True)
-        if not top:
+        d = gitutil.nearest_existing_dir(path)
+        proc = gitutil.run_git(["rev-parse", "--show-toplevel", "--git-common-dir"], cwd=d, isolated=True) if d else None
+        lines = proc.stdout.splitlines() if proc is not None and proc.returncode == 0 else []
+        if len(lines) < 2:
             raise UsageError("%s is not inside a git repository" % common.clean_text(path, 80))
-        c.repo = top
+        c.repo = os.path.realpath(lines[0])
+        common_dir = os.path.realpath(lines[1] if os.path.isabs(lines[1]) else os.path.join(d, lines[1]))
         c.env = os.environ if env is None else env
-        c.rs = runstate.RunState.for_path(top)
-        if c.rs is None:
-            raise UsageError("cannot find the git common directory")
-        c.base_sha = _resolve_base(top, base)
-        c._load_config(allow_head_config)
+        c.rs = runstate.RunState(common_dir)
+        c.base_sha = _resolve_base(c.repo, base)
+        preloaded = None
+        if plan in ("base", "auto") and c.base_sha:
+            preloaded = plan_mod.load_at_rev(c.repo, c.base_sha, [kconfig.CONFIG_PATH])
+        c._load_config(allow_head_config, preloaded)
         if plan != "none":
-            c._load_plan(plan)
+            c._load_plan(plan, preloaded)
         return c
 
-    def _load_config(self, allow_head: bool) -> None:
-        reg_cfg = None
+    def _load_config(self, allow_head: bool, preloaded: Optional[plan_mod.LoadedPlan] = None) -> None:
         if self.base_sha:
             try:
-                self.cfg = kconfig.load_at_sha(self.repo, self.base_sha)
+                text = preloaded.extra.get(kconfig.CONFIG_PATH) if preloaded is not None else gitutil.show_file(
+                    self.base_sha, kconfig.CONFIG_PATH, self.repo, isolated=True)
+                if text is None:
+                    raise kconfig.ConfigError("%s does not exist at %s" % (kconfig.CONFIG_PATH, self.base_sha[:12]))
+                self.cfg = kconfig.load_text(text, source="%s:%s" % (self.base_sha[:12], kconfig.CONFIG_PATH))
                 self.cfg_trusted = True
                 self.cfg_note = "loop.config read at base sha %s" % self.base_sha[:12]
             except kconfig.ConfigError as exc:
@@ -117,9 +125,9 @@ class Context(object):
                 except (OSError, kconfig.ConfigError):
                     self.config_drift = [("<unparsable working-tree config>", None, None)]
 
-    def _load_plan(self, mode: str) -> None:
+    def _load_plan(self, mode: str, preloaded: Optional[plan_mod.LoadedPlan] = None) -> None:
         if mode in ("base", "auto") and self.base_sha:
-            lp = plan_mod.load_at_rev(self.repo, self.base_sha)
+            lp = preloaded if preloaded is not None else plan_mod.load_at_rev(self.repo, self.base_sha)
             if not lp.fatal or mode == "base":
                 self.plan, self.plan_trusted, self.plan_source = lp, True, "base sha %s" % self.base_sha[:12]
                 return
@@ -163,6 +171,12 @@ class Context(object):
         return out
 
     def integration_branch(self) -> Optional[str]:
+        if self._ib is not _UNSET:
+            return self._ib
+        self._ib = self._integration_branch()
+        return self._ib
+
+    def _integration_branch(self) -> Optional[str]:
         b = self.cfg.get("integration_branch")
         if isinstance(b, str) and b.strip():
             return b.strip() if gitutil.rev_parse("refs/heads/" + b.strip(), self.repo, isolated=True) else None
@@ -217,7 +231,7 @@ class Context(object):
         run = None
         try:
             run = self.rs.read_run()
-        except (ValueError, OSError):
+        except common.READ_ERRORS:
             return False
         return bool(run and run.get("worktree") and os.path.realpath(run["worktree"]) == os.path.realpath(self.repo))
 

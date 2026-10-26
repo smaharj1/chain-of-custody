@@ -163,12 +163,19 @@ def scan(ctx: Any, st: Any, lp: Any, prs: Optional[List[Dict[str, Any]]] = None,
         for iid in st.by_status(*state_mod.ACTIVE):
             rep.find("warn", "reconcile.stale-inflight", "item %s is %s but no run holds the lock: back to pending" % (iid, st.items[iid]["status"]), iid)
             rep.actions.append({"op": "reset-inflight", "item": iid})
-    live_branches = [r["branch"] for r in st.items.values() if r.get("branch") and r["status"] in state_mod.IN_FLIGHT]
+    finishing = {a["item"] for a in rep.actions if a["op"] in ("merged-recovered",)}
+    live_branches = [r["branch"] for i, r in st.items.items() if r.get("branch") and r["status"] in state_mod.IN_FLIGHT and i not in finishing]
     for a in branches.sweep(ctx, live_branches):
-        rep.find("info", "reconcile.orphan-branch", "branch %s has no live item: renamed to %s" % (a["branch"], a["to"]))
-        rep.actions.append({"op": "orphan-branch", "branch": a["branch"], "to": a["to"]})
+        if a["action"] == "delete-merged":
+            rep.find("info", "reconcile.merged-branch", "branch %s is fully merged: deleted (merged branches are deleted after pass)" % a["branch"])
+            rep.actions.append({"op": "delete-merged", "branch": a["branch"]})
+        else:
+            rep.find("info", "reconcile.orphan-branch", "branch %s has no live item: renamed to %s" % (a["branch"], a["to"]))
+            rep.actions.append({"op": "orphan-branch", "branch": a["branch"], "to": a["to"]})
     days = ctx.cfg.get_int("orphan_retention_days")
-    old = [b["name"] for b in branches.list_branches(ctx.repo, ("dead",)) if b["committed"] and common.now() - b["committed"] > days * 86400]
+    deadlog = branches._deadlog(ctx.repo)
+    old = [b["name"] for b in branches.list_branches(ctx.repo, ("dead",))
+           if (deadlog.get(b["name"]) or b["committed"]) and common.now() - (deadlog.get(b["name"]) or b["committed"]) > days * 86400]
     for n in old:
         rep.find("info", "reconcile.prune-dead", "dead branch %s is older than %d days: pruned" % (n, days))
         rep.actions.append({"op": "prune-dead", "branch": n})
@@ -272,9 +279,10 @@ def apply(loop: Any, rep: Report, by: str = "reconcile") -> Report:
                         r["prUrl"] = a["overlay"]["url"]
         loop.store.update(mutate, "reconcile --apply (%d state change(s))" % len(state_ops))
         rep.applied += ["%s %s" % (a["op"], a.get("item") or a.get("branch", "")) for a in state_ops]
-    renames = [a for a in acts if a["op"] == "orphan-branch"]
-    if renames:
-        rep.applied += ["rename %s" % x for x in branches.apply_sweep(ctx, [{"action": "rename-dead", "branch": a["branch"], "to": a["to"]} for a in renames])]
+    sweep = [{"action": "rename-dead", "branch": a["branch"], "to": a["to"]} for a in acts if a["op"] == "orphan-branch"]
+    sweep += [{"action": "delete-merged", "branch": a["branch"]} for a in acts if a["op"] == "delete-merged"]
+    if sweep:
+        rep.applied += branches.apply_sweep(ctx, sweep)
     if any(a["op"] == "prune-dead" for a in acts):
         rep.applied += ["prune %s" % n for n in branches.prune_dead(ctx, ctx.cfg.get_int("orphan_retention_days"))]
     return rep

@@ -284,45 +284,44 @@ class StateStore(object):
         return self._git(["show-ref", "--verify", "-q", self.ref]).returncode == 0
 
     def _read_commit(self, sha: str) -> State:
-        t = self._git(["cat-file", "-t", sha])
-        if t.returncode != 0 or t.stdout.strip() != "commit":
-            raise StateCorrupt("state ref %s does not point at a commit" % self.ref)
-        tree = self._git(["ls-tree", "-z", sha])
-        entries = [e for e in tree.stdout.split("\0") if e]
-        if tree.returncode != 0 or len(entries) != 1 or not entries[0].endswith("\tstate.json") or not entries[0].startswith("100644 blob "):
-            raise StateCorrupt("state ref %s is not a loopctl state commit (its tree is not exactly state.json)" % self.ref)
-        blob = entries[0].split()[2]
-        size = self._git(["cat-file", "-s", blob])
-        if size.returncode != 0 or not size.stdout.strip().isdigit() or int(size.stdout.strip()) > MAX_STATE_BYTES:
-            raise StateCorrupt("state.json is missing or larger than %d bytes" % MAX_STATE_BYTES)
-        body = self._git(["cat-file", "blob", blob])
+        from . import gitio
+        # `sha` came from rev-parse <ref>^{commit}, so it is a commit. Its tree must be exactly state.json.
         try:
-            d = common.strict_loads(body.stdout, max_depth=14, max_bytes=MAX_STATE_BYTES)
+            rows = gitio.ls_tree(self.repo, sha, [], recursive=False)
+        except ValueError:
+            raise StateCorrupt("state ref %s does not point at a readable commit" % self.ref)
+        if len(rows) != 1 or rows[0]["path"] != "state.json" or rows[0]["mode"] != "100644" or rows[0]["type"] != "blob":
+            raise StateCorrupt("state ref %s is not a loopctl state commit (its tree is not exactly state.json)" % self.ref)
+        if not 0 <= int(rows[0]["size"]) <= MAX_STATE_BYTES:
+            raise StateCorrupt("state.json is larger than %d bytes" % MAX_STATE_BYTES)
+        blobs = gitio.cat_objects(self.repo, [sha, sha + ":state.json", sha + "^:state.json"], MAX_STATE_BYTES)
+        commit = (blobs.get(sha) or b"").decode("utf-8", "replace")
+        parents = [ln.split()[1] for ln in commit.split("\n\n", 1)[0].splitlines() if ln.startswith("parent ") and len(ln.split()) == 2]
+        if len(parents) > 1:
+            raise StateCorrupt("state commit has more than one parent")
+        body = blobs.get(sha + ":state.json")
+        if body is None:
+            raise StateCorrupt("state.json cannot be read")
+        try:
+            d = common.strict_loads(body.decode("utf-8", "replace"), max_depth=14, max_bytes=MAX_STATE_BYTES)
         except (ValueError, RecursionError) as exc:
             raise StateCorrupt("state.json is not usable JSON: %s" % common.clean_text(exc, 120))
         validate_state_doc(d, self.plan)
         st = State(d)
-        # the sequence number must follow the parent's
-        parents = self._git(["rev-list", "--parents", "-n", "1", sha]).stdout.split()
-        if len(parents) > 2:
-            raise StateCorrupt("state commit has more than one parent")
-        if len(parents) == 2:
-            pstate = self._parent_seq(parents[1])
-            if pstate is not None and d["seq"] != pstate + 1:
-                raise StateCorrupt("state sequence %d does not follow its parent's %d (a forged or rewritten ref)" % (d["seq"], pstate))
+        if parents:                              # the sequence number must follow the parent's
+            pseq = None
+            pb = blobs.get(sha + "^:state.json")
+            if pb is not None:
+                try:
+                    pd = json.loads(pb.decode("utf-8", "replace"))
+                    pseq = pd.get("seq") if isinstance(pd, dict) and _is_int(pd.get("seq")) else None
+                except ValueError:
+                    pseq = None
+            if pseq is not None and d["seq"] != pseq + 1:
+                raise StateCorrupt("state sequence %d does not follow its parent's %d (a forged or rewritten ref)" % (d["seq"], pseq))
         elif d["seq"] != 1 and d["seq"] != 0:
             raise StateCorrupt("the first state commit has sequence %d" % d["seq"])
         return st
-
-    def _parent_seq(self, sha: str) -> Optional[int]:
-        body = self._git(["show", "%s:state.json" % sha])
-        if body.returncode != 0:
-            return None
-        try:
-            d = json.loads(body.stdout)
-        except ValueError:
-            return None
-        return d.get("seq") if isinstance(d, dict) and _is_int(d.get("seq")) else None
 
     def read(self) -> Tuple[Optional[State], Optional[str]]:
         """(state, commit). (None, None) only when the ref does not exist. Raises StateCorrupt otherwise."""
@@ -477,7 +476,7 @@ class Loop(object):
             return
         try:
             rec = rs.read_lock()
-        except (ValueError, OSError):
+        except common.READ_ERRORS:
             raise Refused("the run lock is unreadable and counts as held; inspect it with `loopctl lock status`")
         if rec is None:
             return
@@ -652,6 +651,9 @@ class Loop(object):
         def mutate(st: State) -> Dict[str, Any]:
             r = st.item(iid)
             frm = r["status"]
+            ap_ = st.header.get("approvedPlan")
+            if ap_ and ap_["acDigests"].get(iid) != plan_mod.ac_digest(item):
+                raise Refused("item %s: its acceptance criteria differ from the approved ones (ACs are frozen at H1); a human re-approves the plan" % iid)
             if to not in FORWARD.get(frm, ()):
                 raise Refused("item %s: %s -> %s is not a forward step (allowed from %s: %s)"
                               % (iid, frm, to, frm, ", ".join(FORWARD.get(frm, ())) or "none"))
@@ -712,6 +714,9 @@ class Loop(object):
 
     def _after_merge(self, st: State, iid: str) -> None:
         from . import locked
+        br = st.items[iid].get("branch")
+        if br and self.ctx.worktree_is_loop_worktree():
+            branches.delete_merged(self.ctx, br, self.ctx.integration_branch())
         try:
             locked.refresh(self.ctx, st, self.plan, active=None)
         except OSError:

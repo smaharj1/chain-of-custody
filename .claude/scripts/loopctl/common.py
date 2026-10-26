@@ -17,12 +17,15 @@ import re
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-__all__ = ["EXIT_OK", "EXIT_FINDINGS", "EXIT_USAGE", "EXIT_REFUSED", "LoopctlError", "UsageError", "Refused",
+__all__ = ["READ_ERRORS", "EXIT_OK", "EXIT_FINDINGS", "EXIT_USAGE", "EXIT_REFUSED", "LoopctlError", "UsageError", "Refused",
            "Finding", "ID_RE", "SLUG_RE", "NAME_RE", "AC_RE", "valid_item_id", "valid_slug", "valid_plan_name",
            "ac_id_for", "clean_text", "strict_loads", "canonical_json", "sha256_hex", "natural_key", "now",
            "iso", "set_clock", "safe_rel_path", "safe_glob", "md_cell", "is_number"]
 
 EXIT_OK, EXIT_FINDINGS, EXIT_USAGE, EXIT_REFUSED = 0, 1, 2, 3
+
+# What reading a state file can raise. `json.loads` of a deeply nested file raises RecursionError, which is not a ValueError.
+READ_ERRORS = (ValueError, OSError, RecursionError)
 
 
 class LoopctlError(Exception):

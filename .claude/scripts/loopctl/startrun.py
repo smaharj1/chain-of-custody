@@ -175,7 +175,7 @@ def start(ctx: Any, out: Any, session: Optional[str], nonce: Optional[str], as_j
     prior = None
     try:
         prior = ctx.rs.read_run()
-    except (ValueError, OSError):
+    except common.READ_ERRORS:
         pass
     plan_rev = plan_mod.plan_digest(ctx.plan)[:12]
     if ctx.runner == "driver":

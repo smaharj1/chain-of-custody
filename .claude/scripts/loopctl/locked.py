@@ -32,7 +32,7 @@ def _path(rs: Any) -> str:
 def read(rs: Any) -> Dict[str, Any]:
     try:
         d = jsonio.read_json_opt(_path(rs))
-    except (ValueError, OSError):
+    except common.READ_ERRORS:
         d = None
     if isinstance(d, dict) and isinstance(d.get("sources"), dict):
         return d
