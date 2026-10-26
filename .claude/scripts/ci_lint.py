@@ -17,6 +17,8 @@ It enforces the split-CI rules that make a pull request safe to run:
   ci.untrusted-comment-trigger comment/issue trigger with no author_association check (warning)
   ci.persist-credentials      checkout leaves the token in .git/config in a PR job (warning)
   ci.unparsed                 the restricted YAML subset could not read the file: manual review, never "passed"
+  infra.*                     rules for workflows that run terraform, tofu, pulumi, cdk, kubectl or helm: the
+                              apply gate, the saved plan, policy before init (infra/ci_rules.py, Phase 6, §8.4)
 
 Exit 0: no errors and nothing unparsed (warnings do not fail). Exit 1: an error or an unparsed
 file. Exit 2: usage. `--json` prints machine-readable findings.
@@ -36,6 +38,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio, workflows  # noqa: E402
+from infra import ci_rules  # noqa: E402
 
 ERROR, WARN = "error", "warn"
 DEFAULT_RESTORE = (".claude", ".mcp.json", "plugin", ".claude-plugin")
@@ -87,6 +90,10 @@ def _perm(permissions: Any, name: str) -> Optional[str]:
 def _job_perm(wf: workflows.Workflow, job: workflows.Job, name: str) -> Optional[str]:
     """The effective level of one permission: the job's own `permissions:` block replaces the workflow's."""
     return _perm(job.permissions if job.permissions is not None else wf.permissions, name)
+
+
+def _job_perm_for(wf: workflows.Workflow, job: workflows.Job, name: str) -> Optional[str]:
+    return _job_perm(wf, job, name)
 
 
 def _is_checkout(step: workflows.Step) -> bool:
@@ -269,6 +276,10 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
             if "author_association" not in all_ifs and job.steps:
                 out.append(Finding("ci.untrusted-comment-trigger", WARN, name, jid,
                                    "%s trigger with no author_association check: any commenter starts this job" % "/".join(stranger_text)))
+    # infrastructure rules live in infra/ci_rules.py (Phase 6); they only fire on workflows that run infrastructure tooling
+    ctx = ci_rules.Ctx(lambda step: _step_checks_out_pr_code(step, events), _job_perm_for)
+    for rule, severity, jid, message in ci_rules.check(wf, name, ctx):
+        out.append(Finding(rule, severity, name, jid, message))
     return out
 
 

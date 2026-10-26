@@ -174,7 +174,7 @@ def prerequisites(ctx: Context, rs: R) -> Dict[int, List[Tuple[str, bool, str]]]
          "gh.required-checks is not proven"),
         ("CODEOWNERS covers guardrail paths", cod is not None and cod.status == PASS and not rs.errors("codeowners"),
          "codeowners: " + (_short(rs.not_ok("codeowners")) or "no CODEOWNERS")),
-        ("split CI (ci_lint clean)", not rs.errors("ci."), "ci_lint errors: " + _short(rs.errors("ci."))),
+        ("split CI (ci_lint clean)", not rs.errors("ci.") and not rs.errors("infra."), "ci_lint errors: " + _short(rs.errors("ci.") + rs.errors("infra."))),
         ("conductor has no web tools", rs.first("settings.web-tools") is not None and rs.first("settings.web-tools").status == PASS, "WebFetch/WebSearch are not denied"),
         ("managed settings or credential-free container", rs.first("managed.settings") is not None and rs.first("managed.settings").status == PASS,
          "managed.settings is not proven"),

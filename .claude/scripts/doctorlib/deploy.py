@@ -173,6 +173,10 @@ def bot_pushable(fire: str) -> bool:
 
 _EXTERNAL_DEPLOY_NAME = re.compile(r"deploy|release|publish|infra|terraform|cdk|apply|rollout|\bcd\b|prod", re.I)
 _EXTERNAL_ACTION_NAME = re.compile(r"deploy|publish|release|rollout|apply|terraform|cdk|pulumi|helm|kubectl|ansible", re.I)
+# Actions that install a tool or fetch credentials and cannot deploy by themselves; their names contain "terraform" or similar, so the
+# name heuristic above would call them uninspectable deploys (Phase 6: the infra-check and infra-plan templates use them).
+_SETUP_ACTIONS = ("hashicorp/setup-terraform", "opentofu/setup-opentofu", "terraform-linters/setup-tflint", "aws-actions/configure-aws-credentials",
+                  "google-github-actions/auth", "google-github-actions/setup-gcloud", "azure/login", "azure/setup-helm", "azure/setup-kubectl")
 _SCRIPT_REF_RE = re.compile(r"(?:^|[\s;&|(\"'`])(?:(?:bash|sh|zsh|dash|python3?|node|ruby|perl|deno|bun|tsx|npx\s+tsx)\s+(?:-[A-Za-z]+\s+)*)?(\.?/?[\w./-]+\.(?:sh|bash|py|js|mjs|cjs|ts|rb|pl))\b")
 _NPM_RUN_RE = re.compile(r"\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?([\w:.-]+)")
 
@@ -230,7 +234,8 @@ def _job_deploys(job: workflows.Job, wf_by_path: Dict[str, workflows.Workflow], 
     labels = list(workflows.deploy_labels("\n".join(s.run for s in job.steps)))
     for s in job.steps:
         lab = workflows.deploy_uses_label(s)
-        if lab is None and s.uses and not s.uses.startswith(("./", "docker://", "actions/")) and _EXTERNAL_ACTION_NAME.search(s.uses.split("@")[0]):
+        if lab is None and s.uses and not s.uses.startswith(("./", "docker://", "actions/")) and s.uses.split("@")[0].lower() not in _SETUP_ACTIONS \
+                and _EXTERNAL_ACTION_NAME.search(s.uses.split("@")[0]):
             lab = "external action %s (cannot be inspected)" % s.uses.split("@")[0]
         if lab and lab not in labels:
             labels.append(lab)
