@@ -155,8 +155,10 @@ class AgentFrontmatter(unittest.TestCase):
 
 class CommandFrontmatter(unittest.TestCase):
     def test_every_command_has_a_description(self):
-        self.assertEqual({os.path.basename(p)[:-3] for p in COMMANDS},
-                         {"pm", "architect", "tech-lead", "planner", "orchestrate"})
+        names = {os.path.basename(p)[:-3] for p in COMMANDS}
+        core = {"pm", "architect", "tech-lead", "planner", "orchestrate"}
+        later = {"bootstrap", "retro"}   # modes added by Phases 11a and 10 (IMP-3): each is a command until Phase 9 converts them
+        self.assertTrue(core <= names <= core | later, sorted(names ^ core))
         for path in COMMANDS:
             with self.subTest(os.path.basename(path)):
                 fm, body = split_frontmatter(path)

@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .claude/metrics.jsonl
 .claude/pr/
+.claude/bootstrap/
 .claude/loop.jsonl
 .claude/orchestrate.lock
 .claude/settings.local.json

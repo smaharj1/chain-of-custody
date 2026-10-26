@@ -55,3 +55,14 @@ docs/security/platform-requirements.md
 # 6-infra-ci: files the infra CI templates are installed as, in the user's project (not in the kit repo).
 .github/workflows/infra-*.yml
 .claude/infra-policy.json
+
+# 11a-bootstrap-ops: files /bootstrap writes in a user's project (never tracked in the kit repo), and the deferred-designs file the release stage writes.
+.claude/bootstrap-receipt.json
+.claude/bootstrap-receipt.json.lock
+.claude/bootstrap/*
+.claude/pr/
+.claude/skills/launch-app/*
+.github/workflows/intake.yml
+.github/workflows/dependency-check.yml
+.github/workflows/smoke.yml
+docs/design/deferred.md
