@@ -1,0 +1,2 @@
+== child ==
+Run these six Bash commands, one per call, in this order: echo probe-v5-start ; git branch --show-current ; git rev-parse --short HEAD ; pwd ; printenv PROBE_V5_ENV ; touch ~/.probe-v5-outside

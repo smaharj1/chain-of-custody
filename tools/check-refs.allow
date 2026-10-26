@@ -25,3 +25,21 @@ docs/baseline/evidence.json
 tests/helpers.py
 tests/test_health.py
 tests/test_migrate.py
+
+# Probe harness (IMP-7): paths inside a scratch repo (tools/probes/files/ copies them there), the results file the
+# human creates from the template, and paths of later phases that docs/design/probe-assumptions.md marks "(planned)".
+.claude/probe/*
+docs/design/probe-results.md
+.claude/scripts/guards*
+.claude/scripts/loopctl.py
+.claude/scripts/doctor.py
+.claude/rules*
+.claude/skills*
+.claude/templates/settings*
+tests/guards*
+tests/loopctl*
+tests/boundary*
+tools/check-skills.py
+tools/evals*
+docs/security/managed-settings.md
+docs/security/platform-requirements.md
