@@ -17,3 +17,6 @@ docs/features/*
 
 # Historical CHANGELOG entries naming files that were moved or renamed since.
 docs/design/loop-engineering.md
+
+# Human-committed evidence gate (IMP-1): absent in the kit repo by design, so docs may name it.
+docs/baseline/evidence.json
