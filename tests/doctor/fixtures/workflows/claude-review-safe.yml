@@ -1,0 +1,24 @@
+# The same review, with the kit, MCP config and every skills directory restored from the base ref
+# before claude starts, and project settings ignored (report section 5.3 rule 5).
+name: claude-review-safe
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Restore trusted configuration from the base ref
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git checkout "$BASE_SHA" -- .claude .mcp.json plugin .claude-plugin skills
+      - name: Review
+        run: claude -p "review this pull request" --setting-sources user --output-format json
