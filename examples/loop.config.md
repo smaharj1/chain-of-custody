@@ -26,6 +26,14 @@ verify_run: pnpm dev             # boot web (5173) + admin (5174) + API (3001), 
                                  # verify-run harness in local-dev.md: poll the item's demo-target
                                  # route until it responds, curl -sf http://localhost:3001/api/health,
                                  # kill the dev server, exit with the health check's code
+verify_build: pnpm build         # production build
+verify_lint: pnpm lint           # lint
+verify_typecheck: pnpm typecheck   # typecheck
+verify_require: [tests, lint, typecheck, smoke]   # none of these may be left unconfigured
+verify_ports: [5183, 3011]       # web and API verify ports
+verify_timeout_s: 600            # per-stage timeout (seconds)
+verify_run_timeout_s: 120        # smoke-stage timeout (seconds)
+verify_env_allow: [NODE_OPTIONS]   # extra variables the toolchain needs
 
 # --- Security review (in-loop gate) ---
 security_review: sensitive       # run security-reviewer on auth / payments / uploads / user-input items
@@ -53,6 +61,14 @@ model_profile: quality           # opus for engineers and critics (see model-pro
 # --- Slicing and the quick lane ---
 max_item_loc: 400                # estimated changed lines per item; larger items are split
 quick_lane_max_loc: 30           # largest quick-lane change that may skip review
+
+# --- Delivery ---
+# Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the
+# work and prints the exact commands; the human runs them (IMP-25).
+delivery: draft-pr               # branch, verify, then pr_prepare prints the push and draft-PR commands for me to run
+git_autonomy: branch+commit      # the conductor branches and makes the WIP commits; I push
+max_ci_fix_attempts: 2           # CI-fix attempts per PR
+always_human_paths: [src/auth/**, src/payments/**]   # project paths a human always reviews (the kit's own list always applies)
 ```
 
 ## Notes

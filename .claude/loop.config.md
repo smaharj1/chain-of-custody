@@ -47,6 +47,25 @@ total_token_budget_per_run: 2000000   # best-effort global estimate
 verify_tests: <command>          # e.g. "pnpm test" — must exit 0 AND collect >0 tests
 verify_run: <command>            # how to boot the app locally for the per-item runtime assertion
                                  #   e.g. "pnpm dev" + a preview assertion on the item's demo target
+verify_build: ""                 # Optional G6 stages, run by `python3 .claude/scripts/verify.py` before the tests, in this order:
+                                 # verify_build, verify_lint, verify_typecheck. Empty = the stage does not run (see verify_require).
+verify_lint: ""                  # lint command; must exit 0
+verify_typecheck: ""             # typecheck command; must exit 0
+verify_require: [tests]          # Stages verify.py refuses to skip: build | lint | typecheck | tests | smoke. A required stage with no
+                                 # command is a configuration error, never a silent pass. `tests` always runs when verify_tests is set.
+verify_ports: []                 # Dedicated verify ports (not the dev-server defaults, L-27). Checked free before the smoke stage; a busy
+                                 # port is an `env` failure, never a retry. Checked again after it: a port still bound means the dev server leaked.
+                                 # With verify_dev the first port is where verify.py polls and sends the smoke requests.
+verify_dev: ""                   # Optional. A dev-server command that never exits. verify.py starts it in its own process group, polls
+                                 # http://127.0.0.1:<first verify port><verify_ready_path> until it answers or verify_run_timeout_s passes,
+                                 # requests the item's demo route, then kills the whole group. Takes the place of verify_run for the smoke stage.
+                                 # Gets VERIFY_PORT (the first verify port) in its environment.
+verify_ready_path: /             # Path polled for readiness when verify_dev is set. Any status below 400 counts as ready.
+verify_timeout_s: 600            # Seconds each build, lint, typecheck and test stage may run. On expiry the stage's process group is killed.
+verify_run_timeout_s: 120        # Seconds the smoke stage may run (boot, readiness, requests, teardown) before its process group is killed.
+verify_env_allow: []             # Names of extra environment variables verify.py passes through. Everything else is dropped: it runs the
+                                 # stages under an allowlisted environment (PATH, HOME, locale, toolchain locators), so no token or cloud
+                                 # credential of the calling shell reaches test code. Names only; never put a value or a secret here.
 
 # --- Security review (in-loop gate) ---
 security_review: sensitive       # sensitive (default) | every_item | off
@@ -161,6 +180,28 @@ factory_approvers: []            # logins of the humans whose labels count (`fac
 promotion_attested: ""           # date (YYYY-MM-DD) the human confirmed the §6.3 promotion bar is met. Needed for L5.
 mcp_allowed_servers: []          # names of MCP servers or plugins the human accepts in a loop run (report section 5.6), for
                                  #   example a read-only docs server. Any other deploy-capable server caps the level at L1.
+
+# --- Delivery (interactive PR lane; see .claude/context/delivery.md) ---
+# Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the
+# work and prints the exact commands; the human runs them (IMP-25).
+delivery: local                  # local | push-branch | draft-pr   (report R5, DEC-1). How finished work leaves the machine.
+                                 #   local       = the human merges the feature branch into the local main; nothing is pushed (default)
+                                 #   push-branch = pr_prepare prints the push command for the feature branch
+                                 #   draft-pr    = pr_prepare prints the push command and `gh pr create --draft --body-file ...`
+                                 # Pushing is always the human's act. The doctor suggests draft-pr once the ruleset checks pass.
+git_autonomy: none               # none | branch | branch+commit   (DEC-22). What the interactive conductor may do with git itself.
+                                 #   none          = it asks you to create the branch and to commit (v1 behaviour, default)
+                                 #   branch        = it creates and switches to `feat/<slug>` itself
+                                 #   branch+commit = it also makes one WIP commit per engineer so reviewers see `prev..sha`
+                                 # Never push, merge, rebase or reset: those stay yours at every setting. Recommended with delivery: draft-pr.
+max_ci_fix_attempts: 2           # CI-fix commits allowed on one PR (report F-28). While fixing CI, edits to `.github/workflows/**`,
+                                 # acceptance tests and lockfiles are refused; each fix commit carries a `CI-Fix-Of: <sha>` trailer.
+                                 # Still red after the last attempt: stop and hand it to a human.
+always_human_paths: []           # Extra path globs a human must review on top of the kit's built-in list (report H3): migrations, auth,
+                                 # payments, infra, .github/, .claude/, lockfiles, test and CI config, deploy files. pr_prepare lists
+                                 # every changed path that matches and refuses a PR body that says "none" when the diff touches one.
+                                 #   - src/auth/**
+                                 #   - src/payments/**
 ```
 
 ## Notes
