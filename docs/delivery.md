@@ -32,7 +32,10 @@ With the defaults nothing changes from v1.
    - `verify_run`: a harness command that boots the app, asserts a route and exits (the pattern in `.claude/context/local-dev.md`). The demo route is appended as its last argument, or substituted for `{route}`.
    - `verify_dev`: a dev-server command that never exits. verify.py starts it in its own process group, polls `http://127.0.0.1:<first verify port><verify_ready_path>`, requests the demo route, and kills the group. Needs `verify_ports`.
    Set `verify_ports` to dedicated ports (not your dev defaults). A busy port is reported as an environment failure and never retried.
-3. Add `.claude/pr/` to your `.gitignore`. PR bodies and saved verify results live there; the kit's repo ignores it too.
+3. Ignore the directory where PR bodies and saved verify results live (the kit's own repo does too):
+   ```bash
+   echo '.claude/pr/' >> .gitignore
+   ```
 4. Copy the workflows you want into `.github/workflows/`: `verify.yml` (recommended; make the job `verify` a required check, pinned to the GitHub Actions app) and, optionally, `claude-review.yml`. Pin each `uses:` to a commit SHA. `python3 .claude/scripts/ci_lint.py` must stay free of errors. `docs/security/split-ci.md` explains why they look the way they do.
 5. For `claude-review.yml`: set the secret `ANTHROPIC_API_KEY` (spend-capped workspace) and the variable `CLAUDE_CODE_VERSION` (the version your canary passed). A maintainer comments `/review` on a PR to run it. The CLI flags in the file are the ones the report names; check them once against your pinned version.
 6. The first PR that installs the kit cannot pass `verify` (the base has no `verify.py` yet). A human merges that one; every later PR is protected.
