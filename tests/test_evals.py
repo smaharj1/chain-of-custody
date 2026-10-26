@@ -70,6 +70,20 @@ class CommittedCases(unittest.TestCase):
         self.assertEqual(subprocess.run([sys.executable, RUNNER, "--case", "nope"], stderr=subprocess.PIPE).returncode, 2)
 
 
+class Regeneration(unittest.TestCase):
+    def test_make_synthetic_reproduces_the_committed_files(self) -> None:
+        d = tempfile.mkdtemp(prefix="kit-evals-gen-")
+        self.addCleanup(shutil.rmtree, d, True)
+        proc = subprocess.run([sys.executable, os.path.join(REPO_ROOT, "tools", "evals", "make_synthetic.py"), d], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode())
+        for sub in ("cases", "transcripts"):
+            names = sorted(os.listdir(os.path.join(d, "evals", sub)))
+            self.assertEqual(names, sorted(os.listdir(os.path.join(REPO_ROOT, "evals", sub))))
+            for n in names:
+                with open(os.path.join(d, "evals", sub, n)) as a, open(os.path.join(REPO_ROOT, "evals", sub, n)) as b:
+                    self.assertEqual(a.read(), b.read(), "%s/%s drifted: rerun tools/evals/make_synthetic.py" % (sub, n))
+
+
 class Graders(unittest.TestCase):
     def ok(self, grader, r):
         return run_local.grade_run({"graders": [grader]}, r)[0]

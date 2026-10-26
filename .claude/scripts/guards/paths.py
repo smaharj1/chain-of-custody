@@ -227,12 +227,16 @@ def classify(abs_path: str, home: Optional[str] = None) -> Optional[Tuple[str, s
     # git internals: any `.git` component
     if GIT_COMPONENT in low:
         return "git", "/".join(parts[low.index(GIT_COMPONENT):])
-    # `.claude`-anchored
+    # `.claude`-anchored: in the user's own ~/.claude, or inside a git working tree. A `.claude` in a scratch directory that is neither
+    # (for example /tmp/fixture/.claude/settings.json) configures nothing until someone makes it a project.
     for k, comp in enumerate(low):
         if comp != ".claude":
             continue
         rest = "/".join(low[k + 1:])
         if not rest:
+            continue
+        base = os.sep + os.sep.join(parts[:k])
+        if fold(base) != fold(home or home_dir()) and find_root(base) is None:
             continue
         for cat, pats in CLAUDE_ANCHORED:
             if cat == "claude-json":
@@ -329,3 +333,46 @@ def agent_authored(path: str) -> bool:
         return tracked.returncode != 0
     except (OSError, ValueError):
         return True
+
+
+def archive_members(path: str, limit: int = 3000, max_bytes: int = 64 * 1024 * 1024) -> Optional[List[str]]:
+    """Member names of a tar or zip archive (no extraction), or None if it is not readable or too large. Used to see where an
+    extraction would write before it happens."""
+    try:
+        if os.path.getsize(path) > max_bytes:
+            return None
+    except OSError:
+        return None
+    try:
+        import tarfile
+        if tarfile.is_tarfile(path):
+            names = []   # type: List[str]
+            with tarfile.open(path, "r:*") as tf:
+                for m in tf:
+                    names.append(m.name)
+                    if len(names) >= limit:
+                        break
+            return names
+    except Exception:
+        pass
+    try:
+        import zipfile
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as zf:
+                return zf.namelist()[:limit]
+    except Exception:
+        pass
+    return None
+
+
+def tree_entries(directory: str, limit: int = 3000) -> List[str]:
+    """Relative paths of the files and directories below `directory` (a bounded walk; symlinks are not followed)."""
+    out = []   # type: List[str]
+    base = os.path.normpath(directory)
+    for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+        rel_dir = os.path.relpath(dirpath, base)
+        for n in list(dirnames) + filenames:
+            out.append(n if rel_dir == "." else os.path.join(rel_dir, n))
+            if len(out) >= limit:
+                return out
+    return out

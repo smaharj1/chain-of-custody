@@ -100,7 +100,18 @@ READ_LIST_BRANCH_FLAGS = {"-a", "--all", "-r", "--remotes", "-v", "-vv", "--verb
                           "--column", "--no-column", "--color", "--no-color", "-i", "--ignore-case", "-q", "--quiet",
                           "--abbrev", "--no-abbrev"}
 
-FEAT_RE = re.compile(r"^feat/[A-Za-z0-9._][A-Za-z0-9._/-]*$")
+_FEAT_BASE = re.compile(r"^feat/[A-Za-z0-9._][A-Za-z0-9._/-]*$")
+
+
+class _FeatRef(object):
+    """feat/<anything git accepts as a ref name>: no `..`, no `//`, no `/.` component, no trailing `/` or `.lock`."""
+
+    @staticmethod
+    def match(ref: str) -> bool:
+        return bool(_FEAT_BASE.match(ref)) and ".." not in ref and "//" not in ref and "/." not in ref and not ref.endswith(("/", ".lock", ".")) and "@{" not in ref
+
+
+FEAT_RE = _FeatRef()
 DISCARDABLE_PREFIXES = ("feat/", "dead/", "blocked/")
 LOOP_BRANCH_PREFIXES = ("feat/", "dead/", "blocked/")
 
@@ -575,6 +586,14 @@ def _h_fetch(ctx: Ctx, g: _Git) -> Optional[Decision]:
     for a in g.rest:
         if _abbrev(a, "--upload-pack", 5) or a == "-u":
             return deny(G, "exec-option", "git fetch %s starts a program" % a)
+    for spec in _positionals(g.rest)[1:]:
+        src, colon, dst = spec.lstrip("+").partition(":")
+        if colon:
+            ref = re.sub(r"^refs/heads/", "", dst)
+            if ctx.is_protected_branch(ref) or ref == "HEAD":
+                return deny(G, "fetch-protected", "git fetch %s writes the shared branch %s locally, bypassing the merge rules" % (spec[:50], ref))
+    if "--update-head-ok" in g.rest or any(_abbrev(a, "--update-head-ok", 6) for a in g.rest):
+        return deny(G, "fetch-protected", "git fetch --update-head-ok moves the checked-out branch")
     return _need(ctx, 1, "fetch", g.sub)
 
 

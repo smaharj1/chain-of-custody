@@ -338,17 +338,17 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
     inv_env = dict(env)
 
     def again(n: str, a: List[str], d: List[bool], extra_env: Optional[Dict[str, str]] = None, wrapper: str = "",
-              nd: bool = False) -> None:
+              nd: bool = False, cwd_to: Optional[str] = None) -> None:
         e = dict(inv_env)
         if extra_env:
             e.update(extra_env)
-        _dispatch(ctx, sc, cmd, n, a, d, e, env_dyn, cwd, depth, origin, wrappers + ([wrapper] if wrapper else []), nd,
+        _dispatch(ctx, sc, cmd, n, a, d, e, env_dyn, cwd_to or cwd, depth, origin, wrappers + ([wrapper] if wrapper else []), nd,
                   guard + 1)
 
-    def script(text: str, why: str, dynamic: bool = False) -> None:
+    def script(text: str, why: str, dynamic: bool = False, cwd_to: Optional[str] = None) -> None:
         if dynamic:
             ana.problem("opaque-eval", "%s runs a string computed at run time" % why)
-        _script(ctx, text, cwd, depth + 1, why, dict(inv_env))
+        _script(ctx, text, cwd_to or cwd, depth + 1, why, dict(inv_env))
 
     inv = Inv(name, name_raw, args, dyn, inv_env, cwd, cmd, origin, depth, list(wrappers), name_dynamic)
     inv.env_dyn = env_dyn
@@ -375,12 +375,24 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
         i, extra = 0, {}  # type: Tuple[int, Dict[str, str]]
         n = len(args)
         split_string = None  # type: Optional[str]
+        env_cwd = None  # type: Optional[str]
         while i < n:
             a = args[i]
             if a == "--":
                 i += 1
                 break
-            if a in ("-u", "--unset", "-C", "--chdir") or a in ("-P", "-a"):
+            if a in ("-C", "--chdir") and i + 1 < n:
+                if dyn[i + 1]:
+                    ctx.cwd_unknown = True
+                else:
+                    env_cwd = paths.lexical(args[i + 1], cwd, ctx.home)
+                i += 2
+                continue
+            if a.startswith("--chdir="):
+                env_cwd = paths.lexical(a.split("=", 1)[1], cwd, ctx.home)
+                i += 1
+                continue
+            if a in ("-u", "--unset") or a in ("-P", "-a"):
                 i += 2
                 continue
             if a in ("-S", "--split-string"):
@@ -409,10 +421,10 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
         inv.env = e2
         ana.invs.append(inv)
         if split_string is not None:
-            _script(ctx, split_string + " " + " ".join(args[i:]) if i < n else split_string, cwd, depth + 1, "env-S", e2)
+            _script(ctx, split_string + " " + " ".join(args[i:]) if i < n else split_string, env_cwd or cwd, depth + 1, "env-S", e2)
             return
         if i < n:
-            again(args[i], args[i + 1:], dyn[i + 1:], extra, "env", dyn[i])
+            again(args[i], args[i + 1:], dyn[i + 1:], extra, "env", dyn[i], cwd_to=env_cwd)
         return
     if name == "xargs":
         with_arg = {"-a", "-d", "-E", "-I", "-L", "-n", "-P", "-s", "--arg-file", "--delimiter", "--eof", "--max-args",
@@ -482,7 +494,9 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
                     bdyn.append(dyn[j])
                     j += 1
                 if body:
-                    again(body[0], body[1:], bdyn[1:], wrapper="find", nd=bdyn[0])
+                    start = next((x for x in args if not x.startswith("-") and x not in ("(", ")", "!")), ".")
+                    where = paths.lexical(start, cwd, ctx.home) if args[i] in ("-execdir", "-okdir") else None
+                    again(body[0], body[1:], bdyn[1:], wrapper="find", nd=bdyn[0], cwd_to=where)
                 i = j
             i += 1
         return
@@ -534,11 +548,12 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
         ana.invs.append(inv)
         again(args[0], args[1:], dyn[1:], wrapper="busybox", nd=dyn[0])
         return
-    if name in NPX_LIKE or (name == "npm" and args[:1] in (["exec"], ["x"])) or \
-            (name in ("pnpm", "yarn") and args[:1] in (["dlx"], ["exec"])) or (name == "bun" and args[:1] == ["x"]):
+    pm_ix, pm_sub = _pm_sub(args) if name in ("npm", "pnpm", "yarn", "bun") else (0, "")
+    if name in NPX_LIKE or (name == "npm" and pm_sub in ("exec", "x")) or \
+            (name in ("pnpm", "yarn") and pm_sub in ("dlx", "exec")) or (name == "bun" and pm_sub == "x"):
         ana.invs.append(inv)
-        rest = args[1:] if name not in NPX_LIKE else args
-        rdyn = dyn[1:] if name not in NPX_LIKE else dyn
+        rest = args[pm_ix + 1:] if name not in NPX_LIKE else args
+        rdyn = dyn[pm_ix + 1:] if name not in NPX_LIKE else dyn
         i, seen = _options(rest, rdyn, NPX_ARG_OPTS, {"-y", "--yes", "--no", "--no-install", "--ignore-existing", "-q", "--quiet",
                                                        "--no-install", "--prefer-offline", "--legacy-peer-deps", "--silent"})
         call = None
@@ -546,8 +561,14 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
             if o in ("-c", "--call") and k + 1 < len(rest):
                 call = rest[k + 1]
         inv.env = dict(inv_env)
+        pfx = None   # type: Optional[str]
+        for k, o in enumerate(args):
+            if o in ("--prefix", "-C", "--cwd", "--dir") and k + 1 < len(args) and not dyn[k + 1]:
+                pfx = paths.lexical(args[k + 1], cwd, ctx.home)
+            elif o.startswith(("--prefix=", "--cwd=", "--dir=")):
+                pfx = paths.lexical(o.split("=", 1)[1], cwd, ctx.home)
         if call is not None:
-            script(call, "npx -c")
+            script(call, "npx -c", cwd_to=pfx)
         elif i < len(rest):
             pkg = rest[i]
             inv.args = list(args)
@@ -555,7 +576,7 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
             tool = _npx_tool(pkg)
             ana.invs.append(Inv("npx:" + tool, pkg, rest[i + 1:], rdyn[i + 1:], dict(inv_env), cwd, cmd, origin, depth,
                                 list(wrappers) + [name], rdyn[i]))
-            again(tool, rest[i + 1:], rdyn[i + 1:], wrapper=name, nd=rdyn[i])
+            again(tool, rest[i + 1:], rdyn[i + 1:], wrapper=name, nd=rdyn[i], cwd_to=pfx)
         return
     for (rn, rsub), skip in RUN_PREFIXES.items():
         if name == rn and rsub and args[:1] == [rsub]:
@@ -667,6 +688,18 @@ def _exec_path(ctx: _Ctx, inv: Inv, script) -> None:
         return
     ctx.visited.add(key)
     script(text, "script " + os.path.basename(inv.raw))
+
+
+def _pm_sub(args: Sequence[str]) -> Tuple[int, str]:
+    """(index, name) of a package manager's subcommand, after its global options (`npm --prefix x exec`, `pnpm --filter a exec`)."""
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-"):
+            i += 2 if (a in _PM_ARG_OPTS and "=" not in a) else 1
+            continue
+        return i, a
+    return 0, ""
 
 
 def _npx_tool(pkg: str) -> str:

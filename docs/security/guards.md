@@ -95,7 +95,7 @@ From Bash the guard looks at: redirections (`>`, `>>`, `&>`, `>|`, fd redirects,
 
 ### guard-git
 
-See the table above. Rule ids: `push`, `push-delivery`, `push-protected`, `push-refspec`, `push-force`, `push-delete`, `push-mirror`, `push-tags`, `push-url`, `push-tainted`, `readonly-caller`, `no-verify`, `config-core-alias`, `config-override`, `config-write`, `git-env`, `exec-option`, `exec-path`, `pager-exec`, `update-ref`, `filter-branch`, `replace`, `rebase`, `credential`, `tag-force`, `branch-protected`, `branch-delete-protected`, `branch-force-delete`, `merge-protected`, `amend-protected`, `reset-hard-shared`, `reset-hard-outside-loop`, `clean-outside-loop`, `reflog-expire`, `gc`, `bisect-run`, `submodule-foreach`, `update-index-hide`, `hook`, `dynamic-args`, `unknown-subcommand`, `alias`, `never-run` (git gui, daemon, difftool, mergetool, send-email, svn, p4 and the other external-program and server subcommands), and for GitHub `gh-api-write`, `gh-pr-merge`, `gh-release`, `gh-secret`, `gh-workflow`, `gh-repo`, `gh-ruleset`, `gh-auth`, `gh-mutation`. All are `guard-git:<name>`.
+See the table above. Rule ids: `push`, `push-delivery`, `push-protected`, `push-refspec`, `push-force`, `push-delete`, `push-mirror`, `push-tags`, `push-url`, `push-tainted`, `readonly-caller`, `no-verify`, `config-core-alias`, `config-override`, `config-write`, `git-env`, `exec-option`, `exec-path`, `pager-exec`, `update-ref`, `filter-branch`, `replace`, `rebase`, `credential`, `tag-force`, `branch-protected`, `branch-delete-protected`, `branch-force-delete`, `merge-protected`, `fetch-protected`, `amend-protected`, `reset-hard-shared`, `reset-hard-outside-loop`, `clean-outside-loop`, `reflog-expire`, `gc`, `bisect-run`, `submodule-foreach`, `update-index-hide`, `hook`, `dynamic-args`, `unknown-subcommand`, `alias`, `never-run` (git gui, daemon, difftool, mergetool, send-email, svn, p4 and the other external-program and server subcommands), and for GitHub `gh-api-write`, `gh-pr-merge`, `gh-release`, `gh-secret`, `gh-workflow`, `gh-repo`, `gh-ruleset`, `gh-auth`, `gh-mutation`. All are `guard-git:<name>`.
 
 The push allowlist (conductor only): `delivery` is `push-branch`, `draft-pr` or `pr-automerge`; the remote is a named remote (not a URL); every refspec resolves to `refs/heads/feat/*` (`HEAD` is resolved to the current branch); no `+`, no empty source, no wildcard, no tag, nothing under `refs/loopctl/` (loopctl pushes those from its own process, which the guards never see); `--force-with-lease` only with an explicit `<feat/ref>:<expected-sha>`. Under the default `delivery: local` nothing is pushed by an agent, and `pr_prepare` prints the commands for the human.
 
@@ -138,6 +138,13 @@ A `PostToolUse` hook on `WebFetch`, `WebSearch`, `mcp__*`, `Read` of dependency 
 ### Self-test and the doctor
 
 SessionStart runs the self-test: 15 payloads (11 that must be denied, 4 that must be allowed, so a guard that denies everything is caught too). The result is recorded in `<git-common-dir>/loopctl/selftest.json`. `python3 .claude/scripts/doctor.py` reads it and the settings: `guards.manifest`, `guards.wiring` (active, partial, staged, v1), `guards.on-failure`, `guards.selftest`, `guards.deny-drift` (the effective deny rules against the suggested deny block). A failed self-test caps the effective level at **L0**; unwired guards cap it at L1.
+
+### Scope notes added in the final review
+
+- **`.claude` protection is anchored.** A path is guardrail-protected as `.claude/...` only inside `~/.claude` or inside a git tree (a directory with `.git` above it). A stray `.claude` folder in `/tmp` is just a folder; the same name inside any checkout is protected.
+- **Landings are checked, not only names.** `tar`, `unzip`, `cp -r`, `rsync`, `mv`, `patch` and `git apply` are checked against the members of the archive or tree when it exists at hook time, and against the destination directory. Contents that do not exist yet (a tarball downloaded in the same command) are invisible.
+- **`git fetch` into a protected ref** (`git fetch origin main:main`) is `guard-git:fetch-protected`.
+- **Working directory is tracked** across `cd`, `pushd`, `env -C`, `git -C`, `make -C`, `npm --prefix` and `find -execdir`, so a relative path is resolved where it will really land. A `cd` to a dynamic directory makes later relative targets unknown, and unknown is asked or denied, not allowed.
 
 ## Settings templates (section 7.2)
 

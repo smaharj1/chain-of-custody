@@ -299,13 +299,14 @@ def _main_edit(ctx: Ctx, raw: str) -> Optional[Decision]:
 # Bash
 
 class Target(object):
-    __slots__ = ("text", "dynamic", "tree", "kind")
+    __slots__ = ("text", "dynamic", "tree", "kind", "cwd")
 
-    def __init__(self, text: str, dynamic: bool, tree: bool = False, kind: str = "write") -> None:
+    def __init__(self, text: str, dynamic: bool, tree: Any = False, kind: str = "write", cwd: Optional[str] = None) -> None:
         self.text = text
         self.dynamic = dynamic
         self.tree = tree
         self.kind = kind
+        self.cwd = cwd             # a relative text is relative to this, not to the command's cwd (git -C dir)
 
 
 def _pos(args: Sequence[str], dyn: Sequence[bool], with_arg: Sequence[str] = ()) -> List[Tuple[str, bool]]:
@@ -380,6 +381,11 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
                 out.append(Target(pos[-1][0], pos[-1][1], "children"))
         if name == "mv":
             out.extend(Target(a, d, True, "move-source") for a, d in srcs)
+        recursive = name in ("mv", "ditto") or (name == "rsync" and _flag_has(args, "ar", ("--recursive", "--archive"))) or \
+            (name in ("cp", "gcp") and _flag_has(args, "rRa", ("--recursive", "--archive"))) or name == "install" and False
+        dest = (tdir[0] if tdir else (pos[-1][0] if pos else None))
+        if recursive and dest is not None and not (tdir[1] if tdir else (pos[-1][1] if pos else False)):
+            out.extend(_landings(ctx, inv, [a for a, d in srcs if not d], dest, rsync=(name == "rsync")))
         if name == "rsync" and _flag_has(args, "", ("--delete", "--delete-after", "--delete-before", "--remove-source-files")) and pos:
             out.append(Target(pos[-1][0], pos[-1][1], True))
     elif name == "ln":
@@ -416,11 +422,48 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
             has_e = any(re.match(r"^-[A-Za-z]*e$", a) for a in args)
             pos = _pos(args, dyn, ("-e", "-E", "-I", "-M", "-m", "-r"))
             out.extend(Target(a, d) for a, d in (pos if has_e else pos[1:]))
-    elif name in ("awk", "gawk"):
+    elif name in ("awk", "gawk", "mawk", "nawk"):
         if "inplace" in " ".join(args):
             out.extend(Target(a, d) for a, d in P(("-i", "-f", "-v", "-F"))[1:])
+        for a in args:
+            if not a.startswith("-"):
+                for m in re.finditer(r">>?\s*(?:\"([^\"]+)\"|'([^']+)')", a):
+                    out.append(Target(m.group(1) or m.group(2), False))
+    elif name == "sort":
+        for k, a in enumerate(args):
+            if a in ("-o", "--output") and k + 1 < len(args):
+                out.append(Target(args[k + 1], dyn[k + 1]))
+            elif a.startswith("--output="):
+                out.append(Target(a.split("=", 1)[1], dyn[k]))
+            elif a.startswith("-o") and len(a) > 2 and not a.startswith("--"):
+                out.append(Target(a[2:], dyn[k]))
+    elif name in ("uniq", "xxd"):
+        pos = P(("-s", "-w", "-f", "-c", "-l", "-g", "-o", "-n"))
+        if len(pos) >= 2:
+            out.append(Target(pos[1][0], pos[1][1]))
+    elif name in ("split", "csplit"):
+        pos = P(("-l", "-b", "-n", "-a", "-C", "-d", "-f", "-k", "-s", "-z"))
+        if name == "split" and len(pos) >= 2:
+            out.append(Target(pos[1][0] + "x", False, False, "write"))
+        if name == "split" and len(pos) == 1:
+            out.append(Target("x", False, False, "write"))
+    elif name in ("openssl", "gpg", "gpg2", "ssh-keygen", "base64", "zip", "7z", "jar"):
+        for k, a in enumerate(args):
+            if a in ("-out", "--output", "-o", "-f", "--out", "-outform") and k + 1 < len(args) and a != "-outform":
+                out.append(Target(args[k + 1], dyn[k + 1]))
+            elif a.startswith("--output="):
+                out.append(Target(a.split("=", 1)[1], dyn[k]))
+        if name in ("zip", "jar"):
+            pos = P(("-b", "-n", "-t", "-tt", "-P", "-x", "-i", "-O", "-w", "-cf", "cf", "-cfm"))
+            if pos and name == "zip":
+                out.append(Target(pos[0][0], pos[0][1]))
     elif name in ("sponge", "ed", "ex", "vi", "vim", "nvim", "view", "nano", "emacs", "code", "subl", "mate", "pico", "joe", "micro"):
-        out.extend(Target(a, d) for a, d in P(("-c", "-S", "-s", "-u", "--cmd", "-w")))
+        out.extend(Target(a, d) for a, d in P(("-c", "-S", "-s", "-u", "--cmd", "-w", "--eval", "-f", "--load", "-l")))
+        for a in args:
+            for m in re.finditer(r"(?:^|[|\s:])w[wq]?!?\s+(\S+)|write-region[^\"']*[\"']([^\"']+)[\"']|:w!?\s+(\S+)", a):
+                out.append(Target(m.group(1) or m.group(2) or m.group(3), False))
+            if "write-region" in a:
+                out.extend(Target(q, False) for q in re.findall(r"[\"']([^\"']+)[\"']", a))
     elif name in ("yq", "gojq", "jq"):
         if name == "yq" and (_flag_has(args, "i", ("--inplace",))):
             out.extend(Target(a, d) for a, d in P()[1:])
@@ -451,6 +494,10 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
                 out.append(Target(a.split("=", 1)[-1] if "=" in a else a[2:], dyn[k], "children"))
             elif a.startswith("-o") and name in ("7z", "7za") and len(a) > 2:
                 out.append(Target(a[2:], dyn[k], "children"))
+        for a_path, a_dir in _archive_extractions(ctx, inv):
+            members = paths.archive_members(a_path)
+            if members:
+                out.extend(Target(os.path.join(a_dir, m), False, False, "archive") for m in members)
         extracting = (name in ("unzip", "7z", "7za", "unar") or (name in ("tar", "bsdtar", "gtar") and any(
             a == "--extract" or (a.startswith("-") and not a.startswith("--") and "x" in a[1:]) or (not a.startswith("-") and "x" in a and args.index(a) == 0)
             for a in args[:2])))
@@ -481,6 +528,15 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
         elif pos and not infile:
             out.append(Target(pos[0][0], pos[0][1]))
     elif name == "find":
+        late = []   # type: List[Target]
+        pats = [args[k + 1] for k, a in enumerate(args) if a in ("-name", "-iname", "-path", "-ipath", "-wholename", "-regex", "-iregex") and k + 1 < len(args)]
+        if any(a in ("-delete",) for a in args) or any(a in ("-exec", "-execdir", "-ok", "-okdir") and k + 1 < len(args) and
+                                                       args[k + 1].rsplit("/", 1)[-1].lower() in WRITER_CMDS for k, a in enumerate(args)):
+            import fnmatch
+            for pat in pats:
+                if any(fnmatch.fnmatch(b, pat.lower().lstrip("./")) or fnmatch.fnmatch(b, os.path.basename(pat.lower()) or "-") for b in GUARD_BASENAMES) \
+                        or ".claude" in pat.lower() or ".git" in pat.lower() and "gitignore" not in pat.lower():
+                    late.append(Target("\x00" + pat, True, False, "find-pattern"))
         exec_writes = any(a in ("-exec", "-execdir", "-ok", "-okdir") and k + 1 < len(args) and args[k + 1].rsplit("/", 1)[-1].lower() in WRITER_CMDS
                           for k, a in enumerate(args))
         if exec_writes or any(a in ("-delete", "-fprint", "-fprint0", "-fls", "-fprintf") for a in args):
@@ -491,6 +547,7 @@ def write_targets(ctx: Ctx, inv: Inv) -> List[Target]:
             for k, a in enumerate(args):
                 if a in ("-fprint", "-fprint0", "-fls", "-fprintf") and k + 1 < len(args):
                     out.append(Target(args[k + 1], dyn[k + 1]))
+        out.extend(late)
     elif name == "git":
         out.extend(_git_targets(inv))
     return out
@@ -501,7 +558,20 @@ def _git_targets(inv: Inv) -> List[Target]:
     i, n = 0, len(args)
     cwd = inv.cwd
     while i < n and args[i].startswith("-"):
-        i += 2 if args[i] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace") else 1
+        a = args[i]
+        if a == "-C" and i + 1 < n:
+            cwd = paths.lexical(args[i + 1], cwd)
+            i += 2
+        elif a.startswith("--work-tree=") or a.startswith("--git-dir="):
+            if a.startswith("--work-tree="):
+                cwd = paths.lexical(a.split("=", 1)[1], cwd)
+            i += 1
+        elif a in ("--work-tree", "-c", "--git-dir", "--namespace") and i + 1 < n:
+            if a == "--work-tree":
+                cwd = paths.lexical(args[i + 1], cwd)
+            i += 2
+        else:
+            i += 1
     if i >= n:
         return []
     sub = args[i].lower()
@@ -509,27 +579,30 @@ def _git_targets(inv: Inv) -> List[Target]:
     out = []   # type: List[Target]
     if sub in ("restore", "rm", "mv"):
         pos = _pos(rest, rdyn, ("--source", "-s", "--pathspec-from-file"))
-        out.extend(Target(a, d, True) for a, d in pos)
+        out.extend(Target(a, d, True, "write", cwd) for a, d in pos)
     elif sub == "checkout" and "--" in rest:
         k = rest.index("--")
-        out.extend(Target(a, rdyn[k + 1 + j], True) for j, a in enumerate(rest[k + 1:]))
+        out.extend(Target(a, rdyn[k + 1 + j], True, "write", cwd) for j, a in enumerate(rest[k + 1:]))
+    elif sub == "stash" and "--" in rest:
+        k = rest.index("--")
+        out.extend(Target(a, rdyn[k + 1 + j], True, "write", cwd) for j, a in enumerate(rest[k + 1:]))
     elif sub == "clean":
-        out.extend(Target(a, d, True) for a, d in _pos(rest, rdyn, ("-e", "--exclude")))
+        out.extend(Target(a, d, True, "write", cwd) for a, d in _pos(rest, rdyn, ("-e", "--exclude")))
     elif sub in ("apply", "am"):
         text = inv.stdin_text
         files = [a for a, d in _pos(rest, rdyn, ("-p", "-C", "--directory", "--include", "--exclude"))]
         for f in files:
             t = paths.safe_read(paths.physical(f, cwd), 512 * 1024)
             if t:
-                out.extend(Target(x, False, False, "patch") for x in _patch_targets(t))
+                out.extend(Target(x, False, False, "patch", cwd) for x in _patch_targets(t))
         if text:
-            out.extend(Target(x, False, False, "patch") for x in _patch_targets(text))
+            out.extend(Target(x, False, False, "patch", cwd) for x in _patch_targets(text))
     elif sub in ("diff", "log", "show", "format-patch", "archive"):
         for k, a in enumerate(rest):
             if a.startswith("--output="):
                 out.append(Target(a.split("=", 1)[1], rdyn[k]))
             elif a in ("--output", "-o") and k + 1 < len(rest) and sub in ("archive", "diff", "log", "show", "format-patch"):
-                out.append(Target(rest[k + 1], rdyn[k + 1]))
+                out.append(Target(rest[k + 1], rdyn[k + 1], False, "write", cwd))
             elif sub == "format-patch" and a in ("--output-directory",) and k + 1 < len(rest):
                 out.append(Target(rest[k + 1], rdyn[k + 1]))
     elif sub in ("clone", "init", "bundle", "checkout-index", "worktree", "submodule", "sparse-checkout"):
@@ -542,7 +615,7 @@ def _git_targets(inv: Inv) -> List[Target]:
             pos = pos[2:3] if pos and pos[0][0] == "add" else []
         if sub in ("clone",):
             pos = pos[1:2]
-        out.extend(Target(a, d, "children") for a, d in pos[:1])
+        out.extend(Target(a, d, "children", "write", cwd) for a, d in pos[:1])
         for k, a in enumerate(rest):
             if a.startswith("--prefix=") and sub == "checkout-index":
                 out.append(Target(a.split("=", 1)[1], rdyn[k], "children"))
@@ -572,7 +645,8 @@ PROT_RE = re.compile(r"(\.claude/(settings|hooks|scripts|agents|skills|commands|
                      r"\.bashrc|\.zshrc|\.zprofile|\.profile|\.gitconfig|\.ssh/|\.aws/|\.netrc)", re.I)
 WRITE_RE = re.compile(r"(open\s*\([^\n]{0,400}?['\"][bt]?[wax+][bt+]?['\"]|write_text|write_bytes|\.write\s*\(|writefile|appendfile|createwritestream|copyfile|"
                       r"rename|unlink|rmsync|rmtree|rm -|shutil\.|os\.system|os\.popen|subprocess|child_process|execsync|spawn|\bexec\s*\(|"
-                      r"sed -i|\btee\b|>>?\s*['\"]?[\w./~$-]|fs\.|file_put_contents|fopen|system\s*\()", re.I)
+                      r"sed -i|\btee\b|>>?\s*['\"]?[\w./~$-]|fs\.|file_put_contents|fopen|system\s*\(|symlink|\blink\s*\(|touch|chmod|chown|\bremove|rmdir|truncate|mkdir|makedirs|\breplace\s*\(|utime|copy|\bmove\b|delete|File\.|FileUtils|IO\.|"
+                      r"sponge|\bunlink|writeSync|rmSync)", re.I)
 
 
 def normalise_code(code: str, join: bool = True) -> str:
@@ -611,18 +685,24 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
     for inv in ana.invs:
         if inv.name == "ln":
             pos = _pos(inv.args, inv.dyn, ("-t", "--target-directory", "-S", "--suffix"))
+            symbolic = _flag_has(inv.args, "s", ("--symbolic",))
+            link_dir = os.path.dirname(paths.lexical(pos[-1][0], inv.cwd, ctx.home)) if len(pos) > 1 else inv.cwd
             for a, d in pos[:-1] if len(pos) > 1 else pos:
-                hit = paths.classify_forms(a, inv.cwd, ctx.home)
+                # a symbolic link's target is relative to the directory the link lives in; a hard link's source to the working directory
+                hit = paths.classify_forms(a, link_dir if symbolic else inv.cwd, ctx.home)
                 if hit:
                     return deny(G, "link-protected", "ln links %s (%s): a link to a guardrail file is a way around the write guard" % (hit[1], _desc(hit[0])))
         for t in write_targets(ctx, inv):
+            if t.kind == "find-pattern":
+                return deny(G, "dynamic-target", "find %s deletes or rewrites files by a name pattern (%s) that can match a guardrail file such as settings.json; "
+                            "name the files, or exclude .claude and .git" % ("-delete/-exec", t.text.replace("\x00", "")[:40]))
             via = "%s to" % ("a redirection" if t.kind == "redirect" else inv.name)
             if t.kind == "patch":
                 via = "a patch (%s) that edits" % inv.name
             tree = t.tree and inv.name in ("rm", "rmdir", "mv", "chmod", "chown", "shred", "git", "rsync", "chgrp", "trash")
             if t.tree == "children" or (t.tree and inv.name == "find"):
                 tree = "children"      # `find . -name x -delete` is not `rm -rf .`: only a start path that IS a guardrail directory counts
-            d = _judge(ctx, t.text, t.dynamic, inv.cwd, via, tree=tree, aliases=aliases, unknown_cwd=inv.cwd_unknown)
+            d = _judge(ctx, t.text, t.dynamic, t.cwd or inv.cwd, via, tree=tree, aliases=aliases, unknown_cwd=inv.cwd_unknown)
             if d:
                 return d
     for ic in ana.inline:
@@ -663,3 +743,65 @@ def check_mcp_paths(ctx: Ctx) -> Optional[Decision]:
                 if d:
                     return d
     return None
+
+
+def _archive_extractions(ctx: Ctx, inv: Inv) -> List[Tuple[str, str]]:
+    """(archive path, directory it lands in) for tar x / unzip / 7z x with an archive that exists."""
+    name, args = inv.name, inv.args
+    out = []   # type: List[Tuple[str, str]]
+    dest = inv.cwd
+    for k, a in enumerate(args):
+        if a in ("-C", "--directory", "-d") and k + 1 < len(args):
+            dest = paths.lexical(args[k + 1], inv.cwd, ctx.home)
+        elif a.startswith("--directory="):
+            dest = paths.lexical(a.split("=", 1)[1], inv.cwd, ctx.home)
+        elif a.startswith("-o") and name in ("7z", "7za") and len(a) > 2:
+            dest = paths.lexical(a[2:], inv.cwd, ctx.home)
+    archives = []   # type: List[str]
+    if name in ("tar", "bsdtar", "gtar"):
+        first = args[0] if args else ""
+        extracting = first == "--extract" or "--extract" in args or "-x" in args or (first.startswith("-") and not first.startswith("--") and "x" in first[1:]) \
+            or (not first.startswith("-") and "x" in first)
+        if not extracting:
+            return []
+        for k, a in enumerate(args):
+            if a in ("-f", "--file") and k + 1 < len(args):
+                archives.append(args[k + 1])
+            elif a.startswith("--file="):
+                archives.append(a.split("=", 1)[1])
+        if not archives and args:
+            cluster = args[0]
+            if "f" in cluster.lstrip("-") and len(args) > 1:
+                archives.append(args[1])
+    elif name in ("unzip", "7z", "7za", "unar"):
+        pos = [a for a in args if not a.startswith("-")]
+        if name in ("7z", "7za") and pos and pos[0] not in ("x", "e"):
+            return []
+        archives = pos[1:2] if name in ("7z", "7za") else pos[:1]
+    for a in archives:
+        out.append((paths.lexical(a, inv.cwd, ctx.home), dest))
+    return out
+
+
+def _landings(ctx: Ctx, inv: Inv, sources: List[str], dest: str, rsync: bool = False) -> List[Target]:
+    """Where the files of a directory copied or moved into `dest` would land, as targets to judge. Both readings of cp's and
+    rsync's trailing-slash rules are produced, because the guard cannot know whether `dest` will exist as a directory."""
+    out = []   # type: List[Target]
+    d_abs = paths.lexical(dest, inv.cwd, ctx.home)
+    budget = 3000
+    for src in sources:
+        s_abs = paths.lexical(src, inv.cwd, ctx.home)
+        if not os.path.isdir(s_abs):
+            continue
+        entries = paths.tree_entries(s_abs, budget)
+        budget -= len(entries)
+        base = os.path.basename(s_abs.rstrip("/")) or ""
+        for rel in entries:
+            out.append(Target(os.path.join(d_abs, rel), False, False, "landing"))
+            if base:
+                out.append(Target(os.path.join(d_abs, base, rel), False, False, "landing"))
+        if base:
+            out.append(Target(os.path.join(d_abs, base), False, False, "landing"))
+        if budget <= 0:
+            break
+    return out

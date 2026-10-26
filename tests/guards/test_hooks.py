@@ -99,6 +99,11 @@ class HookProtocolTests(BaseTestCase):
             engine.MANIFEST_PATH = orig
         self.assertEqual(rc, 2)
 
+    def test_oversize_command_is_refused_not_skipped(self) -> None:
+        rc, _, err = run_hook("PreToolUse", self.hook("Bash", {"command": "echo " + "a" * 600000}), self.cwd, "pre-bash")
+        self.assertEqual(rc, 2)
+        self.assertIn("guard-exec:parse-limit", err)
+
     def test_unknown_session_registry_is_least_privilege(self) -> None:
         rc, _, err = run_hook("PreToolUse", self.hook("Bash", {"command": "git commit -m x"}), self.cwd, "pre-bash")
         self.assertEqual(rc, 2)

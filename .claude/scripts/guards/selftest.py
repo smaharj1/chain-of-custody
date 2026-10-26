@@ -55,6 +55,7 @@ def run_selftest() -> Tuple[bool, List[str], int]:
     cases = _cases(d)
     try:
         os.makedirs(os.path.join(d, "src"))
+        os.makedirs(os.path.join(d, ".git"))          # a repository, so that its .claude/ is a project's
         env = {"HOME": d, "PATH": "/usr/bin:/bin"}
         for name, hook, expect in cases:
             try:

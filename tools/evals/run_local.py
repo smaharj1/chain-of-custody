@@ -130,11 +130,14 @@ def g_verdict_schema(g, run, case) -> GraderResult:
 
 def g_guard_replay(g, run, case) -> GraderResult:
     from guards import cli
-    d = tempfile.mkdtemp(prefix="kit-eval-")
+    d = os.path.realpath(tempfile.mkdtemp(prefix="kit-eval-"))
+    os.mkdir(os.path.join(d, ".git"))   # the guards anchor `.claude` protection inside a git tree
     try:
         for c in run.get("tool_calls", []):
             if "decision" not in c:
                 continue
+            # the transcripts name the project as /repo; replay against the scratch tree
+            c = json.loads(json.dumps(c).replace("/repo", d.replace("\\", "\\\\")))
             ctx, dec = cli.evaluate_for_caller(c["tool"], c.get("input", {}), g.get("caller", "unknown"), cwd=d, env={"HOME": d, "PATH": "/usr/bin:/bin"})
             got = "deny" if (dec is not None and dec.denied) else "allow"
             if got != c["decision"]:

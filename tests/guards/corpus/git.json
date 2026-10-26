@@ -262,5 +262,13 @@
 {"id": "git-224", "caller": "conductor", "cmd": "git svn dcommit", "expect": "deny", "rule": "guard-git:never-run"},
 {"id": "git-230", "caller": "conductor", "cmd": "git -c push.default=matching push origin", "config": {"delivery": "push-branch"}, "repo": "feat", "expect": "deny", "rule": "guard-git:config-override", "why": "matching pushes every branch with a remote twin, main included"},
 {"id": "git-231", "caller": "conductor", "cmd": "git -c pull.rebase=true pull", "repo": "feat", "expect": "deny", "rule": "guard-git:config-override"},
-{"id": "git-232", "caller": "conductor", "cmd": "git push origin", "config": {"delivery": "push-branch"}, "repo": "feat", "expect": "deny", "rule": "guard-git:push-refspec"}
+{"id": "git-232", "caller": "conductor", "cmd": "git push origin", "config": {"delivery": "push-branch"}, "repo": "feat", "expect": "deny", "rule": "guard-git:push-refspec"},
+{"id": "git-240", "caller": "conductor", "cmd": "git fetch origin +main:main", "repo": "feat", "expect": "deny", "rule": "guard-git:fetch-protected", "why": "a forced fetch into the local shared branch"},
+{"id": "git-241", "caller": "conductor", "cmd": "git fetch origin main:refs/heads/master", "repo": "feat", "expect": "deny", "rule": "guard-git:fetch-protected"},
+{"id": "git-242", "caller": "conductor", "cmd": "git fetch --update-head-ok origin main:feat/x", "repo": "feat", "expect": "deny", "rule": "guard-git:fetch-protected"},
+{"id": "git-243", "caller": "conductor", "cmd": "git fetch origin feat/y:feat/y", "repo": "feat", "expect": "allow"},
+{"id": "git-244", "caller": "conductor", "cmd": "git fetch origin", "repo": "feat", "expect": "allow"},
+{"id": "git-245", "caller": "conductor", "cmd": "git push origin feat/../main", "config": {"delivery": "push-branch"}, "repo": "feat", "expect": "deny", "rule": "guard-git:push-refspec", "why": "not a valid ref name, and not a feat/* name either"},
+{"id": "git-246", "caller": "conductor", "cmd": "git push origin feat/x:feat/x/../../main", "config": {"delivery": "push-branch"}, "repo": "feat", "expect": "deny", "rule": "guard-git:push-refspec"},
+{"id": "git-247", "caller": "conductor", "cmd": "git push origin feat/x:Main", "config": {"delivery": "push-branch"}, "repo": "feat", "expect": "deny", "rule": "guard-git:push-protected", "why": "case-insensitive remotes: Main is main"}
 ]

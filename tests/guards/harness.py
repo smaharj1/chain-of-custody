@@ -106,7 +106,25 @@ class Fixtures(object):
         r.write("scripts/untracked_push.js", "require('child_process').execSync('git push origin main')\n")
         r.write("scripts/untracked_writes_settings.py", "open('.claude/settings.json', 'w').write('{}')\n")
         r.write("scripts/untracked_sdk.py", "import claude_agent_sdk\n")
+        self._archives(r)
         return r
+
+    @staticmethod
+    def _archives(r: TempRepo) -> None:
+        """Untracked archives and trees an agent could have downloaded or prepared: one that carries a guardrail file, one that does not."""
+        import tarfile
+        import zipfile
+        for name, member in (("evil", ".claude/settings.json"), ("good", "src/new_module.py")):
+            d = os.path.join(r.path, name)
+            os.makedirs(os.path.dirname(os.path.join(d, member)))
+            with open(os.path.join(d, member), "w") as fh:
+                fh.write("{}\n")
+            with tarfile.open(os.path.join(r.path, name + ".tgz"), "w:gz") as tf:
+                tf.add(os.path.join(d, member), arcname=member)
+            with zipfile.ZipFile(os.path.join(r.path, name + ".zip"), "w") as zf:
+                zf.write(os.path.join(d, member), member)
+        r.write("evil.patch", "--- a/.claude/settings.json\n+++ b/.claude/settings.json\n@@ -1 +1 @@\n-{}\n+{\"x\":1}\n")
+        r.write("good.patch", "--- a/src/app.py\n+++ b/src/app.py\n@@ -1 +1 @@\n-print('hi')\n+print('hello')\n")
 
     def cleanup(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
