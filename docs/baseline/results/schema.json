@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "baseline-result.v1",
+  "title": "One recorded baseline run (or a replayed-dispatch set) of the V1 loop on hello-loop",
+  "description": "tools/baseline/summarize.py validates results/*.json against this file with a small built-in checker (type, enum, required, properties, items, minimum, pattern, const). Extra properties are allowed everywhere. Fill results/TEMPLATE.json; name the copy results/<run_id>.json.",
+  "type": "object",
+  "required": ["schema", "kind", "run_id", "date"],
+  "properties": {
+    "schema": {"const": "baseline-result.v1"},
+    "kind": {"enum": ["run", "replay"], "description": "run = one end-to-end V1 run; replay = dispatches of one agent type re-run in isolation (the '1 run + 20 replays' alternative)"},
+    "run_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "status": {"enum": ["completed", "v1_cannot_finish", "aborted"], "description": "kind=run only. completed = all three items reached done. v1_cannot_finish = the loop could not finish even with rescues (fires the kill-criteria branch). aborted = stopped for a reason unrelated to V1 (machine, quota); not counted as evidence either way"},
+    "cannot_finish_reason": {"type": ["string", "null"]},
+    "kit": {
+      "type": "object",
+      "required": ["tag", "commit", "claude_version", "model"],
+      "properties": {
+        "tag": {"type": "string"},
+        "commit": {"type": "string"},
+        "claude_version": {"type": "string", "description": "output of `claude --version`, typed by the human"},
+        "model": {"type": "string"}
+      }
+    },
+    "conditions": {
+      "type": "object",
+      "required": ["sandbox", "cloud_credentials", "observation_hook", "demo_capability"],
+      "properties": {
+        "sandbox": {"type": "boolean"},
+        "cloud_credentials": {"type": "boolean", "description": "true if any cloud credential was reachable (the baseline requires false)"},
+        "observation_hook": {"type": "boolean"},
+        "demo_capability": {"enum": ["browser_mcp", "http_check", "none"]},
+        "python3": {"type": "string"},
+        "notes": {"type": "string"}
+      }
+    },
+    "wall_time_min": {"type": "number", "minimum": 0, "description": "start of /orchestrate to the last item done (or the stop), minutes, including time spent waiting for the human"},
+    "active_time_min": {"type": ["number", "null"], "minimum": 0, "description": "wall time minus checkpoint waits and idle time, if known"},
+    "spend_usd": {"type": ["number", "null"], "minimum": 0, "description": "from the session cost display; null if not observable"},
+    "tool_calls": {"type": ["integer", "null"], "minimum": 0, "description": "the loop's own tally or the observation log's PreToolUse count"},
+    "permission_prompts": {"type": ["integer", "null"], "minimum": 0},
+    "checkpoint_approvals": {"type": "integer", "minimum": 0, "description": "designed pauses the human approved; not rescues"},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"enum": ["F1", "F2", "F3"]},
+          "status": {"enum": ["done", "blocked", "pending", "in_progress", "verifying"]},
+          "retries": {"type": "integer", "minimum": 0},
+          "block_reason": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "rescues": {
+      "type": "array",
+      "description": "Every time the human did something the loop should have done or decided for itself. Checkpoint approvals are not rescues.",
+      "items": {
+        "type": "object",
+        "required": ["class", "type", "description"],
+        "properties": {
+          "class": {"enum": ["control_flow", "other"]},
+          "type": {"enum": ["resume", "redispatch", "state_edit", "unblock", "reconcile", "env_fix", "permission", "decision", "content_fix", "other"]},
+          "item": {"type": ["string", "null"]},
+          "description": {"type": "string"},
+          "minutes": {"type": ["number", "null"], "minimum": 0}
+        }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["class", "description"],
+        "properties": {
+          "class": {"enum": ["env", "item", "platform", "transient", "plan", "other"]},
+          "item": {"type": ["string", "null"]},
+          "description": {"type": "string"}
+        }
+      }
+    },
+    "defects_escaped": {
+      "type": "object",
+      "required": ["checked", "failed_ac_ids"],
+      "properties": {
+        "checked": {"type": "boolean", "description": "the held-out checks were run on the final tree"},
+        "failed_ac_ids": {"type": "array", "items": {"type": "string", "pattern": "^AC-F[123]-\\d+$"}}
+      }
+    },
+    "dispatches": {"type": "object", "description": "agent type -> number of dispatches in the run (from the observation log, reconciled by the human)"},
+    "transcript_ref": {"type": ["string", "null"]},
+    "notes": {"type": "string"},
+    "agent_type": {"type": "string", "description": "kind=replay only"},
+    "source_run": {"type": ["string", "null"], "description": "kind=replay only: the run the dispatch inputs were taken from"},
+    "replayed_dispatches": {
+      "type": "array",
+      "description": "kind=replay only",
+      "items": {
+        "type": "object",
+        "required": ["tool_calls", "outcome"],
+        "properties": {
+          "tool_calls": {"type": "integer", "minimum": 0},
+          "turns": {"type": ["integer", "null"], "minimum": 0},
+          "outcome": {"type": "string"}
+        }
+      }
+    }
+  }
+}
