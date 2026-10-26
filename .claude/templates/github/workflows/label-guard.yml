@@ -1,0 +1,57 @@
+# label-guard: remove approval labels applied by anyone who is not an approver (report section 8.4, RC-20).
+#
+# Anyone with triage rights can apply a label, and CODEOWNERS is path-scoped, so "a CODEOWNER applied it"
+# is not a check. This workflow decides from the API's `sender`: factory:*, plan-ok and preview labels
+# stand only when the sender is listed in the repository variable FACTORY_APPROVERS (comma-separated
+# logins; set it to the same names as factory_approvers in loop.config). Anything else is removed, and
+# factory:go from a non-approver becomes factory:requested.
+#
+# Safe to run on pull_request_target because it checks out nothing and runs no PR-supplied code. It reads
+# no secrets. Untrusted values (label name, login) reach the shell through env: only, never ${{ }} in run:.
+name: label-guard
+
+on:
+  pull_request_target:
+    types: [labeled]
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Remove labels from non-approvers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          LABEL: ${{ github.event.label.name }}
+          SENDER: ${{ github.event.sender.login }}
+          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          APPROVERS: ${{ vars.FACTORY_APPROVERS }}
+        run: |
+          case "$LABEL" in
+            factory:requested) exit 0 ;;
+            factory:*|plan-ok|preview) ;;
+            *) exit 0 ;;
+          esac
+          approved=no
+          old_ifs="$IFS"; IFS=','
+          for a in $APPROVERS; do
+            a="$(echo "$a" | tr -d ' ')"
+            if [ -n "$a" ] && [ "$a" = "$SENDER" ]; then approved=yes; fi
+          done
+          IFS="$old_ifs"
+          if [ "$approved" = yes ]; then
+            echo "label $LABEL applied by approver $SENDER: kept"
+            exit 0
+          fi
+          echo "label $LABEL applied by $SENDER, who is not in FACTORY_APPROVERS: removing"
+          gh api -X DELETE "repos/$REPO/issues/$NUMBER/labels/$(printf '%s' "$LABEL" | sed 's/:/%3A/g')" || true
+          if [ "$LABEL" = "factory:go" ]; then
+            gh api -X POST "repos/$REPO/issues/$NUMBER/labels" -f "labels[]=factory:requested" || true
+          fi

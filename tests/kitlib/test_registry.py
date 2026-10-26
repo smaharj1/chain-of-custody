@@ -126,7 +126,9 @@ class KeySemantics(unittest.TestCase):
         self.assertTrue(a.is_gated_value("unattended"))
         self.assertFalse(a.is_gated_value("per-feature"))
         self.assertFalse(self.reg.get("max_items_per_run").is_gated_value(1000))
-        self.assertEqual(self.reg.evidence_gated_keys(), ["autonomy"])
+        # later phases register their own gated keys (autonomy_level, parallel_mode, ...), so check membership, not equality
+        self.assertIn("autonomy", self.reg.evidence_gated_keys())
+        self.assertNotIn("max_items_per_run", self.reg.evidence_gated_keys())
 
     def test_h6_keys_include_caps_and_gate_toggles_not_db_local(self):
         h6 = self.reg.h6_keys()

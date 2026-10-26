@@ -1,0 +1,17 @@
+{
+  "allowManagedHooksOnly": true,
+  "enableAllProjectMcpServers": false,
+  "permissions": {
+    "disableBypassPermissionsMode": "disable",
+    "deny": ["Workflow", "mcp__*__run_script", "mcp__*deploy*"]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3 /opt/chain-of-custody/scripts/session_start.py", "timeout": 10}
+        ]
+      }
+    ]
+  }
+}
