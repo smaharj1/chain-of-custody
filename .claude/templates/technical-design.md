@@ -33,9 +33,11 @@ column_name        type            constraints
 ### Migration Notes (for Database Engineer)
 
 - Order of operations: ...
-- Backfill strategy (if any): ...
+- Stage (existing data only; see `.claude/context/migrations.md`): expand | backfill | contract — each is its own slice
+- Backfill strategy (if any): a separate, batched, idempotent, resumable job, never inside the migration file
 - Reversibility: down migration must do X, Y, Z
 - Data loss risk: <none | calling out specific risk>
+- Down-migration data-loss class: none | lossy-recoverable | lossy (a `lossy` down is human-gated)
 
 ## API Surface
 
@@ -89,6 +91,17 @@ High-level list. Full request/response shapes are in `api-contract.md`.
 - Partial failure: ...
 - Race conditions: ...
 - Performance hot paths: ...
+
+## Slices
+
+An ordered DAG of PR-sized slices the Planner turns into plan items. Walking skeleton first, then thicken. A slice sized `L` must be split; expand, backfill and contract of one migration are three slices.
+
+| Slice | Depends on | Size (S/M/L) | Engineers | Touches (domains, paths) | Schema / deps change | Acceptance (at most 3, one falsifiable) | Risk (auth, payments, uploads, user input) |
+|---|---|---|---|---|---|---|---|
+| S1 | — | M | backend, app | ... | none | ... | none |
+| S2 | S1 | S | ... | ... | expand | ... | ... |
+
+Limits per slice: one user-visible vertical slice, at most 2 engineers preferred (3 at most), at most 1 migration, at most `max_item_loc` (default 400) estimated changed lines.
 
 ## Open Questions
 

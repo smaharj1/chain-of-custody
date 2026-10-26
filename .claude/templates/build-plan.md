@@ -21,6 +21,7 @@ The Planner writes both. The Orchestrator edits the JSON and regenerates the mar
       "milestone": "M1 Foundation",
       "title": "Runnable skeleton + test harness",
       "slug": "skeleton",
+      "size": "M",                      // S | M | L — an L must be split before the plan is approved (slicing rules, /planner Phase 3)
       "dependsOn": [],                  // list of item IDs; build order = topological sort of these
       "intent": "2-3 sentences: what and why.",
       "acceptance": [                   // MUST include one falsifiable runtime assertion (the demo target)
@@ -31,12 +32,12 @@ The Planner writes both. The Orchestrator edits the JSON and regenerates the mar
       "requiresEnv": [],                // env/secrets that must exist before the item starts
       "status": "pending",              // see lifecycle below
       "blockReason": null,              // set when blocked/halted; survives for resume + report
-      "branch": null,                   // "feat/<slug>", set when work starts
+      "branch": null,                   // "feat/<slug>-a<n>" (<n> = attempt), set when work starts; renamed dead/… (discarded) or blocked/… (parked)
       "mergeCommit": null,              // set on merge-to-main; used for JSON<->git reconciliation
       "verifyEvidence": null,           // { testsExit, runExit, logRef } recorded at done
       "downMigrationRef": null,         // proven down-migration id/path, set at done for schema-touching items
       "reworkNotes": null,              // user feedback recorded when a checkpoint REJECT resets the item
-      "securityWaiver": null            // { by: "user", reason, findings, ts } — user-granted at a security_blocked stop
+      "securityWaiver": null            // { by: "user", reason, findings: [location + CWE], commit, ts } — user-granted at a security_blocked stop; covers those findings on that commit only
     }
   ]
 }
@@ -66,8 +67,10 @@ pending ──► in_progress ──► verifying ──► done
 - **Eligibility**: an item is eligible only when every `dependsOn` item is `done`.
 - **Validation** (at write-time and every load): every `dependsOn` ID exists; the graph is acyclic; every JSON item maps to exactly one `BUILD_PLAN.md` row.
 - **First item, greenfield**: must be "a locally-runnable app you can see in a browser + test harness + one passing smoke test." `/orchestrate` refuses to start without a runnable/test baseline.
+- **Slicing** (Planner, validated again on load): no item sized `L`; each item is one user-visible vertical slice with at most 3 acceptance checks, at most 1 migration, at most 2-3 engineers and at most `max_item_loc` estimated changed lines. Migration-bearing work follows expand, a separate backfill item, then contract (`.claude/context/migrations.md`).
+- **Approvals are recorded**, not only said: the plan approval and each checkpoint answer append an `{type: "approval", ...}` record to `.claude/loop.jsonl`.
 - **Infra/deploy items**: sequenced as a later milestone; the loop won't start them until the app runs locally (`infra_gated_behind_local`).
-- **State ownership**: the **Planner** writes `goal`, `createdAt` (display-only), `milestone`, `title`, `slug`, `dependsOn`, `intent`, `acceptance`, `requiresEnv`. The **Orchestrator** owns `status`, `blockReason`, `branch` (set when work starts), `mergeCommit`, `verifyEvidence`, `downMigrationRef`, `reworkNotes`, and `securityWaiver`. A user-approved reset of a non-`done` item to `pending` (at the Orchestrator's unblock step, or via a checkpoint **reject**) is a legitimate Orchestrator write — users do not hand-edit this file. `verifyEvidence = { testsExit, runExit, logRef }` lives on the item; the raw command output it summarizes lives in `.claude/loop.jsonl` (pointed to by `logRef`). `build-plan.json` and `BUILD_PLAN.md` are **commit-intended** durable state (unlike the gitignored telemetry files).
+- **State ownership**: the **Planner** writes `goal`, `createdAt` (display-only), `milestone`, `title`, `slug`, `size`, `dependsOn`, `intent`, `acceptance`, `requiresEnv`. The **Orchestrator** owns `status`, `blockReason`, `branch` (set when work starts), `mergeCommit`, `verifyEvidence`, `downMigrationRef`, `reworkNotes`, and `securityWaiver`. A user-approved reset of a non-`done` item to `pending` (at the Orchestrator's unblock step, or via a checkpoint **reject**) is a legitimate Orchestrator write — users do not hand-edit this file. `verifyEvidence = { testsExit, runExit, logRef }` lives on the item; the raw command output it summarizes lives in `.claude/loop.jsonl` (pointed to by `logRef`). `build-plan.json` and `BUILD_PLAN.md` are **commit-intended** durable state (unlike the gitignored telemetry files).
 
 ---
 
