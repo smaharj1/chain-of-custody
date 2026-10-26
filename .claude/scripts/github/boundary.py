@@ -35,7 +35,7 @@ KIT_ROOT = os.path.dirname(SCRIPTS)  # .claude
 TEMPLATES = os.path.join(KIT_ROOT, "templates", "security", "rulesets")
 DOCTOR = os.path.join(SCRIPTS, "doctor.py")
 
-_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 
 
 class Call(object):

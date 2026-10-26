@@ -38,9 +38,9 @@ sys.path.insert(0, SCRIPTS)
 import humanonly  # noqa: E402
 from doctorlib import safeio  # noqa: E402
 
-_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}$")
-_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_. /-]{0,49}$")
-_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$")
+_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}\Z")
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_. /-]{0,49}\Z")
+_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}\Z")
 MAX_LABELS = 100
 MAX_FILE = 256 * 1024
 _LABEL_FIELDS = {"name", "color", "description", "approver_only"}

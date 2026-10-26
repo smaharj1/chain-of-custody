@@ -142,7 +142,7 @@ class Hostile(BaseTestCase):
 
     def test_bad_repo_names(self):
         for repo in ("widgets", "a/b/c", "acme/wid gets", "", "acme/;rm -rf ~", "acme/$(id)", "acme/`id`", "acme/x\nrm", "-rf/x",
-                     "../x", "acme/..", "./x", "acme/x.git", "a" * 40 + "/x", "acme/" + "b" * 101, "acme/x|y", "acme/x&y", "acme/‮x"):
+                     "../x", "acme/..", "./x", "acme/x.git", "a" * 40 + "/x", "acme/" + "b" * 101, "acme/x|y", "acme/x&y", "acme/x\n", "acme/x\r", "acme/‮x"):
             with self.subTest(repo=repo):
                 rec = Recorder()
                 rc, out, err = run_main(["apply", "--repo", repo, "--apply"], runner=rec)
@@ -151,7 +151,7 @@ class Hostile(BaseTestCase):
 
     def test_bad_label_names(self):
         tmp = self.tmpdir()
-        bad = ["-f", "--repo", "x;rm -rf ~", "$(id)", "`id`", "a\nb", "", " lead", "trail ", "a" * 51, "q\"uote", "a'b", "a|b", "a&b", "a>b", "‮ev", "a//b", "../x", "emoji\U0001f600"]
+        bad = ["ok\n", "-f", "--repo", "x;rm -rf ~", "$(id)", "`id`", "a\nb", "", " lead", "trail ", "a" * 51, "q\"uote", "a'b", "a|b", "a&b", "a>b", "‮ev", "a//b", "../x", "emoji\U0001f600"]
         for name in bad:
             with self.subTest(name=name):
                 p = labels_file(tmp, [{"name": name, "color": "ffffff", "description": "d"}])
@@ -162,7 +162,7 @@ class Hostile(BaseTestCase):
 
     def test_bad_colors_and_descriptions(self):
         tmp = self.tmpdir()
-        for color in ("#ffffff", "fff", "gggggg", "ffffff;id", "", 123456, None):
+        for color in ("ffffff\n", "#ffffff", "fff", "gggggg", "ffffff;id", "", 123456, None):
             with self.subTest(color=color):
                 p = labels_file(tmp, [{"name": "ok", "color": color, "description": "d"}])
                 self.assertEqual(run_main(["apply", "--repo", "a/b", "--labels-file", p])[0], 2)
