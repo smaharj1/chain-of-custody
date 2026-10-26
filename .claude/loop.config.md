@@ -7,16 +7,16 @@ Configuration for the loop-engineering layer (`/planner` + `/orchestrate`). The 
 ```yaml
 # --- Autonomy ---
 autonomy: per-milestone          # per-feature | per-milestone | unattended
-                                  #   per-feature   = pause after every item (max oversight)
-                                  #   per-milestone = pause at milestone boundaries (default)
-                                  #   unattended    = no discretionary pauses (hard-stops still fire)
+                                 #   per-feature   = pause after every item (max oversight)
+                                 #   per-milestone = pause at milestone boundaries (default)
+                                 #   unattended    = no discretionary pauses (hard-stops still fire)
 
 # --- Retry & circuit breaker ---
 max_retries_per_item: 2          # caps three within-item loops INDEPENDENTLY (each gets its own
                                  # counter): verify retries, code-review re-dispatches, and PARTIAL
                                  # split re-dispatches. Worst case is bounded by max_tool_calls_per_item.
 max_consecutive_failures: 2      # circuit breaker: consecutive `blocked` items (no `done` between) -> hard-stop
-                                  #   counts FAILED ITEMS, not within-item retries
+                                 #   counts FAILED ITEMS, not within-item retries
 
 # --- Budget: measurable hard caps (the REAL guards — always honored) ---
 # These are the ceilings the conductor can actually COUNT, so they are what truly stops a

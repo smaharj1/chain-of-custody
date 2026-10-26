@@ -1,0 +1,34 @@
+# Kit test suite: stdlib unittest, offline, no secrets (IMP-4, IMP-10).
+# Actions are referenced by tag; the maintainer pins them to commit SHAs (each line says so).
+name: kit-tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, "v2/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4 # pin to SHA
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5 # pin to SHA
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit tests
+        run: tools/test.sh
+      - name: Path references
+        run: python3 tools/check-refs.py
+      - name: Generated config templates are in sync
+        run: python3 tools/gen-config.py --check
