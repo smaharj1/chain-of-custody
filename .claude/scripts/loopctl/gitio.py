@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Sequence
 
 from kitlib import gitutil
 
+from . import lgit
+
 __all__ = ["cat_blobs", "cat_objects", "ls_tree"]
 
 _NAME_RE = __import__("re").compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?\^?(?::[A-Za-z0-9._/-]{1,200})?\Z")
@@ -29,7 +31,7 @@ def cat_objects(repo: str, names: Sequence[str], limit: int = 4 * 1024 * 1024, t
             raise ValueError("not a plain object name: %r" % (s,))
     if not shas:
         return out
-    proc = gitutil.run_git(["cat-file", "--batch"], cwd=repo, isolated=True, pin_hooks=True, input_text="\n".join(shas) + "\n", binary=True)
+    proc = lgit.run_git(["cat-file", "--batch"], cwd=repo, isolated=True, pin_hooks=True, input_text="\n".join(shas) + "\n", binary=True)
     buf = proc.stdout
     pos = 0
     for s in shas:
@@ -57,7 +59,7 @@ def ls_tree(repo: str, rev: str, paths: Sequence[str], recursive: bool = True) -
     if rev.startswith("-"):
         raise ValueError("revision may not start with '-'")
     args = ["ls-tree", "-z", "-l", "--full-tree"] + (["-r"] if recursive else []) + [rev, "--"] + list(paths)
-    proc = gitutil.run_git(args, cwd=repo, isolated=True, pin_hooks=True, binary=True)
+    proc = lgit.run_git(args, cwd=repo, isolated=True, pin_hooks=True, binary=True)
     if proc.returncode != 0:
         raise ValueError("git ls-tree failed")
     out = []  # type: List[Dict[str, object]]

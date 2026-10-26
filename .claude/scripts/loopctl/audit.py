@@ -52,7 +52,7 @@ def collect_facts(ctx: Any, st: Any, iid: str, lane: str = "full") -> Dict[str, 
         except Exception:  # noqa: BLE001
             commits = []
     ci_fix = [c["sha"] for c in commits if c["trailers"].get("ci-fix-of")]
-    reports = pr_prepare.read_reports(repo, slug)
+    reports = _reports_at(ctx, head, slug) if head else pr_prepare.read_reports(repo, slug)
     waivers = [w for w in item.get("waivers") or [] if isinstance(w, dict) and plan_mod.waiver_active(w, common.iso()[:10])]
     run = None
     try:
@@ -65,6 +65,29 @@ def collect_facts(ctx: Any, st: Any, iid: str, lane: str = "full") -> Dict[str, 
     return {"item": item, "rec": rec, "slug": slug, "lane": lane, "delivery": ctx.cfg.get("delivery"), "branch": branch, "base": base,
             "base_sha": base_sha, "head": head, "commits": commits, "ci_fix": ci_fix, "reports": reports, "waivers": waivers, "cost": cost,
             "max_ci_fix": ctx.cfg.get_int("max_ci_fix_attempts")}
+
+
+def _reports_at(ctx: Any, head: str, slug: str) -> List[Dict[str, Any]]:
+    """The engineer reports as committed on the audited branch (docs/features/<slug>/reports/*.md at `head`), parsed with pr_prepare."""
+    import pr_prepare
+    from . import gitio
+    base = "docs/features/%s/reports" % slug
+    out = []  # type: List[Dict[str, Any]]
+    try:
+        rows = gitio.ls_tree(ctx.repo, head, [base + "/"], recursive=False)
+    except ValueError:
+        return out
+    pick = [r for r in rows if r["type"] == "blob" and r["mode"] in ("100644", "100755") and str(r["path"]).endswith(".md") and 0 <= int(r["size"]) <= 1 << 20]
+    blobs = gitio.cat_blobs(ctx.repo, [str(r["sha"]) for r in pick], 1 << 20)
+    for r in sorted(pick, key=lambda r: str(r["path"])):
+        data = blobs.get(str(r["sha"]))
+        if data is None:
+            continue
+        rep = pr_prepare.parse_report(data.decode("utf-8", "replace"))
+        rep["engineer"] = os.path.basename(str(r["path"]))[:-3]
+        rep["path"] = str(r["path"])
+        out.append(rep)
+    return out
 
 
 def _matrix_rows(item: Dict[str, Any], rec: Dict[str, Any]) -> List[str]:
@@ -97,9 +120,9 @@ def render_body(ctx: Any, st: Any, iid: str, lane: str = "full") -> str:
     gated = rec.get("humanGate") or []
     cif = ", ".join(s[:12] for s in f["ci_fix"]) or "NONE"
     waivers = "; ".join("%s until %s: %s" % (common.md_cell(w["approver"], 40), w["expiry"], ", ".join(w["finding_ids"][:4])) for w in f["waivers"]) or "NONE"
-    title = common.clean_text(item.get("title"), 72)
+    title = common.md_text(item.get("title"), 72)
     L = ["<!-- kit:pr-body v1. Built by loopctl audit from the run state; `python3 .claude/scripts/pr_prepare.py check` still validates it. -->",
-         "# %s" % title, "", "## Summary", "", common.clean_text(item.get("intent"), 600), "", "## Audit block", "", "<!-- audit:begin v1 -->",
+         "# %s" % title, "", "## Summary", "", common.md_text(item.get("intent"), 600), "", "## Audit block", "", "<!-- audit:begin v1 -->",
          "| Field | Value |", "|---|---|",
          "| Feature | %s |" % f["slug"], "| Lane | %s |" % lane, "| Delivery | %s |" % f["delivery"],
          "| Branch | %s |" % (f["branch"] or _fill("the feature branch")), "| Base | %s |" % f["base"],
@@ -153,7 +176,7 @@ def _deltas(reports: Sequence[Dict[str, Any]], name: str) -> str:
 def _notes(f: Dict[str, Any], rec: Dict[str, Any]) -> str:
     L = []  # type: List[str]
     c = f["cost"]
-    if c is None:
+    if c is None or (c["entries"] == 0 and not c["unknown"]):
         L.append("Cost: not recorded (no ledger entries for this run; sequential runs have no per-child cost).")
     else:
         L.append("Cost: $%.4f over %d child session(s)%s." % (c["usd"], c["entries"], "; %d entries had no usable cost" % c["unknown"] if c["unknown"] else ""))

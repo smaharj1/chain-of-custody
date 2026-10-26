@@ -28,7 +28,7 @@ class Abort(LoopTestCase):
         before = lr.repo.head()
         mcs = {}
         for iid in (i["id"] for i in lr.items):
-            mcs[iid] = lr.complete(iid, approve=bool(loop.ctx.plan.items[iid].get("migrations") and any(m.get("dataLossClass") == "lossy" for m in loop.ctx.plan.items[iid]["migrations"])))
+            mcs[iid] = lr.quick_merge(iid)
         return lr, loop, before, mcs
 
     def test_dry_run_lists_merged_items_in_reverse_merge_order_and_changes_nothing(self):
@@ -112,10 +112,10 @@ class Abort(LoopTestCase):
         self.addCleanup(bare.cleanup)
         lr.repo.add_remote("origin", bare.path)
         before = lr.repo.head()
-        lr.complete("A")
+        lr.quick_merge("A")
         lr.repo.git("push", "-q", "origin", "main")
         lr.repo.git("fetch", "-q", "origin")
-        lr.complete("B")                                                                           # B is local only
+        lr.quick_merge("B")                                                                        # B is local only
         head = lr.repo.head()
         ap = abort.plan_abort(loop.ctx, lr.state(), loop.plan, before)
         by_item = {i["item"]: i for i in ap.items}
@@ -153,7 +153,7 @@ class Abort(LoopTestCase):
         lr = self.lr(items=[item_doc("A"), item_doc("B", ["A"]), item_doc("C")])
         loop = lr.fast_start()
         before = lr.repo.head()
-        lr.complete("A")
+        lr.quick_merge("A")
         loop.begin("B", lr.session)
         lr.repo.git("branch", lr.item("B")["branch"], "main")
         ap = abort.plan_abort(loop.ctx, lr.state(), loop.plan, before)
@@ -228,6 +228,12 @@ class Abort(LoopTestCase):
         self.assertEqual(r.rc, 0, r)
         self.assertIn("3 reverted", r.out)
         self.assertEqual(lr.state().header["abort"]["by"], "Pat")
+        # starting again is a human decision: HALT, then the run status
+        self.assertEqual(lr.ctl("run", "--dry-run").rc, 1)
+        self.assertIn("approve breaker", lr.ctl("run", "--dry-run").out)
+        self.assertEqual(lr.ctl("resume").rc, 0)
+        self.assertEqual(lr.ctl("approve", "breaker", "--by", "Pat").rc, 0)
+        self.assertEqual(lr.state().header["runStatus"], "idle")
 
 
 if __name__ == "__main__":

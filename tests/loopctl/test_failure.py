@@ -257,6 +257,55 @@ class LoopFail(LoopTestCase):
         with self.assertRaises(UsageError):
             branches.feat_name("ok", 0)
 
+    def test_begin_refuses_after_an_environment_demotion_until_a_human_clears_it(self):
+        lr = self.lr(items=[item_doc("A"), item_doc("B")])
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        d = loop.fail("A", "env", "db_down", lr.session)
+        self.assertEqual((d.action, d.demote), ("park", True))
+        self.assertEqual(lr.state().header["levelCap"]["level"], "L1")
+        with self.assertRaises(Refused) as cm:
+            loop.begin("B", lr.session)
+        self.assertIn("capped", str(cm.exception))
+        loop.approve("env", "env", "Pat")
+        loop.begin("B", lr.session)
+
+    def test_the_breaker_stops_the_run_after_max_consecutive_failures(self):
+        lr = self.lr(items=[item_doc("A"), item_doc("B"), item_doc("C")], extra_cfg="max_retries_per_item: 0")
+        loop = lr.fast_start()
+        for iid, expect_stop in (("A", False), ("B", True)):
+            loop.begin(iid, lr.session)
+            lr.walk(iid, "design_review", "building", "verifying")
+            loop.fail(iid, "item", "tests_failed", lr.session)          # cap 0: discard
+            loop.begin(iid, lr.session)
+            lr.walk(iid, "design_review", "building", "verifying")
+            d = loop.fail(iid, "item", "tests_failed", lr.session)      # second discard: hard stop
+            self.assertEqual(d.action, "hard_stop")
+            self.assertEqual(lr.state().header["runStatus"], "stopped" if expect_stop else "parked")
+        with self.assertRaises(Refused) as cm:
+            loop.begin("C", lr.session)
+        self.assertIn("stopped", str(cm.exception))
+        loop.approve("breaker", "breaker", "Pat")
+        loop.begin("C", lr.session)
+        self.assertEqual(lr.state().header["breaker"], 0)
+
+    def test_a_merge_resets_the_breaker(self):
+        lr = self.lr(items=[item_doc("A"), item_doc("B")], extra_cfg="max_retries_per_item: 0\nmax_consecutive_failures: 3")
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        lr.walk("A", "design_review", "building", "verifying")
+        loop.fail("A", "item", "tests_failed", lr.session)
+        loop.begin("A", lr.session)
+        lr.walk("A", "design_review", "building", "verifying")
+        loop.fail("A", "item", "tests_failed", lr.session)
+        self.assertEqual(lr.state().header["breaker"], 1)
+        loop.approve("unblock", "A", "Pat", "reset")
+        loop.begin("B", lr.session)
+        lr.walk("B", "design_review", "building", "verifying", "reviewing", "awaiting_human")
+        loop.approve("item", "B", "Pat")
+        loop.advance("B", "merged", lr.session, merge_commit=lr.do_merge("B"))
+        self.assertEqual(lr.state().header["breaker"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

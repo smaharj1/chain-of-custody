@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from kitlib import gitutil, runstate
 
-from . import common, gates, ledger, plan as plan_mod
+from . import lgit, common, gates, ledger, plan as plan_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, Refused
 
 __all__ = ["preflight", "dry_run", "start", "handoff_text", "load_driver"]
@@ -41,7 +41,7 @@ def load_driver() -> Any:
 
 
 def _tree_clean(ctx: Any) -> bool:
-    return gitutil.is_clean(ctx.repo, isolated=True)
+    return lgit.is_clean(ctx.repo)
 
 
 def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Dict[str, Any]]:
@@ -71,7 +71,8 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
             same = bool(ap) and ap["digest"] == rep.digest
             chk("plan-approved", same, "the plan is approved (H1)" if same else "the plan is not approved, or changed since (H1/H2): `loopctl approve plan`")
             chk("run-status", state.header.get("runStatus") not in ("stopped", "aborted"),
-                "run status %s" % state.header.get("runStatus"))
+                "run status %s%s" % (state.header.get("runStatus"), " (a human runs `loopctl approve breaker` to run again)"
+                                 if state.header.get("runStatus") in ("stopped", "aborted") else ""))
             chk("level-cap", not state.header.get("levelCap"), "no environment demotion" if not state.header.get("levelCap")
                 else "capped: %s" % state.header["levelCap"].get("reason"))
     halted = ctx.rs.is_halted()

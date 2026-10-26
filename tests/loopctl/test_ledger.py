@@ -113,6 +113,26 @@ class Ledger(LoopTestCase):
         with self.assertRaises(Refused):
             led.launch_budget(Cfg(run_budget_usd=1), "run-1")
 
+    def test_at_eighty_percent_the_run_parks_until_a_human_accepts_the_rest(self):
+        lr, rs, led = self.led()
+        led.record("run-1", "A", 1, None, cost=7.9)
+        self.assertTrue(led.verdict(Cfg(run_budget_usd=10), "run-1", "A").ok)
+        led.record("run-1", "A", 1, None, cost=0.2)                              # 8.1 of 10
+        v = led.verdict(Cfg(run_budget_usd=10), "run-1", "A")
+        self.assertFalse(v.ok)
+        self.assertEqual(v.codes, ["budget_run_80"])
+        led.acknowledge("run-1", "Pat")
+        self.assertTrue(led.verdict(Cfg(run_budget_usd=10), "run-1", "A").ok)
+        led.record("run-1", "A", 1, None, cost=2.0)                              # now over the ceiling: that is not waived by the ack
+        self.assertIn("budget_run", led.verdict(Cfg(run_budget_usd=10), "run-1", "A").codes)
+
+    def test_the_budget_is_shared_between_live_children(self):
+        lr, rs, led = self.led()
+        led.record("run-1", "A", 1, None, cost=1.0)
+        self.assertEqual(led.launch_budget(Cfg(run_budget_usd=5), "run-1", live_children=1), 4.0)
+        self.assertEqual(led.launch_budget(Cfg(run_budget_usd=5), "run-1", live_children=2), 2.0)
+        self.assertEqual(led.launch_budget(Cfg(run_budget_usd=5), "run-1", live_children=0), 4.0)
+
     def test_the_budget_survives_a_resume_because_it_is_summed_from_the_ledger(self):
         lr, rs, led = self.led()
         led.record("run-1", "A", 1, None, cost=2.0)

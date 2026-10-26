@@ -102,8 +102,8 @@ class GateContext(object):
 
     def git(self, args: Sequence[str], **kw: Any) -> Any:
         """Run git in the worktree with the pinned, isolated settings. Fixed argv only."""
-        from kitlib import gitutil
-        return gitutil.run_git(list(args), cwd=self.worktree, isolated=True, pin_hooks=True, **kw)
+        from .. import lgit
+        return lgit.run_git(list(args), cwd=self.worktree, **kw)
 
     def to_dict(self) -> Dict[str, Any]:
         return {"item": self.item_id, "attempt": self.attempt, "base_sha": self.base_sha, "head_sha": self.head_sha,

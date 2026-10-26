@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from kitlib import gitutil
 
-from . import branches, common, state as state_mod
+from . import lgit, branches, common, state as state_mod
 from .common import Finding
 
 __all__ = ["Report", "scan", "apply", "normalize_prs", "live_prs_argv"]
@@ -94,7 +94,7 @@ def normalize_prs(raw: Any) -> List[Dict[str, Any]]:
 
 
 def _git(ctx: Any, args: Sequence[str]):
-    return gitutil.run_git(list(args), cwd=ctx.repo, isolated=True, pin_hooks=True)
+    return lgit.run_git(list(args), cwd=ctx.repo, isolated=True, pin_hooks=True)
 
 
 def _merge_commits(ctx: Any, ib: str) -> List[Dict[str, Any]]:

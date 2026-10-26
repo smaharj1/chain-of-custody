@@ -64,6 +64,10 @@ class LoopRepo(object):
         self.home = tempfile.mkdtemp(prefix="loopctl-home-")
         self.env = clean_env(home=self.home)
         self.env.pop("CLAUDECODE", None)
+        # The doctor would otherwise run the `claude` on PATH for its version (it only declines inside a Claude Code session). No test
+        # may start the real binary, so the version is given explicitly and the binary override points at a path that does not exist.
+        self.env["KIT_CLAUDE_VERSION"] = "2.1.302"
+        self.env["KIT_CLAUDE_BIN"] = os.path.join(self.home, "no-such-claude")
         self.items = items if items is not None else [item_doc("A"), item_doc("B", ["A"]), item_doc("C", ["B"])]
         self.plan_name = plan_name
         self.cfg_text = CONFIG_TEMPLATE % {"tier2": "true" if tier2 else "false", "extra": extra_cfg}
@@ -159,6 +163,25 @@ class LoopRepo(object):
         if approve:
             loop.approve("item", iid, "Pat")
         loop.advance(iid, "merged", self.session, merge_commit=mc)
+        return mc
+
+    def quick_merge(self, iid: str, trailer: bool = True) -> str:
+        """A real --no-ff merge with the trailer, and the state set to merged in ONE compare-and-swap (for tests that are about
+        something other than the state machine; `complete()` walks the machine)."""
+        mc = self.do_merge(iid, trailer=trailer, file_content="work for %s\n" % iid)
+        from loopctl import state as sm
+
+        def mutate(st: Any) -> None:
+            r = st.item(iid)
+            r["mergeCommit"] = mc
+            r["branch"] = None
+            sm._force_status(st, iid, "merged", "test", "quick merge")
+        loop = self.loop()
+        st, _ = loop.store.update(mutate, "quick merge %s" % iid)
+        loop._after_merge(st, iid)                       # as advance() does: release the footprint lock
+        from loopctl import branches
+        for b in branches.list_branches(self.path, ("feat",)):
+            branches.delete_merged(loop.ctx, b["name"], "main")        # merged branches are deleted after pass
         return mc
 
     def state(self) -> Any:

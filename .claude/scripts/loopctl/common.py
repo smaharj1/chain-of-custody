@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 __all__ = ["READ_ERRORS", "EXIT_OK", "EXIT_FINDINGS", "EXIT_USAGE", "EXIT_REFUSED", "LoopctlError", "UsageError", "Refused",
            "Finding", "ID_RE", "SLUG_RE", "NAME_RE", "AC_RE", "valid_item_id", "valid_slug", "valid_plan_name",
            "ac_id_for", "clean_text", "strict_loads", "canonical_json", "sha256_hex", "natural_key", "now",
-           "iso", "set_clock", "safe_rel_path", "safe_glob", "md_cell", "is_number"]
+           "iso", "set_clock", "safe_rel_path", "safe_glob", "md_cell", "md_text", "is_number"]
 
 EXIT_OK, EXIT_FINDINGS, EXIT_USAGE, EXIT_REFUSED = 0, 1, 2, 3
 
@@ -104,6 +104,12 @@ def clean_text(text: Any, limit: int = 500, keep_newlines: bool = False) -> str:
     return s
 
 
+def md_text(text: Any, limit: int = 600) -> str:
+    """Free text for a markdown paragraph or heading: one line, no control characters, and no `<` or `>`, so it can neither open
+    an HTML comment (the audit block's markers are comments) nor inject HTML."""
+    return clean_text(text, limit).replace("<", "&lt;").replace(">", "&gt;")
+
+
 def md_cell(text: Any, limit: int = 200) -> str:
     """Text safe inside a markdown table cell: no pipes, no line breaks, no HTML."""
     s = clean_text(text, limit)
@@ -178,8 +184,8 @@ def safe_rel_path(path: Any) -> bool:
 
 def safe_glob(pattern: Any) -> bool:
     """Like safe_rel_path, but `*`, `**` and `?` are allowed (a footprint or locked-path glob)."""
-    if not isinstance(pattern, str):
-        return False
+    if not isinstance(pattern, str) or not re.search(r"[^*?/]", pattern):
+        return False        # a pattern made only of wildcards would claim the whole tree
     return safe_rel_path(pattern.rstrip("/") if pattern.endswith("/") and len(pattern) > 1 else pattern) \
         and not re.search(r"[\[\]{}]", pattern)
 

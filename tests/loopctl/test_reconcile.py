@@ -21,7 +21,7 @@ class Reconcile(LoopTestCase):
     def test_a_clean_state_has_no_drift(self):
         lr = self.lr()
         loop = lr.fast_start()
-        lr.complete("A")
+        lr.quick_merge("A")
         self.assertFalse(self.scan(lr).drift)
         self.assertEqual(lr.ctl("reconcile", "--dry-run").rc, 0)
 
@@ -61,7 +61,7 @@ class Reconcile(LoopTestCase):
     def test_a_trailer_for_an_item_the_state_already_merged_changes_nothing(self):
         lr = self.lr()
         lr.fast_start()
-        mc = lr.complete("A")
+        mc = lr.quick_merge("A")
         self.assertEqual(lr.item("A")["mergeCommit"], mc)
         lr.do_merge("A", attempt=2, file_content="again\n")
         self.assertEqual([o for o in self.ops(self.scan(lr)) if o[0] != "delete-merged"], [])
@@ -69,7 +69,7 @@ class Reconcile(LoopTestCase):
     def test_a_human_revert_sends_the_item_to_a_human_never_back_to_work(self):
         lr = self.lr()
         lr.fast_start()
-        mc = lr.complete("A")
+        mc = lr.quick_merge("A")
         lr.repo.git("revert", "-m", "1", "--no-edit", mc)
         rep = self.scan(lr)
         self.assertEqual(self.ops(rep), [("human-revert", "A")])
@@ -81,7 +81,7 @@ class Reconcile(LoopTestCase):
     def test_a_merge_commit_that_left_the_integration_branch(self):
         lr = self.lr()
         lr.fast_start()
-        mc = lr.complete("A")
+        mc = lr.quick_merge("A")
         lr.repo.git("reset", "-q", "--hard", "HEAD~1")             # a human rewound main
         rep = self.scan(lr)
         self.assertEqual(self.ops(rep), [("merge-missing", "A")])

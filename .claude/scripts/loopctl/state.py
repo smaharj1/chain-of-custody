@@ -39,7 +39,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 from kitlib import gitutil, runstate
 
-from . import branches, common, failure, plan as plan_mod
+from . import lgit, branches, common, failure, plan as plan_mod
 from .common import LoopctlError, Refused, UsageError
 
 __all__ = ["STATUSES", "IN_FLIGHT", "ACTIVE", "TERMINAL", "RESTING", "TRANSITIONS", "FORWARD", "State", "StateStore",
@@ -273,7 +273,7 @@ class StateStore(object):
 
     # -- git plumbing ----------------------------------------------------------------------------------------
     def _git(self, args: Sequence[str], input_text: Optional[str] = None, env: Optional[Dict[str, str]] = None):
-        return gitutil.run_git(args, cwd=self.repo, isolated=True, pin_hooks=True, input_text=input_text, env=env)
+        return lgit.run_git(args, cwd=self.repo, isolated=True, pin_hooks=True, input_text=input_text, env=env)
 
     def head(self, ref: Optional[str] = None) -> Optional[str]:
         proc = self._git(["rev-parse", "--verify", "-q", (ref or self.ref) + "^{commit}"])
@@ -450,8 +450,8 @@ class Loop(object):
 
     def __init__(self, ctx: Any, require_tier2: bool = True) -> None:
         self.ctx = ctx
-        if require_tier2 and not ctx.tier2:
-            raise Refused("loopctl state writes (Tier 2) are off: set loopctl_tier2: true in .claude/loop.config.md (H6, a human edits it)")
+        if require_tier2:
+            ctx.require_tier2()          # Tier 2 on in the BASE sha's config, plan trusted, evidence-gated values refused, base anchored
         self.store = ctx.store()
         self.plan = ctx.plan
         self.cfg = ctx.cfg
@@ -702,7 +702,7 @@ class Loop(object):
             if not gitutil.is_ancestor(sha, "refs/heads/" + branch, repo):
                 raise Refused("merge commit %s is not on the integration branch %s" % (sha[:12], branch))
         if self.cfg.get("delivery") == "local":
-            msg = gitutil.run_git(["log", "-1", "--format=%B", sha], cwd=repo, isolated=True, pin_hooks=True).stdout
+            msg = lgit.run_git(["log", "-1", "--format=%B", sha], cwd=repo, isolated=True, pin_hooks=True).stdout
             try:
                 import pr_prepare
                 tr = pr_prepare.parse_trailers(msg)
@@ -937,9 +937,9 @@ class Loop(object):
                     raise UsageError("unblock choices: reset, keep, replan")
             elif scope == "env":
                 st.header["levelCap"] = None
-            elif scope == "breaker":
+            elif scope == "breaker":                       # a human decides to run again after a breaker stop or an abort
                 st.header["breaker"] = 0
-                if st.header.get("runStatus") == "stopped":
+                if st.header.get("runStatus") in ("stopped", "aborted"):
                     st.header["runStatus"] = "idle"
                 st.header["parked"] = None
             elif scope == "cost":
@@ -954,15 +954,6 @@ class Loop(object):
                 ledger.Ledger(self.ctx.rs).acknowledge(run["runId"], by, note)
         self._event("approve", scope=scope, target=target, choice=choice, by=by)
         return ap
-
-    def reset_inflight(self, iid: str, by: str, note: str) -> None:
-        """Crash recovery (reconcile --apply, abort): an in-flight item with no live owner goes back to pending."""
-        def mutate(st: State) -> None:
-            r = st.item(iid)
-            if r["status"] in ACTIVE:
-                st.set_status(iid, "pending", by, note)
-
-        self.store.update(mutate, "reset %s" % iid)
 
 
 def _reset_counters(c: Dict[str, int], keep: Iterable[str] = ()) -> Dict[str, int]:

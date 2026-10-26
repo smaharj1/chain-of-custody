@@ -115,7 +115,7 @@ class Ledger(object):
         """A human accepts the unknown-cost entries of the run so far (`loopctl approve cost`)."""
         _, bad = self.entries()
         self._append({"type": "ack", "ts": common.iso(), "runId": run_id, "by": common.clean_text(by, 60),
-                      "note": common.clean_text(note, 200), "bad": bad})
+                      "note": common.clean_text(note, 200), "bad": bad, "usd": self.totals(run_id=run_id)["usd"]})
 
     # -- reading ---------------------------------------------------------------------------
     def entries(self) -> Tuple[List[Dict[str, Any]], int]:
@@ -190,6 +190,14 @@ class Ledger(object):
                    "the run is parked; check the field name, then `loopctl approve cost --by <you>`" % (run_t["unknown"], "y" if run_t["unknown"] == 1 else "ies"))
         caps = (("run", cfg.get("run_budget_usd"), run_t["usd"]), ("item", cfg.get("item_budget_usd"), item_t["usd"] if item_t else None),
                 ("day", cfg.get("day_budget_usd"), day_t["usd"]))
+        # DEC-34: at 80% of the run budget the run parks and a human decides whether to go on (an ack records the spend it accepted)
+        run_cap = cfg.get("run_budget_usd")
+        if isinstance(run_cap, (int, float)) and not isinstance(run_cap, bool) and run_cap > 0:
+            acked_usd = max([e.get("usd") for e in self.entries()[0] if e.get("type") == "ack" and e.get("runId") == run_id
+                             and isinstance(e.get("usd"), (int, float))] or [0.0])
+            if 0.8 * run_cap <= run_t["usd"] < run_cap and acked_usd < 0.8 * run_cap:
+                v.fail("budget_run_80", "80%% of the run budget is spent ($%.4f of $%.2f): the run parks until a human accepts the rest with "
+                       "`loopctl approve cost`" % (run_t["usd"], float(run_cap)))
         rems = []  # type: List[float]
         for name, ceiling, spent in caps:
             if not isinstance(ceiling, (int, float)) or isinstance(ceiling, bool) or ceiling <= 0 or spent is None:
@@ -202,14 +210,15 @@ class Ledger(object):
             v.remaining = max(0.0, math.floor(min(rems) * 10000) / 10000.0)
         return v
 
-    def launch_budget(self, cfg: Any, run_id: str, item: Optional[str] = None) -> float:
-        """The value for `--max-budget-usd` on the next launch. Raises Refused when nothing may be spent or when no ceiling is set."""
+    def launch_budget(self, cfg: Any, run_id: str, item: Optional[str] = None, live_children: int = 1) -> float:
+        """The value for `--max-budget-usd` on the next launch: the remaining budget divided by the children running at once (DEC-34).
+        Raises Refused when nothing may be spent or when no ceiling is set."""
         v = self.verdict(cfg, run_id, item)
         if not v.ok:
             raise common.Refused("cannot launch: " + "; ".join(v.reasons))
         if v.remaining is None:
             raise common.Refused("cannot launch: run_budget_usd is not set (0). Set a ceiling in loop.config; there is no projection before a baseline")
-        return v.remaining
+        return math.floor(v.remaining / max(1, int(live_children)) * 10000) / 10000.0
 
 
 def projection(repo: str, n_items: int) -> Dict[str, Any]:

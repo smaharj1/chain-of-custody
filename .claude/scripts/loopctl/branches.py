@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from kitlib import gitutil, jsonio, runstate
 
-from . import common
+from . import lgit, common
 from .common import Refused, UsageError
 
 __all__ = ["delete_merged", "BRANCH_RE", "feat_name", "dead_name", "blocked_name", "parse", "exists", "list_branches", "create", "rename",
@@ -50,7 +50,7 @@ def parse(name: str) -> Optional[Tuple[str, str, int]]:
 
 
 def _git(repo: str, args: Sequence[str]):
-    return gitutil.run_git(list(args), cwd=repo, isolated=True, pin_hooks=True)
+    return lgit.run_git(list(args), cwd=repo, isolated=True, pin_hooks=True)
 
 
 def exists(repo: str, name: str) -> bool:

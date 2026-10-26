@@ -166,5 +166,19 @@ class ExclusiveCreate(BaseTestCase):
         self.assertEqual(seen_empty, [])
 
 
+class DeepNesting(unittest.TestCase):
+    def test_a_deeply_nested_file_is_unreadable_not_a_crash(self):
+        import os, tempfile
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "deep.json")
+        with open(p, "w") as fh:
+            fh.write("[" * 200000)
+        with self.assertRaises(ValueError):
+            jsonio.read_json(p)
+        with self.assertRaises(ValueError):
+            jsonio.read_json_opt(p)
+
+
 if __name__ == "__main__":
     unittest.main()
+

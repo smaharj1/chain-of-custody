@@ -30,7 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from kitlib import gitutil, jsonio
 
-from . import branches, common, plan as plan_mod, state as state_mod
+from . import lgit, branches, common, plan as plan_mod, state as state_mod
 from .common import Refused, UsageError
 
 __all__ = ["plan_abort", "execute", "AbortPlan", "revert_plan_text"]
@@ -54,7 +54,7 @@ class AbortPlan(object):
 
 
 def _git(ctx: Any, args: Sequence[str], env: Optional[Dict[str, str]] = None):
-    return gitutil.run_git(list(args), cwd=ctx.repo, isolated=True, pin_hooks=True, env=env)
+    return lgit.run_git(list(args), cwd=ctx.repo, isolated=True, pin_hooks=True, env=env)
 
 
 def _published(ctx: Any, sha: str) -> List[str]:
@@ -170,7 +170,7 @@ def execute(loop: Any, ap: AbortPlan, by: str, reason: str, session_id: Optional
         if branches.current(ctx.repo) != ib:
             record["problems"].append("the loop worktree is not on %s: nothing was reverted" % ib)
             stop_exec = True
-        elif not gitutil.is_clean(ctx.repo, isolated=True):
+        elif not lgit.is_clean(ctx.repo):
             record["problems"].append("the loop worktree has uncommitted changes: nothing was reverted")
             stop_exec = True
     elif ap.items:
@@ -203,11 +203,11 @@ def execute(loop: Any, ap: AbortPlan, by: str, reason: str, session_id: Optional
             plan_only.append(dict(it, plan_only_reason="its down-migration failed"))
             continue
         args = ["revert", "--no-edit"] + (["-m", "1"] if it["merge"] else []) + [it["commit"]]
-        proc = gitutil.run_git(args, cwd=ctx.repo, isolated=True, pin_hooks=True,
+        proc = lgit.run_git(args, cwd=ctx.repo, isolated=True, pin_hooks=True,
                                env={"GIT_AUTHOR_NAME": "loopctl", "GIT_AUTHOR_EMAIL": "loopctl@localhost.invalid",
                                     "GIT_COMMITTER_NAME": "loopctl", "GIT_COMMITTER_EMAIL": "loopctl@localhost.invalid"})
         if proc.returncode != 0:
-            gitutil.run_git(["revert", "--abort"], cwd=ctx.repo, isolated=True, pin_hooks=True)
+            lgit.run_git(["revert", "--abort"], cwd=ctx.repo, isolated=True, pin_hooks=True)
             record["problems"].append("reverting %s (%s) conflicted and was aborted" % (it["item"], it["commit"][:12]))
             stop_exec = True
             plan_only.append(dict(it, plan_only_reason="the revert conflicts; resolve it by hand"))

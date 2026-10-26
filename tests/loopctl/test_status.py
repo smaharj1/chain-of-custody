@@ -152,7 +152,7 @@ class Render(LoopTestCase):
         for needle in ("# Build Plan: demo", "## Status Board", "| A | M1 | Item A | - | S | pending |", "| B | M1 | Item B | A | S | pending |",
                        "Progress: 0/3 merged", "Critical path: A -> B -> C", "**AC-A-1**", "## M1"):
             self.assertIn(needle, md)
-        lr.complete("A")
+        lr.quick_merge("A")
         self.assertIn("| A | M1 | Item A | - | S | merged |", lr.ctl("render").out)
         self.assertIn("Progress: 1/3 merged", lr.ctl("render").out)
         self.assertEqual(lr.ctl("render").out, lr.ctl("render").out)                      # deterministic

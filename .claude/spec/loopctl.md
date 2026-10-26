@@ -102,9 +102,13 @@ A gate is a module `loopctl/gates/<file>.py` with `NAME` (the `gates.<NAME>` tog
 
 `GateContext` carries `repo`, `item_id`, `item` (plan definition), `attempt`, `base_sha`, `head_sha`, `cfg` (read at the base sha), `plan`, `state_item` (copy), `paths` (`repo`, `runstate`, `heldout`, `reports`), `runner`, `level`, `env`, `evidence_passed`, `worktree`, and `git(args)`. `GateResult` has `status` (`pass fail error skipped`), `findings`, `evidence`, `failure_class`. Per-AC evidence goes in `evidence["ac_results"] = {"AC-F1-1": {"result": "pass", "evidence": "<test>"}}`; verdicts in `evidence["review"] = {"code": ..., "security": ...}`. The **runner** applies the toggle read from the base sha: `off` skips, `report` records and never blocks, `on` blocks on `fail` and `error`. A gate that crashes or returns nonsense is an `error` with class `env`. An evidence-gated gate refuses to run until the evidence gate passes. `loopctl gate <name> <item>` runs one and records it; the AC x evidence matrix in `status --matrix` is built from the recorded results.
 
+## Approvals
+
+`approve plan|item|checkpoint|unblock|env|breaker|cost --by <name>` writes a record into the state (id, scope, target, name, time, note, plan digest or attempt). Records are consumed once. They are **records, not authentication**: at L1 the conductor writes one after the human said so in the chat (L-10) and `--by` is not verified; at L3+ the boundary is the PR review and CODEOWNERS. `approve plan` is also how a revised plan is re-approved (H2): an item with work against criteria that changed goes to `needs_human` (`ac_changed`). `approve breaker` is how a human lets a run go on after a circuit-breaker stop or an `abort`.
+
 ## The driver contract (Phase 4c)
 
-`runner: driver` makes `run` import `loopctl.driver` lazily and call `driver.run(ctx, loop, run_record, as_json) -> int` after taking the lock with `driverPid`. `ctx` is `loopctl.context.Context`, `loop` is `loopctl.state.Loop` (`begin`, `advance`, `fail`, `park`, `clarify`, `record_gate`, `approve`, `reset_inflight`), `ctx.ledger()` is the spend ledger, `ctx.gate_context(...)` builds a gate's input, `failure.classify_exit(...)` maps what a child showed to a class and reason. Not installed: `run` says "driver not installed" and exits 2 before it touches the lock.
+`runner: driver` makes `run` import `loopctl.driver` lazily and call `driver.run(ctx, loop, run_record, as_json) -> int` after taking the lock with `driverPid`. `ctx` is `loopctl.context.Context`, `loop` is `loopctl.state.Loop` (`approve_plan`, `begin`, `advance`, `fail`, `park`, `clarify`, `record_gate`, `approve`), `ctx.ledger()` is the spend ledger, `ctx.gate_context(...)` builds a gate's input, `failure.classify_exit(...)` maps what a child showed to a class and reason. Not installed: `run` says "driver not installed" and exits 2 before it touches the lock.
 
 ## Canary
 

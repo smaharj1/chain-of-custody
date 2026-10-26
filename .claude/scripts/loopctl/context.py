@@ -20,7 +20,7 @@ from kitlib import caller as caller_mod
 from kitlib import config as kconfig
 from kitlib import evidence, gitutil, levels, runstate
 
-from . import common, gates, ledger as ledger_mod, lock as lock_mod, plan as plan_mod, state as state_mod
+from . import lgit, common, gates, ledger as ledger_mod, lock as lock_mod, plan as plan_mod, state as state_mod
 from .common import Refused, UsageError
 
 __all__ = ["Context", "SCRIPTS_DIR"]
@@ -39,11 +39,11 @@ def _resolve_base(repo: str, base: Optional[str]) -> Optional[str]:
             raise UsageError("--base %s does not resolve to a commit" % common.clean_text(base, 60))
         return sha
     wanted = ("refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master")
-    have = gitutil.run_git(["for-each-ref", "--format=%(refname)"] + list(wanted), cwd=repo, isolated=True, pin_hooks=True).stdout.split()
+    have = lgit.run_git(["for-each-ref", "--format=%(refname)"] + list(wanted), cwd=repo, isolated=True, pin_hooks=True).stdout.split()
     for cand in wanted:                      # the same order verify.py uses
         if cand not in have:
             continue
-        proc = gitutil.run_git(["merge-base", "HEAD", cand], cwd=repo, isolated=True, pin_hooks=True)
+        proc = lgit.run_git(["merge-base", "HEAD", cand], cwd=repo, isolated=True, pin_hooks=True)
         out = proc.stdout.strip()
         if proc.returncode == 0 and out:
             return out.splitlines()[0]
@@ -74,7 +74,7 @@ class Context(object):
         marked untrusted) or `none`."""
         c = cls()
         d = gitutil.nearest_existing_dir(path)
-        proc = gitutil.run_git(["rev-parse", "--show-toplevel", "--git-common-dir"], cwd=d, isolated=True) if d else None
+        proc = lgit.run_git(["rev-parse", "--show-toplevel", "--git-common-dir"], cwd=d, isolated=True) if d else None
         lines = proc.stdout.splitlines() if proc is not None and proc.returncode == 0 else []
         if len(lines) < 2:
             raise UsageError("%s is not inside a git repository" % common.clean_text(path, 80))
@@ -158,6 +158,28 @@ class Context(object):
         if bad:
             raise Refused("loop.config sets %s, which needs the evidence gate (%s). OPT-IN features refuse to enable (IMP-1)"
                           % (", ".join(bad), common.clean_text(self.evidence().reason, 100)))
+        self._check_base_anchor()
+
+    def _check_base_anchor(self) -> None:
+        """The base sha is where gate decisions take their config and plan from, so a caller must not be able to choose a weaker one
+        with `--base`. It has to be a commit on the integration branch (reviewed, merged work), and never older than the base this run
+        started from (config only moves forward, through merges a human reviewed)."""
+        ib = self.integration_branch()
+        if not ib or not self.base_sha:
+            return
+        if not gitutil.is_ancestor(self.base_sha, "refs/heads/" + ib, self.repo, isolated=True):
+            raise Refused("the base %s is not on the integration branch %s: gate decisions read the config and plan from reviewed, merged "
+                          "commits only" % (self.base_sha[:12], ib))
+        try:
+            run = self.rs.read_run()
+        except common.READ_ERRORS:
+            run = None
+        start = run.get("baseSha") if isinstance(run, dict) else None
+        if isinstance(start, str) and gitutil.valid_oid(start) and start != self.base_sha \
+                and gitutil.rev_parse(start + "^{commit}", self.repo, isolated=True) == start \
+                and not gitutil.is_ancestor(start, self.base_sha, self.repo, isolated=True):
+            raise Refused("the base %s is older than the base this run started from (%s): the config and plan cannot be rolled back"
+                          % (self.base_sha[:12], start[:12]))
 
     @property
     def runner(self) -> str:

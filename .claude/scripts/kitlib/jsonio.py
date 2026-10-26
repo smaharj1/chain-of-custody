@@ -129,7 +129,12 @@ def try_create_exclusive(path: str, data: bytes, mode: int = 0o644) -> bool:
 def read_json(path: str) -> Any:
     """Strict read: raises FileNotFoundError or ValueError (JSON decode)."""
     with open(path, "rb") as fh:
-        return json.loads(fh.read().decode("utf-8"))
+        raw = fh.read()
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except RecursionError:
+        # A deeply nested file overflows the parser's stack. It is unreadable, not an interpreter fault: callers catch ValueError.
+        raise ValueError("JSON nested too deeply to read")
 
 
 def read_json_opt(path: str, default: Optional[Any] = None) -> Any:

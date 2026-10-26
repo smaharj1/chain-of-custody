@@ -42,7 +42,7 @@ READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "h
 # command -> flags that make an otherwise-writing command read-only (and the flags that always make it a write)
 FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
              "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",)}
-WRITE_FLAGS = ("--apply", "--write", "--force", "--rollback-to")
+WRITE_FLAGS = ("--apply", "--write", "--force")
 TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume")
 TIER2_WRITES = ("approve", "begin", "advance", "fail", "clarify", "park", "gate", "spend", "run", "abort", "reconcile")
 
@@ -353,6 +353,8 @@ def cmd_migrate_plan(args: List[str], env: Mapping[str, str], out: Out) -> int:
         raise UsageError("--from must be a regular file inside the repository")
     if a.force and not a.write:
         raise UsageError("--force only goes with --write")
+    if not os.path.isfile(src):
+        raise UsageError("%s does not exist (use --from <file>)" % common.clean_text(a.src, 80))
     with open(src, "r", encoding="utf-8", errors="replace") as fh:
         raw = fh.read(2 * 1024 * 1024 + 1)
     try:
@@ -602,8 +604,14 @@ def cmd_spend(args: List[str], env: Mapping[str, str], out: Out) -> int:
     ap.add_argument("--role", default=None)
     ap.add_argument("--session", default=None)
     a = ap.parse_args(args)
+    if not common.valid_item_id(a.item):
+        raise UsageError("--item is not a valid item id")
     loop = _loop(a, env)
-    raw = sys.stdin.read(1 << 20) if a.result == "-" else open(a.result, "r", encoding="utf-8", errors="replace").read(1 << 20)
+    if a.result == "-":
+        raw = sys.stdin.read(1 << 20)
+    else:
+        with open(_rel(a, a.result), "r", encoding="utf-8", errors="replace") as fh:
+            raw = fh.read(1 << 20)
     try:
         result = common.strict_loads(raw, max_depth=8, max_bytes=1 << 20)
     except ValueError:
