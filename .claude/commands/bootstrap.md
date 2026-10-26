@@ -45,9 +45,9 @@ If `status` says `invalid`, stop. Show the user the reason, do not append to it,
 
 ### 1. Where are we
 
-Run `status`. `in-progress`: read `show`, say what is done and what is left, and continue from there. `complete`: say so and ask what changed. `none`: continue. Then detect, which is read-only:
+Run `status`. `in-progress`: read `show`, say what is done and what is left, and continue from there. `complete`: say so and ask what changed. `none`: continue.
 
-Start the receipt with `init`, then run detect through it: `run --id detect ... -- python3 .claude/scripts/bootstrap_detect.py --json`. Detect comes first because its answer (mode) is what `init --mode` needs, so run it once before `init` if there is no receipt yet, and again through `run` after.
+Run detect on its own first (`python3 .claude/scripts/bootstrap_detect.py --json`; it writes nothing). Then `bootstrap_receipt.py init --mode <the hint>`, and run detect again through `run --id detect ...` so the receipt holds it.
 
 The detect JSON gives a mode hint (greenfield or existing), the stack the manifests show, suggested verify commands, deploy-host files, release automation, the state of `CLAUDE.md` and `loop.config.md`, and the git remotes (host and OWNER/NAME only). Say what you found in three or four lines and confirm the mode. If the kit is not installed (`.claude/scripts` missing), stop: the install comes first.
 
