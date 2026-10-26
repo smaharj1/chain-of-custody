@@ -1,0 +1,44 @@
+{
+  "schema": "hello-loop-verify.v1",
+  "verify_tests": "python3 -m unittest discover -s tests -t .",
+  "verify_run": "python3 scripts/verify_run.py",
+  "items": {
+    "F1": {
+      "ac_ids": [
+        "AC-F1-1",
+        "AC-F1-2",
+        "AC-F1-3",
+        "AC-F1-4",
+        "AC-F1-5"
+      ],
+      "tests": "python3 -m unittest tests.test_schema",
+      "acceptance": "python3 acceptance/run_checks.py --project . --item F1",
+      "demo_route": null
+    },
+    "F2": {
+      "ac_ids": [
+        "AC-F2-1",
+        "AC-F2-2",
+        "AC-F2-3",
+        "AC-F2-4",
+        "AC-F2-5",
+        "AC-F2-6"
+      ],
+      "tests": "python3 -m unittest tests.test_bookmarks_api",
+      "acceptance": "python3 acceptance/run_checks.py --project . --item F2",
+      "demo_route": "/api/bookmarks"
+    },
+    "F3": {
+      "ac_ids": [
+        "AC-F3-1",
+        "AC-F3-2",
+        "AC-F3-3",
+        "AC-F3-4",
+        "AC-F3-5"
+      ],
+      "tests": "python3 -m unittest tests.test_page",
+      "acceptance": "python3 acceptance/run_checks.py --project . --item F3",
+      "demo_route": "/"
+    }
+  }
+}
