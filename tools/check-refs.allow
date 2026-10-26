@@ -37,3 +37,21 @@ docs/choosing-your-stack.md
 # 0b-prose: paths other Wave A phases build. Remove each entry when its phase merges.
 .claude/scripts/probe_run.py          # until Phase 1 merges
 docs/security/secrets-policy.md       # until Phase 1 merges
+
+# Probe harness (IMP-7): paths inside a scratch repo (tools/probes/files/ copies them there), the results file the
+# human creates from the template, and paths of later phases that docs/design/probe-assumptions.md marks "(planned)".
+.claude/probe/*
+docs/design/probe-results.md
+.claude/scripts/guards*
+.claude/scripts/loopctl.py
+.claude/scripts/doctor.py
+.claude/rules*
+.claude/skills*
+.claude/templates/settings*
+tests/guards*
+tests/loopctl*
+tests/boundary*
+tools/check-skills.py
+tools/evals*
+docs/security/managed-settings.md
+docs/security/platform-requirements.md

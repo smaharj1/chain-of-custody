@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" inject --tag v20-compact-inject --nonce V20-7f3a91 --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+== interactive ==
+Dispatch the subagent probe-outer with the prompt "Follow your instructions." Do nothing else. When it returns, reply with one line: v1 interactive done.
+== driver ==
+Follow your instructions.

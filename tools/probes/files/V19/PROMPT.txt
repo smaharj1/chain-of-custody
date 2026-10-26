@@ -1,0 +1,2 @@
+== commands ==
+Run these three Bash commands, each in its own tool call, and report the exact result or error of each without retrying. 1. touch probe-v19-inside.txt 2. touch ~/.probe-v19-outside 3. ls -la ~/.probe-v19-outside

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Bash(echo probe-v22-*)"
+    ]
+  }
+}

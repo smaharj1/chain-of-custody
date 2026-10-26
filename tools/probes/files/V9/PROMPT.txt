@@ -1,0 +1,2 @@
+== session ==
+Do these three things in order and report exactly what happened for each, including any error or denial text. Do not retry anything. 1. Run the Bash command: echo probe-v9-bash. 2. Use the Write tool to create the file probe-v9-write.txt with the content x. 3. Wait until I say "config edited", then use the Read tool to read the file probe-v9-secret.txt.
