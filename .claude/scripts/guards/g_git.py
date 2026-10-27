@@ -878,7 +878,9 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
         i += 1
     if no_verify:
         return deny(G, "no-verify", "git push --no-verify skips the pre-push hook (report §5.9)")
-    # who may push at all
+    # NO agent pushes, the registered conductor included (review fixes D3): the push is made by a human, or by the Keeper inside the
+    # human-started `loopctl run`, which does not go through this hook. The checks below only choose the more specific message and rule id
+    # for a conductor; whatever they let through is denied at the end.
     if ctx.kind != "conductor":
         who = "an engineer or critic" if ctx.is_subagent else "this session"
         return deny(G, "push", "git push is a remote write: agents never push (humans push at checkpoints, or loopctl does with the bot "
@@ -921,7 +923,8 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
         if not m or not FEAT_RE.match(re.sub(r"^refs/heads/", "", m.group(1))):
             return deny(G, "push-force", "--force-with-lease needs an explicit <feat/ref>:<expected-sha> (a bare lease compares with the last fetch, "
                         "report §10.3)")
-    return None
+    return deny(G, "push", "git push is a remote write: agents never push, the conductor included. Run it yourself in a terminal (or with `!` at L0/L1); "
+                "`pr_prepare.py` prints the exact commands for the delivery mode")
 
 
 def _refspec_ok(ctx: Ctx, spec: str, branch: Optional[str]) -> Optional[Decision]:

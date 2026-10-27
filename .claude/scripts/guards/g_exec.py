@@ -32,6 +32,8 @@ from . import g_file, paths
 from .invoke import Inv
 from .lib import Ctx, Decision, deny
 
+from kitlib import loopctl_table  # noqa: E402  (guards.lib puts the scripts directory on sys.path)
+
 G = "guard-exec"
 
 CLAUDE_NAMES = {"claude", "claude-code", "claude.exe", "claude-code.exe", "claude-bg", "ccr", "claude-flow"}
@@ -57,23 +59,36 @@ EXEC_API_RE = re.compile(r"(os\.system|os\.popen|os\.exec|os\.spawn|subprocess|c
 CRED_FILE_RE = re.compile(r"(^|/)(\.env\.(production|prod|staging|live)(\..*)?|id_(rsa|ed25519|ecdsa|dsa)|[^/]*\.(pem|p12|pfx|jks)|\.netrc|\.git-credentials|"
                           r"\.pypirc|\.npmrc|(private|secret|server|tls|ssl|signing|jwt|client|service|deploy)[^/]*\.key)$|/(secrets?|keys|certs|ssl|tls|private)/[^/]*\.key$", re.I)
 CRED_DIR_RE = re.compile(r"(^|/)(\.aws|\.ssh|\.kube|\.azure|\.gnupg|\.config/gh|\.config/gcloud|\.docker)(/|$)", re.I)
-KIT_INTERNALS_RE = re.compile(r"(\b(from|import)\s+(kitlib|guards|doctorlib)\b|\brequire\(['\"][^'\"]*(kitlib|guards)|register_session|unregister_session|clear_halt|set_halt|"
+KIT_INTERNALS_RE = re.compile(r"(\b(from|import)\s+(kitlib|guards|doctorlib)\b|\brequire\(['\"][^'\"]*(kitlib|guards)|(import_module|__import__)\s*\(\s*['\"](kitlib|guards|doctorlib)|"
+                              r"register_session|unregister_session|clear_halt|set_halt|"
                               r"acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|RunState\b|loopctl/(sessions|run\.json|HALT|lock|nonces|taint|events))", re.I)
+# What an agent-authored SCRIPT FILE may not name (D1 item 6). Narrower than KIT_INTERNALS_RE: the kit's own tests legitimately `import kitlib`, so a file
+# is judged by the writers of run state only. A typo guard like the rest of this module; the sandbox denyWrite on the registry is the real stop.
+STATE_WRITE_RE = re.compile(r"(register_session|unregister_session|clear_halt|set_halt|acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|"
+                            r"loopctl/(sessions|run\.json|HALT|lock|nonces))", re.I)
+# Code that imports loopctl itself and calls into it: the guard cannot classify a call that never goes through the command line (D11 item 7)
+LOOPCTL_IMPORT_RE = re.compile(r"(\b(from|import)\s+loopctl\b|(import_module|__import__)\s*\(\s*['\"]loopctl|require\(['\"][^'\"]*loopctl)", re.I)
+LOOPCTL_CALL_RE = re.compile(r"\b(main|Loop|Driver|State|approve|approve_plan|approve_item|cmd_approve|cmd_resume|set_status|advance)\b")
+MAX_IMPORT_SCAN = 10
 OBFUSCATION_RE = re.compile(r"(\b(exec|eval|compile)\s*\(|\bFunction\s*\(|new\s+Function|__import__|\bvm\.run)", re.I)
 DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from|zlib|decompress|rot13|codecs\.decode|\bchr\b|String\.fromCharCode|"
                        r"\\x[0-9a-f]{2}|bytes\.fromhex|marshal|pickle)", re.I)
 
-# Kept in step with `loopctl/cli.py` (READ_COMMANDS, FLAG_READ, WRITE_FLAGS); tests/loopctl/test_guard_alignment.py compares them.
-LOOPCTL_READ = {"validate", "status", "render", "doctor", "audit", "report", "help", "--help", "-h", "version", "--version", "retro", "harness", "gaps", "merge-class"}
-LOOPCTL_FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
-                     "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake"),
-                     "parallel": ("check", "status", "leases", "--dry-run"), "calibration": ("report", "scan"),
-                     "remote-lock": ("status",), "claim": ("list", "show"), "manifest": ("show", "verify")}
-# a flag that makes a command a write even when a read flag is also present (`migrate-plan --check --write`)
-LOOPCTL_WRITE_FLAGS = ("--apply", "--write", "--force")
+# Who may run which loopctl command is `kitlib/loopctl_table.py`: the same table `loopctl/cli.py` uses (review fixes D1b, D3, D11).
 
-HUMAN_APPLY_SCRIPTS = {"migrate.py", "init_project.py"}
 HUMAN_APPLY_FLAGS = {"--apply", "--resolved", "--take-kit"}
+# The kit's human-run apply steps (Phase 9 and 11a, GD-8): script basename -> (a path fragment the script's real path must contain, or "" for none;
+# the flags that make it act; the positional word that does). They also refuse inside a Claude Code session (humanonly.py), a tripwire that
+# `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` passes; this table is what denies the agent that does that. Generic names (labels.py, setup.sh) need
+# the kit's directory in their real path, so a project's own setup.sh is not caught.
+HUMAN_APPLY = {
+    "migrate.py": ("", HUMAN_APPLY_FLAGS, ()), "init_project.py": ("", HUMAN_APPLY_FLAGS, ()),
+    "bootstrap_config.py": ("", frozenset(), ("apply",)),
+    "apply-boundary.sh": ("", frozenset({"--apply"}), ()), "apply-labels.sh": ("", frozenset({"--apply"}), ()),
+    "verify-boundary.sh": ("", frozenset({"--run"}), ()),
+    "boundary.py": ("github/", frozenset({"--apply", "--run"}), ()), "labels.py": ("github/", frozenset({"--apply"}), ()),
+    "setup.sh": (".claude/bootstrap/", frozenset({"--apply"}), ()),
+}
 
 NPX_DEV = {"tsc", "eslint", "prettier", "jest", "vitest", "mocha", "playwright", "cypress", "tsx", "ts-node", "next", "vite", "nuxt", "astro",
            "remix", "nx", "turbo", "prisma", "drizzle-kit", "tailwindcss", "postcss", "esbuild", "rollup", "webpack", "babel", "nodemon",
@@ -129,10 +144,66 @@ def check_bash(ctx: Ctx) -> Optional[Decision]:
             d = _inline(ctx, InlineCode(sf.lang, content, sf.inv, False, " ".join(sf.inv.args), True))
             if d:
                 return d
+            if sf.lang == "python":
+                for helper, text in _agent_authored_imports(sf.path, content, ana.vfs):
+                    d = _inline(ctx, InlineCode("python", text, sf.inv, False, "", True))
+                    if d:
+                        return d
         d = _script_file(ctx, sf, ana)
         if d:
             return d
     return None
+
+
+_IMPORT_RE = re.compile(r"^[ \t]*(?:from[ \t]+(\.*)([A-Za-z_][\w.]*)?[ \t]+import[ \t]+([\w, \t]+)|import[ \t]+([\w., \t]+))", re.M)
+
+
+def _import_candidates(script: str, text: str) -> List[str]:
+    """Paths of the local modules a Python source may import, from the script's own directory: `import a.b`, `from a import b`, `from . import b`."""
+    base = os.path.dirname(script)
+    out = []   # type: List[str]
+    for m in _IMPORT_RE.finditer(text):
+        mods = []   # type: List[str]
+        if m.group(4) is not None:
+            mods = [x.strip().split(" ")[0] for x in m.group(4).split(",") if x.strip()]
+        else:
+            dots, mod, names = m.group(1) or "", m.group(2) or "", m.group(3) or ""
+            if mod:
+                mods.append(mod)
+            for nm in names.split(","):
+                nm = nm.strip().split(" ")[0]
+                if nm and nm != "*":
+                    mods.append((mod + "." if mod else "") + nm)
+        for mod in mods:
+            rel = mod.replace(".", "/")
+            for cand in (rel + ".py", rel + "/__init__.py"):
+                out.append(os.path.normpath(os.path.join(base, cand)))
+    seen = set()   # type: Set[str]
+    return [c for c in out if not (c in seen or seen.add(c))]
+
+
+def _agent_authored_imports(script: str, text: str, vfs) -> List[Tuple[str, str]]:
+    """The agent-authored `.py` files a Python script imports from its own directory tree, transitively: at most MAX_IMPORT_SCAN files of 256 KB.
+    Best effort (a module found through sys.path tricks or a computed name is not seen); the sandbox is the real stop."""
+    found = []   # type: List[Tuple[str, str]]
+    todo = [(script, text)]
+    done = {os.path.normpath(script)}
+    while todo and len(found) < MAX_IMPORT_SCAN:
+        cur, body = todo.pop(0)
+        for cand in _import_candidates(cur, body):
+            if cand in done or len(found) >= MAX_IMPORT_SCAN:
+                continue
+            done.add(cand)
+            content = vfs.get(cand)
+            if content is None:
+                if not os.path.isfile(cand) or not paths.agent_authored(cand):
+                    continue
+                content = paths.safe_read(cand, 256 * 1024)
+            if content is None:
+                continue
+            found.append((cand, content))
+            todo.append((cand, content))
+    return found
 
 
 def _problem(ctx: Ctx, ana, p) -> Optional[Decision]:
@@ -192,15 +263,10 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     d = _loopctl(ctx, inv)
     if d:
         return d
-    # -- human-only apply steps (Phase 9): the upgrade and the project-settings writer change the kit's own instructions, hooks and settings (H6) --
-    if inv.args or raw_base:
-        named = [raw_base] + [_basename_lc(a) for a in inv.args[:3] if not a.startswith("-")]
-        if any(n in HUMAN_APPLY_SCRIPTS for n in named) and any(a in HUMAN_APPLY_FLAGS or a.split("=", 1)[0] in HUMAN_APPLY_FLAGS for a in inv.args):
-            return deny(G, "human-apply", "migrate.py and init_project.py change the kit's own instructions, scripts and settings (H6); their apply step is "
-                        "a human command: read the dry run, then run it yourself from a plain terminal")
-    if name.startswith("py-module:") and name[10:].split(".")[-1] in ("migrate", "init_project") and any(
-            a in HUMAN_APPLY_FLAGS or a.split("=", 1)[0] in HUMAN_APPLY_FLAGS for a in inv.args):
-        return deny(G, "human-apply", "python -m %s --apply changes the kit's own instructions, scripts and settings (H6): a human runs it from a plain terminal" % name[10:])
+    # -- human-only apply steps: the upgrade, the project-settings writer, the bootstrap config/labels/boundary/setup scripts (H6, GD-8) --
+    d = _human_apply(ctx, inv)
+    if d:
+        return d
     # -- the guards' own state CLI --
     if name in ("python", "python3") or re.match(r"python[0-9.]+$", name):
         for a in inv.args:
@@ -232,6 +298,58 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
         d = _subagent_only(ctx, inv)
         if d:
             return d
+    return None
+
+
+def _flag_hit(args: Sequence[str], flags) -> bool:
+    """`--flag`, `--flag=...`, or an unambiguous argparse abbreviation (`--ap`, three or more characters) of one of `flags`."""
+    for a in args:
+        if not a.startswith("--"):
+            continue
+        name = a.split("=", 1)[0]
+        if name in flags or (len(name) >= 3 and any(f.startswith(name) for f in flags)):
+            return True
+    return False
+
+
+def _human_apply(ctx: Ctx, inv: Inv) -> Optional[Decision]:
+    """A kit script that applies a change, called by name, by a path whose real file has that name (a symlink), or as `python -m <module>`."""
+    cands = []   # type: List[Tuple[str, List[str], List[bool]]]     # (script as written, its arguments, their dynamic flags)
+    if inv.raw and "/" in inv.raw or _basename_lc(inv.raw) in HUMAN_APPLY:
+        cands.append((inv.raw, list(inv.args), list(inv.dyn)))
+    seen = 0
+    for k, a in enumerate(inv.args):
+        if a.startswith("-"):
+            continue
+        cands.append((a, list(inv.args[k + 1:]), list(inv.dyn[k + 1:])))
+        seen += 1
+        if seen >= 3:
+            break
+    if inv.name.startswith("py-module:"):
+        cands.append((inv.name[10:].split(".")[-1] + ".py", list(inv.args), list(inv.dyn)))
+    for script, rest, rdyn in cands:
+        if not script:
+            continue
+        forms = {_basename_lc(script)}
+        real = ""
+        if "/" in script and "\x00" not in script:
+            try:
+                real = os.path.realpath(paths.lexical(script, inv.cwd, ctx.home)).replace(os.sep, "/")
+            except (OSError, ValueError):
+                real = ""
+            if real:
+                forms.add(_basename_lc(real))
+        for base in forms:
+            spec = HUMAN_APPLY.get(base)
+            if spec is None:
+                continue
+            need, flags, words = spec
+            if need and not any(need in x.replace(os.sep, "/").lower() for x in (script, real) if x) and "\x00" not in script:
+                continue
+            hit = _flag_hit(rest, flags) or any(w in rest for w in words) or any(rdyn)
+            if hit:
+                return deny(G, "human-apply", "%s applies a change to the kit's own instructions, scripts and settings, to the repository's labels and rulesets, or to a config "
+                            "plan (H6): its apply step is a human command. Read the dry run, then run it yourself from a plain terminal" % base)
     return None
 
 
@@ -353,59 +471,60 @@ def _env(inv: Inv) -> Optional[Decision]:
     return None
 
 
-def _loopctl_parse(inv: Inv):
-    """(command word, positional words after loopctl, flags) for a loopctl invocation, else None."""
+def _loopctl_rest(inv: Inv) -> Optional[Tuple[List[str], List[bool]]]:
+    """(the arguments after `loopctl`, their dynamic flags) for a loopctl invocation, else None."""
     args = inv.args
+    dyn = inv.dyn if len(inv.dyn) == len(args) else [False] * len(args)
     nm = inv.name
     if nm in ("loopctl", "loopctl.py"):
-        rest = list(args)
-    elif nm == "py-module:loopctl" or (nm.startswith("py-module:") and nm.split(":")[1].startswith("loopctl")):
-        rest = list(args)
-    elif re.match(r"^(python[0-9.]*|pypy[0-9.]*)$", nm):
+        return list(args), list(dyn)
+    if nm.startswith("py-module:") and nm.split(":")[1].startswith("loopctl"):
+        return list(args), list(dyn)
+    if re.match(r"^(python[0-9.]*|pypy[0-9.]*)$", nm):
         for k, a in enumerate(args):
             if re.search(r"(^|/)loopctl(\.py|/__main__\.py)?/?$", a) and not a.startswith("-"):
-                rest = args[k + 1:]
-                break
-        else:
-            return None
-    else:
+                return list(args[k + 1:]), list(dyn[k + 1:])
+    return None
+
+
+# subcommands whose class depends on a word the guard must be able to read: a run-time-computed word there is treated as a human step
+_DYNAMIC_SENSITIVE = frozenset({"approve", "reconcile", "parallel", "migrate-plan", "remote-lock", "claim", "resume"})
+
+
+def loopctl_classify(inv: Inv) -> Optional[Tuple[str, str, Optional[str]]]:
+    """None if `inv` is not a loopctl invocation, else `loopctl_table.classify` of its arguments: ("read"|"write"|"human", sub, action).
+    A word the guard cannot read (`$x`, `$(...)`) in the command position, or anywhere in a command whose class depends on its words,
+    makes the invocation a human step (fail closed)."""
+    parsed = _loopctl_rest(inv)
+    if parsed is None:
         return None
-    pos = [a for a in rest if not a.startswith("-")]
-    first = next((k for k, a in enumerate(rest) if not a.startswith("-")), len(rest))
-    # loopctl takes no option before the command except --help/--version; anything else there is not a clean invocation
-    odd = [a for a in rest[:first] if a not in ("-h", "--help", "--version")]
-    flags = [a for a in rest[first:] if a.startswith("-")]
-    if odd:
-        flags.append("--force")      # poison: treated as a write (loopctl itself refuses such an invocation)
-    return (pos[0].lower() if pos else ""), pos, flags
+    rest, dyn = parsed
+    cls, sub, action = loopctl_table.classify(rest)
+    first = next((k for k, a in enumerate(rest) if not a.startswith("-")), None)
+    if cls != "read" and any(dyn) and ((first is not None and dyn[first]) or sub in _DYNAMIC_SENSITIVE):
+        return "human", sub, action
+    return cls, sub, action
 
 
 def loopctl_is_read(inv: Inv) -> Optional[bool]:
-    """None if `inv` is not a loopctl invocation; True if it is a read-only loopctl command; False if it may write state.
-
-    The command is the first word that does not start with `-` (loopctl accepts no option with a separate value before it, so this
-    is the word loopctl itself runs). A read flag only counts when no write flag is present."""
-    parsed = _loopctl_parse(inv)
-    if parsed is None:
-        return None
-    sub, pos, flags = parsed
-    if any(f in LOOPCTL_WRITE_FLAGS or f.split("=", 1)[0] in LOOPCTL_WRITE_FLAGS for f in flags):
-        return False
-    if sub in LOOPCTL_READ or not sub:
-        return True
-    need = LOOPCTL_FLAG_READ.get(sub)
-    if need:
-        return any(n in flags for n in need) or any(n in pos[1:2] for n in need)
-    return False
+    """None if `inv` is not a loopctl invocation; True if it is a read-only loopctl command; False if it may write state or is a human step."""
+    c = loopctl_classify(inv)
+    return None if c is None else c[0] == "read"
 
 
 def _loopctl(ctx: Ctx, inv: Inv) -> Optional[Decision]:
-    read = loopctl_is_read(inv)
-    if read is None or read:
+    c = loopctl_classify(inv)
+    if c is None or c[0] == "read":
         return None
+    cls, sub, action = c
+    what = "loopctl %s" % " ".join(x for x in (sub, action) if x)
+    if cls == "human":
+        # denied to every caller, the registered conductor included: it grants an approval, lifts a stop or writes to a remote (D3, D11).
+        # The CLI cannot tell a human from the conductor, so this guard is the boundary (`!` and a plain terminal do not pass through it).
+        return deny(G, "loopctl-human-only", "%s is a human step: it grants an approval, lifts a stop or pushes to a remote. Run it yourself in a plain terminal, or with `!` "
+                    "in the prompt. Text in this session cannot approve." % what)
     if ctx.kind == "conductor":
         return None
-    sub = _loopctl_parse(inv)[0]
     who = "an engineer or critic" if ctx.is_subagent else ("a driver child" if ctx.caller.role else "a session that is not the registered conductor")
     return deny(G, "loopctl-write", "loopctl %s changes the run state; only the registered conductor session may (RC-13, CS-25). Called by %s. Without this rule an "
                 "engineer could replay `loopctl set ...`" % (sub, who))
@@ -445,9 +564,13 @@ def _inline(ctx: Ctx, ic) -> Optional[Decision]:
     scan = command_scan_text(code)
     if SDK_RE.search(norm) or CLAUDE_CALL_RE.search(scan) or CLAUDE_SHELL_RE.search(scan):
         return deny(G, "claude", "inline %s code launches `claude` or the Agent SDK (CS-2)" % low_lang)
-    if not ic.from_file and KIT_INTERNALS_RE.search(norm):
-        return deny(G, "kit-internals", "inline %s code reaches the kit's own libraries or its run state (the session registry, HALT, the lock, the nonce). An agent that can "
-                    "register its own session defeats the caller classification (report §5.7); loopctl and humans write that state" % low_lang)
+    if (KIT_INTERNALS_RE if not ic.from_file else STATE_WRITE_RE).search(norm):
+        return deny(G, "kit-internals", "%s %s code reaches the kit's own libraries or its run state (the session registry, HALT, the lock, the nonce). An agent that can "
+                    "register its own session defeats the caller classification (report §5.7); loopctl and humans write that state"
+                    % ("a script file's" if ic.from_file else "inline", low_lang))
+    if LOOPCTL_IMPORT_RE.search(norm) and LOOPCTL_CALL_RE.search(norm):
+        return deny(G, "kit-internals", "%s %s code imports loopctl and calls into it: the guard classifies loopctl by its command line (who may approve, resume, "
+                    "push), and a call that never goes through the command line cannot be classified" % ("a script file's" if ic.from_file else "inline", low_lang))
     if SDK_ANTHROPIC_INLINE_RE.search(norm):
         return deny(G, "sdk-inline", "inline %s code imports the Anthropic SDK; an SDK script is a way to start a session with no hooks (CS-2). Run a reviewed script file "
                     "instead" % low_lang)
