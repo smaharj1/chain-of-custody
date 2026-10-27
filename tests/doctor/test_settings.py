@@ -8,8 +8,11 @@ import unittest
 from doctorlib import levelcalc, settings
 
 from .helpers import BoundaryCase, run_doctor
+from .test_level_caps import template_filesystem
 
-SANDBOX_OK = {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False, "excludedCommands": []}}
+# fail-closed and with the shipped template's deny lists (D1: the whole H6 write set and the session registry)
+SANDBOX_OK = {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False, "excludedCommands": [],
+                          "filesystem": template_filesystem()}}
 
 
 class SettingsCase(BoundaryCase):

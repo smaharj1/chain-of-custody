@@ -11,8 +11,9 @@ import unittest
 
 from kitlib import levels, runstate
 
-from doctorlib import github, levelcalc
+from doctorlib import github, guardchecks, levelcalc  # noqa: F401  guardchecks adds the guards cap, as doctor.py's import does
 from doctorlib.model import run_checks
+from guards import wiring
 
 from . import ghfixtures as gf
 from .helpers import BoundaryCase, KIT_VERSION_V2, config_text
@@ -34,8 +35,29 @@ def filled_codeowners():
 EVIDENCE = {"schema": "evidence.v1", "fixture_runs": [{"id": "r1", "clean": True}, {"id": "r2", "clean": True}, {"id": "r3", "clean": True}],
             "real_feature": {"id": "feat-1", "completed": True}, "attested_by": "A. Maintainer", "attested_at": "2026-10-26"}
 
-SETTINGS = {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False, "excludedCommands": []},
-            "permissions": {"deny": ["WebFetch", "WebSearch", "Workflow", "mcp__*__run_script", "mcp__*deploy*"]}}
+
+def template_filesystem():
+    """The deny lists of the shipped sandbox template: what an L4/L5 install merges (D1: the whole H6 write set plus the session registry)."""
+    from tests import REPO_ROOT
+    with open(os.path.join(REPO_ROOT, ".claude", "templates", "security", "sandbox.settings.json"), "r", encoding="utf-8") as fh:
+        fs = json.load(fh)["sandbox"]["filesystem"]
+    return {"denyRead": fs["denyRead"], "denyWrite": fs["denyWrite"]}
+
+
+def guard_manifest():
+    from tests import REPO_ROOT
+    with open(os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "hooks.manifest.json"), "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+# the v2 guards are wired (guards.wiring passes), as they must be for L2 and above
+GUARD_MANIFEST = guard_manifest()
+WIRED = wiring.build_settings(json.loads(GUARD_MANIFEST))
+SANDBOX_BASE = {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False, "excludedCommands": []}
+SETTINGS = {"sandbox": dict(SANDBOX_BASE, filesystem=template_filesystem()),
+            "permissions": {"allow": WIRED["permissions"]["allow"],
+                            "deny": ["WebFetch", "WebSearch", "Workflow", "mcp__*__run_script", "mcp__*deploy*"]},
+            "hooks": WIRED["hooks"]}
 
 BASE_CONFIG = {"autonomy_level": "L5", "bot": {"kind": "github-app", "login": "acme-bot[bot]", "id": "123"},
                "sandbox_verified": "2026-10-26", "managed_settings_verified": "2026-10-26", "promotion_attested": "2026-10-26",
@@ -48,6 +70,7 @@ class Ready(BoundaryCase):
     def ready(self, config_edit=None, files_edit=None, gh_fx=None, evidence=True, loopctl=True, nonce=True, kit_version=KIT_VERSION_V2, claude="2.1.305",
               origin="https://github.com/acme/widgets.git", reach=False, watchdog=True):
         files = {".claude/settings.json": json.dumps(SETTINGS), ".github/CODEOWNERS": filled_codeowners(), ".gitignore": ".env*\n!.env.example\n",
+                 ".claude/scripts/guards/hooks.manifest.json": GUARD_MANIFEST,
                  ".claude/scripts/loopctl/__main__.py": "" if loopctl else None}
         if not loopctl:
             del files[".claude/scripts/loopctl/__main__.py"]
@@ -114,7 +137,8 @@ class BaselineAndOutOfTheBox(Ready):
     def test_every_cap_prints_a_reason_even_when_not_binding(self):
         repo, ctx = self.ready()
         eff, _ = self.level(ctx)
-        self.assertEqual([c.name for c in eff.caps], ["prerequisites", "credentials", "sandbox", "mcp", "b5-deploy-surface", "platform", "evidence", "version"])
+        self.assertEqual([c.name for c in eff.caps], ["prerequisites", "credentials", "sandbox", "mcp", "b5-deploy-surface", "platform", "evidence", "version",
+                                                     "guards"])
         self.assertTrue(all(c.reason for c in eff.caps))
 
 
@@ -296,7 +320,7 @@ class SandboxListsEndToEnd(Ready):
     """GT-12 through the real `sandbox.deny-paths` check: lists that miss the kit's paths cap the level at L3; no lists at all do not."""
 
     def with_lists(self, deny_read, deny_write):
-        sandbox = dict(SETTINGS["sandbox"], filesystem={"denyRead": deny_read, "denyWrite": deny_write})
+        sandbox = dict(SANDBOX_BASE, filesystem={"denyRead": deny_read, "denyWrite": deny_write})
         return {".claude/settings.json": json.dumps(dict(SETTINGS, sandbox=sandbox))}
 
     def test_lists_that_miss_the_paths_cap_at_l3(self):
@@ -307,16 +331,31 @@ class SandboxListsEndToEnd(Ready):
         self.assertEqual(eff.effective, 3)
 
     def test_complete_lists_do_not_cap(self):
-        repo, ctx = self.ready(files_edit=self.with_lists(["~/.aws", "~/.ssh", "~/.config/gh", "~/.kube", ".env.production"], [".git/hooks", ".git/config", ".git/info"]))
+        repo, ctx = self.ready(files_edit=self.with_lists(["~/.aws", "~/.ssh", "~/.config/gh", "~/.kube", ".env.production"], template_filesystem()["denyWrite"]))
         eff, res = self.level(ctx)
         self.assertEqual([r.status for r in res if r.id == "sandbox.deny-paths"], ["pass"])
         self.assertEqual(eff.effective, 5, eff.explain())
 
-    def test_no_lists_at_all_is_unknown_and_does_not_cap(self):
-        repo, ctx = self.ready()
+    def test_only_the_three_git_directories_still_cap_at_l3(self):
+        # the pre-D1 list: the rest of the H6 write set (scripts, hooks, settings, CI) stays writable to a sandboxed command
+        repo, ctx = self.ready(files_edit=self.with_lists(["~/.aws", "~/.ssh", "~/.config/gh", "~/.kube", ".env.production"],
+                                                          [".git/hooks", ".git/config", ".git/info", ".git/loopctl/sessions"]))
+        eff, res = self.level(ctx)
+        self.assertEqual([r.status for r in res if r.id == "sandbox.deny-paths"], ["fail"])
+        self.assertEqual([r.status for r in res if r.id == "sandbox.registry-path"], ["pass"])
+        self.assertEqual(eff.effective, 3, eff.explain())
+
+    def test_no_lists_at_all_leaves_deny_paths_unknown_but_the_registry_row_caps(self):
+        # "unknown" does not cap (GT-12), but with no denyWrite the session registry is writable, and at L5 that row fails (D1 item 3)
+        sandbox = {".claude/settings.json": json.dumps(dict(SETTINGS, sandbox=dict(SANDBOX_BASE)))}
+        repo, ctx = self.ready(files_edit=sandbox)
         eff, res = self.level(ctx)
         self.assertEqual([r.status for r in res if r.id == "sandbox.deny-paths"], ["unknown"])
-        self.assertEqual(eff.effective, 5, eff.explain())
+        self.assertEqual([r.status for r in res if r.id == "sandbox.registry-path"], ["fail"])
+        self.assertEqual(self.binding(eff).get("sandbox"), 3, eff.explain())
+        cap = next(c for c in eff.caps if c.name == "sandbox")
+        self.assertIn("sandbox.registry-path", cap.reason)
+        self.assertNotIn("sandbox.deny-paths", cap.reason)
 
 
 class DeployOnMergeRefusesL5(Ready):
