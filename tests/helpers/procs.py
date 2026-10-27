@@ -46,8 +46,15 @@ class ProcessTracker(object):
         self._procs = []
 
 
+MIN_WAIT_S = 30.0
+
+
 def wait_for(predicate, timeout: float = 5.0, interval: float = 0.02) -> bool:
-    end = time.time() + timeout
+    """Poll until `predicate()` is true; True as soon as it is. The wait is never shorter than MIN_WAIT_S: it returns the moment the
+    thing happens, so a generous limit costs nothing when all is well and keeps a loaded machine (a pid file that takes seconds to
+    appear while 10 test processes start 600 programs a second) from failing a test that is right. Do not use it to assert that
+    something does NOT happen in time."""
+    end = time.time() + max(timeout, MIN_WAIT_S)
     while time.time() < end:
         if predicate():
             return True

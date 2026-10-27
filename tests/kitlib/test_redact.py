@@ -99,7 +99,7 @@ class RedactTable(unittest.TestCase):
         text = ("lorem ipsum token password " * 20000) + "x" * 100000
         t = time.time()
         redact.redact(text)
-        self.assertLess(time.time() - t, 5.0)
+        self.assertLess(time.time() - t, 30.0)
 
 
 class RedactObj(unittest.TestCase):

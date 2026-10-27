@@ -14,7 +14,7 @@ import unittest
 
 from tests import REPO_ROOT, SCRIPTS_DIR
 from tests.bootstrap import plain_env
-from tests.helpers import BaseTestCase, install_fake_gh, read_jsonl
+from tests.helpers import BaseTestCase, inproc, install_fake_gh, read_jsonl
 
 sys.path.insert(0, os.path.join(SCRIPTS_DIR, "github"))
 import repo_script as rs  # noqa: E402
@@ -141,7 +141,7 @@ class Cli(BaseTestCase):
         return root
 
     def gen(self, root, *args):
-        return subprocess.run([sys.executable, GEN, "--repo-dir", root] + list(args), env=plain_env(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        return inproc.run_script(GEN, ["--repo-dir", root] + list(args), env=plain_env(root))
 
     def test_out_path_rules(self):
         root = self.root()
@@ -208,7 +208,7 @@ class RunTheScript(BaseTestCase):
                 args.append(flag)
             else:
                 args += [flag, v]
-        p = subprocess.run([sys.executable, GEN, "--repo-dir", self.root] + args, env=self.env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        p = inproc.run_script(GEN, ["--repo-dir", self.root] + args, env=self.env())
         self.assertEqual(p.returncode, 0, p.stderr)
         return os.path.join(self.root, ".claude", "bootstrap", "setup.sh")
 

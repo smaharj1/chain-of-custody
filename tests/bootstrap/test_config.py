@@ -14,7 +14,7 @@ from kitlib import registry
 
 from tests import REPO_ROOT, SCRIPTS_DIR
 from tests.bootstrap import plain_env, session_env
-from tests.helpers import BaseTestCase
+from tests.helpers import BaseTestCase, inproc
 
 CLI = os.path.join(SCRIPTS_DIR, "bootstrap_config.py")
 REAL_CONFIG = os.path.join(REPO_ROOT, ".claude", "loop.config.md")
@@ -35,8 +35,9 @@ class Base(BaseTestCase):
         return root
 
     def cli(self, root, *args, env=None):
-        return subprocess.run([sys.executable, CLI, "--repo", root] + list(args), env=env or plain_env(root),
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+        # In this process (tests/helpers/inproc.py): what the script prints and does for these arguments is the subject, not the
+        # interpreter start. `test_runs_as_a_script_on_the_command_line` keeps one real `python3 bootstrap_config.py` call.
+        return inproc.run_script(CLI, ["--repo", root] + list(args), env=env or plain_env(root))
 
     def plan(self, root, *sets, name="config-plan.json"):
         args = ["plan", "--name", name]
@@ -196,6 +197,13 @@ class Apply(Base):
                 self.assertEqual(p.returncode, 2)
                 self.assertIn("refusing", p.stderr)
         self.assertEqual(read(path), before)
+
+    def test_runs_as_a_script_on_the_command_line(self):
+        root = self.root()
+        p = subprocess.run([sys.executable, CLI, "--repo", root, "plan", "--set", "solo_maintainer=true"], env=plain_env(root),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("H6", p.stdout)
 
     def test_plan_is_allowed_inside_a_session(self):
         root = self.root()

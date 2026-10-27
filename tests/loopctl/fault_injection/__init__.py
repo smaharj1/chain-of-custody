@@ -30,7 +30,7 @@ from loopctl import common, driver, gates, launch
 from loopctl.gates import GateResult
 
 AGENT_NAMES = ("backend-engineer", "database-engineer", "app-engineer", "infra-engineer", "code-reviewer", "security-reviewer", "design-critic")
-TIMING = {"poll_s": 0.03, "stall_s": 1.5, "canary_wait_s": 3.0, "term_grace_s": 0.5, "beat_s": 0.1}
+TIMING = {"poll_s": 0.03, "stall_s": 6.0, "canary_wait_s": 12.0, "term_grace_s": 0.5, "beat_s": 0.1}      # generous: a healthy child is never mistaken for a stalled one on a loaded machine
 BASE_CFG = {"loopctl_tier2": "true", "delivery": "local", "runner": "driver", "run_budget_usd": "10", "verify_tests": "python3 -m unittest",
             "security_review": "off", "max_retries_per_item": "2"}
 

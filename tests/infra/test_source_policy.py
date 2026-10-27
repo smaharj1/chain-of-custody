@@ -10,6 +10,7 @@ import sys
 from infra import source_policy
 
 from tests import REPO_ROOT
+from tests.helpers import inproc
 
 from .helpers import BASE_FILES, FIXTURES, SOURCE_POLICY, TreeCase, write_tree
 
@@ -542,7 +543,9 @@ class Fixtures(TreeCase):
 
 
 class Cli(TreeCase):
-    def run_cli(self, *args):
+    def run_cli(self, *args, real=False):
+        if not real:
+            return inproc.run_script(SOURCE_POLICY, list(args))
         return subprocess.run([sys.executable, SOURCE_POLICY] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
     def test_exit_codes_and_json(self):
@@ -556,7 +559,7 @@ class Cli(TreeCase):
         self.assertIn("data.external", bad.stdout)
 
     def test_usage_error_is_two(self):
-        self.assertEqual(self.run_cli("--nope").returncode, 2)
+        self.assertEqual(self.run_cli("--nope", real=True).returncode, 2)       # the one real process: the exit code of a script on the command line
 
     def test_no_base_without_initial_is_a_failure(self):
         pr, _ = self.trees({})

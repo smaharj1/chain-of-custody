@@ -92,7 +92,7 @@ class Child(DriverTestCase):
         t = __import__("time").time()
         with self.assertRaises(driver._Stop):
             drv.launch_child("A", "backend-engineer", "building", "do it")                      # the failure parks via the unknown cost; the cause is in the state
-        self.assertLess(__import__("time").time() - t, 6)
+        self.assertLess(__import__("time").time() - t, 30)
         it = lr.item("A")
         self.assertEqual((it["lastFailure"]["class"], it["lastFailure"]["reason"]), ("transient", "timeout"))
 

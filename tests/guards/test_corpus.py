@@ -20,6 +20,7 @@ import json
 import os
 import unittest
 
+from tests.helpers import gitfast
 from tests.guards.harness import CORPUS_DIR, Fixtures, evaluate_row
 
 FILES = ["git.json", "file.json", "infra.json", "exec.json", "critic.json", "callers.json", "adversarial.json", "adversarial2.json", "adversarial3.json",
@@ -30,9 +31,11 @@ class CorpusTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.fx = Fixtures()
+        gitfast.install()               # the guards ask git read-only questions (toplevel, branch); tests/helpers/gitfast.py answers them
 
     @classmethod
     def tearDownClass(cls) -> None:
+        gitfast.uninstall()
         cls.fx.cleanup()
 
     def run_file(self, name: str) -> None:

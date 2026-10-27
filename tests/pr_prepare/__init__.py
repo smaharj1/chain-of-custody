@@ -141,6 +141,10 @@ class CopiedRepo(TempRepo):
 
 
 class FeatureCase(BaseTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.fast_git()
+
     def make_feature(self, config: Optional[Mapping[str, Any]] = None, report: Optional[str] = GOOD_REPORT, reports: Optional[List[str]] = None,
                      files: Optional[Dict[str, str]] = None, base_files: Optional[Dict[str, str]] = None) -> TempRepo:
         """A feature repo. The default one is built once per process and copied."""

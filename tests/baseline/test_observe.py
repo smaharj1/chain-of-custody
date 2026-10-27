@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 from tests.baseline import BASELINE_DIR, load_tool
-from tests.helpers import BaseTestCase, clean_env, read_jsonl
+from tests.helpers import BaseTestCase, clean_env, inproc, read_jsonl
 
 OBSERVE = os.path.join(BASELINE_DIR, "observe.py")
 AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP"  # assembled so no secret-shaped literal sits in the repo
@@ -17,9 +17,7 @@ GH_TOKEN = "gh" + "p_" + "A1b2C3d4" * 5
 class Observe(BaseTestCase):
     def run_hook(self, stdin, *args, env_extra=None, home=None):
         env = clean_env(home=home or self.tmpdir("obs-home-"), extra=env_extra)
-        proc = subprocess.run([sys.executable, OBSERVE] + list(args), input=stdin.encode("utf-8"),
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=self.tmpdir())
-        return proc
+        return inproc.run_script(OBSERVE, list(args), env=env, cwd=self.tmpdir(), stdin=stdin, text=False)
 
     def test_appends_one_redacted_line_per_event_and_prints_nothing(self):
         log = os.path.join(self.tmpdir(), "sub", "obs.jsonl")
