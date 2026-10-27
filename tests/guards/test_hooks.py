@@ -209,6 +209,7 @@ class SelfTestCommand(BaseTestCase):
 class StateCommands(BaseTestCase):
     def run_cli(self, args, cwd, env=None):
         e = clean_env(cwd)
+        e.pop("CLAUDE_CODE_ENTRYPOINT", None)        # the suite may run inside Claude Code; the state commands refuse on either marker
         e.update(env or {})
         proc = subprocess.run([sys.executable, RUN] + args, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=e)
         return proc.returncode, proc.stdout.decode(), proc.stderr.decode()
@@ -224,9 +225,15 @@ class StateCommands(BaseTestCase):
 
     def test_state_commands_refuse_inside_claude_code(self) -> None:
         repo = self.repo()
-        rc, _, err = self.run_cli(["set-halt", "--reason", "x"], repo.path, {"CLAUDECODE": "1"})
-        self.assertEqual(rc, 2)
-        self.assertIn("human command", err)
+        for env in ({"CLAUDECODE": "1"}, {"CLAUDECODE": ""}, {"CLAUDE_CODE_ENTRYPOINT": "cli"}, {"CLAUDE_CODE_ENTRYPOINT": ""}):
+            with self.subTest(env=env):
+                for cmd in (["set-halt", "--reason", "x"], ["clear-halt"], ["register-session", "--session", "abc-1", "--role", "conductor"], ["unregister-session", "--session", "abc-1"]):
+                    rc, _, err = self.run_cli(cmd, repo.path, env)
+                    self.assertEqual(rc, 2, (cmd, err))
+                    self.assertIn("human-run", err)
+        st = runstate.RunState.for_path(repo.path)
+        self.assertFalse(st.is_halted())
+        self.assertIsNone(st.get_session("abc-1"))
 
     def test_bad_session_id_is_refused(self) -> None:
         repo = self.repo()
