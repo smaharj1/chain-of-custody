@@ -815,7 +815,7 @@ def cmd_unattended(args: List[str], env: Mapping[str, str], out: Out) -> int:
         if raw is None or os.path.islink(_rel(a, a.facts)):
             raise UsageError("--facts: %s" % (problem or "a symbolic link"))
         try:
-            facts = promotion.parse_facts(raw)
+            facts = promotion.parse_facts(raw, origin="file:" + os.path.basename(a.facts))
         except ValueError as exc:
             raise UsageError("--facts: %s" % common.clean_text(exc, 160))
         res = promotion.evaluate(facts, promotion.bar_from_config(ctx.cfg), ctx.evidence_passed())

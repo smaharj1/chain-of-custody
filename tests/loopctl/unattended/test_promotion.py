@@ -124,6 +124,8 @@ class Cli(unittest.TestCase):
         self.assertIn("evidence gate", r.json["reasons"][0])
         self.assertIn("nothing was changed", r.json["note"])
         self.assertEqual(lr.repo.git("status", "--porcelain").replace("?? facts.json", "").strip(), before)
+        # UN-13: the CLI names where it read the facts; the file's own `source` is only a claim
+        self.assertEqual((r.json["stats"]["origin"], r.json["stats"]["claimed_source"]), ("file:facts.json", "github"))
         self.assertEqual(lr.ctl("unattended", "promotion").rc, 2)
         self.assertEqual(lr.ctl("unattended", "promotion", "--facts", "missing.json").rc, 2)
         os.symlink(os.path.join(lr.path, "facts.json"), os.path.join(lr.path, "link.json"))
