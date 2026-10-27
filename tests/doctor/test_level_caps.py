@@ -336,7 +336,7 @@ class EvidenceGatedKeys(Ready):
         self.assertClean(run_checks(ctx), "config.evidence-gate")
 
     def test_l3_needs_no_evidence(self):
-        repo, ctx = self.ready(evidence=False, config_edit=lambda c: c.update(autonomy_level="L3"))
+        repo, ctx = self.ready(evidence=False, config_edit=lambda c: (c.update(autonomy_level="L3"), c.pop("gates", None)))   # gates.g4: on is evidence-gated (4b)
         self.assertClean(run_checks(ctx), "config.evidence-gate")
 
     def test_v1_unattended_autonomy_is_gated_too(self):

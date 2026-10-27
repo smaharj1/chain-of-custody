@@ -46,6 +46,7 @@ DEFAULT_ROSTER = {
     "app-engineer": ENGINEER,
     "admin-app-engineer": ENGINEER,
     "infra-engineer": ENGINEER,
+    "acceptance-author": ENGINEER,      # Phase 4b: writes the tests (and stubs) the engineers are graded by, never the implementation
     "code-reviewer": CRITIC,
     "design-critic": CRITIC,
     "security-reviewer": CRITIC,
