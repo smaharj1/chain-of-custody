@@ -21,7 +21,8 @@ def _heldout_runner() -> str:
     atexit.register(shutil.rmtree, d, True)
     path = os.path.join(d, "run.py")
     with open(path, "w") as fh:
-        fh.write("import json, os\nprint(json.dumps({'results': json.load(open(os.path.join(os.environ['LOOPCTL_HELDOUT_DIR'], 'r.json')))}))\n")
+        fh.write("import json, os, sys\nd = os.environ['LOOPCTL_HELDOUT_DIR']\nprint(json.dumps({'results': json.load(open(os.path.join(d, 'r.json')))}))\n"
+                 "rc = os.path.join(d, 'rc')\nsys.exit(int(open(rc).read()) if os.path.exists(rc) else 0)\n")
     return path
 
 
@@ -61,6 +62,16 @@ class G3HeldOutDriver(GateCase):
         self.assertEqual(res["evidence"]["ac_results"]["AC-A-2"]["result"], "fail")
         self.assertIn("held-out 1/2", res["evidence"]["summary"])
         self.assertIn("gap +50%", res["evidence"]["summary"])
+
+    def test_an_all_pass_verdict_from_a_command_that_exits_non_zero_is_not_a_pass(self):
+        """UN-1 / GT-2: product code can print an all-pass JSON object (pytest echoes stdout on failure); the exit status is the part it cannot fake."""
+        d = self.built({"AC-A-1": "pass", "AC-A-2": "pass"})
+        with open(os.path.join(d, "rc"), "w") as fh:
+            fh.write("1")
+        res = self.run_gate("g3")
+        self.assertFails(res, "g3.heldout-failed")
+        self.assertEqual(res["failure_class"], "item")
+        self.assertIn("exited 1", " ".join(f["message"] for f in res["findings"]))
 
     def test_declared_but_missing_held_out_tests_fail_under_the_driver(self):
         self.built(None)

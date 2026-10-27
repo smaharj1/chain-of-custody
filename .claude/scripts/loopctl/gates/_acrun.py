@@ -76,11 +76,15 @@ def run_visible(ctx: Any, spec: Dict[str, Any], phase: str, command: Optional[st
             pass
     stage, text, _f = _lib.run_command(ctx, "acceptance", command or spec["cmd"], env)
     allowed = allowed_for(ctx, visible_files(ctx, spec)) if spec.get("visible") else None
-    parsed = _acparse.parse(text, ids, allowed)
+    # A JSON `pass` may stand alone only where the output is a documented JSON harness: the G3 visible ("green") and held-out runs, and G2's
+    # green-on-the-base run of a characterization item. Anywhere else JSON can only add failures (_acparse module docstring).
+    json_pass = phase in ("green", "visible", "heldout") or (phase == "red" and spec.get("class") == "characterization")
+    parsed = _acparse.parse(text, ids, allowed, allow_json_pass=json_pass)
     if spec.get("junit"):
         xml = _read_junit(ctx, spec["junit"])
         jp = _acparse.parse_junit(xml, ids, allowed) if xml else None
-        if jp is not None:
+        if jp is not None and jp.results:
+            parsed.source = "mixed" if parsed.results else "junit"
             for a, r in jp.results.items():
                 for t in r["tests"] or [""]:
                     parsed.add(a, r["verdict"], t)

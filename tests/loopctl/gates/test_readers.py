@@ -10,9 +10,13 @@ IDS = ["AC-A-1", "AC-A-2", "AC-A-10"]
 
 
 class AcParse(unittest.TestCase):
-    def v(self, text, ids=IDS):
-        p = _acparse.parse(text, ids)
+    def v(self, text, ids=IDS, **kw):
+        p = _acparse.parse(text, ids, **kw)
         return {a: r["verdict"] for a, r in p.results.items()}
+
+    def vj(self, text, ids=IDS):
+        """As a documented JSON harness reads it (G3 visible and held-out): a JSON pass may stand alone."""
+        return self.v(text, ids, allow_json_pass=True)
 
     def test_unittest_verbose_lines(self):
         out = ("test_ac_a_1_adds (tests.acceptance.test_a.T) ... ok\n"
@@ -104,17 +108,54 @@ Ran 3 tests in 0.001s
 
     def test_json_results_flat_and_per_item(self):
         flat = '{"results": {"AC-A-1": "pass", "AC-A-2": "fail", "AC-Z-9": "pass"}}'
-        self.assertEqual(self.v(flat), {"AC-A-1": "pass", "AC-A-2": "fail"})
+        self.assertEqual(self.vj(flat), {"AC-A-1": "pass", "AC-A-2": "fail"})
         nested = 'noise\n{\n "failed": 1,\n "results": {"A": {"AC-A-1": "pass", "AC-A-2": "red"}}\n}\nmore'
-        self.assertEqual(self.v(nested), {"AC-A-1": "pass", "AC-A-2": "fail"})
-        self.assertEqual(_acparse.parse(flat, IDS).source, "json")
+        self.assertEqual(self.vj(nested), {"AC-A-1": "pass", "AC-A-2": "fail"})
+        self.assertEqual(_acparse.parse(flat, IDS, allow_json_pass=True).source, "json")
 
     def test_a_harness_that_prints_a_failure_message_instead_of_a_verdict_word_has_failed(self):
         text = '{"failed": 2, "results": {"A": {"AC-A-1": "pass", "AC-A-2": "expected 201, got 500: boom", "AC-A-10": "passed 3 of 5 checks"}}}'
-        self.assertEqual(self.v(text), {"AC-A-1": "pass", "AC-A-2": "fail", "AC-A-10": "fail"})
+        self.assertEqual(self.vj(text), {"AC-A-1": "pass", "AC-A-2": "fail", "AC-A-10": "fail"})
 
     def test_json_garbage_falls_back_to_text(self):
         self.assertEqual(self.v('{"results": nope}\ntest_ac_a_1 (m.T) ... ok\n'), {"AC-A-1": "pass"})
+
+    # -- UN-1 / GT-2: a failure on any channel wins; JSON is advisory
+    def test_a_text_fail_beats_a_later_json_pass(self):
+        out = "test_ac_a_1_x (m.T) ... FAIL\nFAIL AC-A-2\n" + '{"results": {"AC-A-1": "pass", "AC-A-2": "pass"}}\n'
+        for kw in ({}, {"allow_json_pass": True}):
+            self.assertEqual(self.v(out, ["AC-A-1", "AC-A-2"], **kw), {"AC-A-1": "fail", "AC-A-2": "fail"})
+
+    def test_a_json_pass_first_does_not_hide_a_text_fail_after_it(self):
+        out = '{"results": {"AC-A-1": "pass"}}\nFAIL: test_ac_a_1_x (m.T)\ntest_ac_a_1_x (m.T) ... FAIL\n'
+        self.assertEqual(self.vj(out, ["AC-A-1"]), {"AC-A-1": "fail"})
+
+    def test_a_json_pass_for_a_criterion_no_text_line_names_counts_only_where_the_caller_allows_it(self):
+        out = '{"results": {"AC-A-1": "pass"}}\n'
+        self.assertEqual(self.v(out, ["AC-A-1"]), {})                                   # G6: absent, i.e. not executed
+        self.assertEqual(self.v(out, ["AC-A-1"], allow_json=False), {})
+        self.assertEqual(self.vj(out, ["AC-A-1"]), {"AC-A-1": "pass"})                   # G3 visible and held-out
+
+    def test_a_json_pass_never_upgrades_a_text_skip_or_error(self):
+        out = "test_ac_a_1_x (m.T) ... skipped 'no'\n" + '{"results": {"AC-A-1": "pass"}}\n'
+        self.assertEqual(self.vj(out, ["AC-A-1"]), {"AC-A-1": "skipped"})
+
+    def test_every_json_object_counts_and_a_failing_one_wins(self):
+        out = '{"results": {"AC-A-1": "pass"}}\nnoise\n{"results": {"AC-A-1": "fail"}}\n'
+        self.assertEqual(self.vj(out, ["AC-A-1"]), {"AC-A-1": "fail"})
+        out = '{"results": {"AC-A-1": "pass"}}\n{"other": 1}\n{\n "results": {"B": {"AC-A-2": "error"}}\n}\n'
+        self.assertEqual(self.vj(out, ["AC-A-1", "AC-A-2"]), {"AC-A-1": "pass", "AC-A-2": "error"})
+
+    def test_json_can_add_a_failure_to_a_criterion_the_text_passes(self):
+        out = "test_ac_a_1_x (m.T) ... ok\n" + '{"results": {"AC-A-1": "fail"}}\n'
+        p = _acparse.parse(out, ["AC-A-1"])
+        self.assertEqual(p.verdict("AC-A-1"), "fail")
+        self.assertEqual(p.source, "mixed")
+        self.assertEqual(_acparse.parse("test_ac_a_1_x (m.T) ... ok\n", ["AC-A-1"]).source, "text")
+
+    def test_json_off_means_text_only(self):
+        out = "test_ac_a_1_x (m.T) ... ok\n" + '{"results": {"AC-A-1": "fail"}}\n'
+        self.assertEqual(self.v(out, ["AC-A-1"], allow_json=False), {"AC-A-1": "pass"})
 
     def test_junit(self):
         xml = ('<testsuite><testcase classname="t.T" name="test_ac_a_1"/>'

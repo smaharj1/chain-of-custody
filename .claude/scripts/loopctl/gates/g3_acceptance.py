@@ -52,6 +52,13 @@ def run_heldout(ctx: Any, hdir: str, declared: bool) -> Tuple[List[Dict[str, Any
     if bad:
         findings.append(_lib.finding(bad[0], "error", "the held-out command could not be judged: %s" % stage.get("reason", "")))
         return findings, [bad[1]], None, None
+    rc = stage.get("exit_code")
+    if rc != 0:
+        # The parsed verdicts are product-reachable (a module can print an all-pass JSON object); the exit status of the held-out command is not
+        # something a printed line can fake once the run is over, so a non-zero exit is a failure whatever the output says (UN-1, GT-2).
+        findings.append(_lib.finding("g3.heldout-failed", "error", "the held-out command exited %s: a held-out run counts only when it exits 0 and every "
+                                     "criterion passes. %s" % ("with a signal" if rc is None else rc, _lib.tail(text, 160))))
+        return findings, ["item"], None, None
     if not hp.results:
         findings.append(_lib.finding("g3.heldout-not-executed", "error", "the held-out command reported no result for any criterion. %s" % _lib.tail(text, 160)))
         return findings, ["env"], None, None

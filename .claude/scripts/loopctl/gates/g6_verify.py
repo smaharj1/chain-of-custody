@@ -199,7 +199,7 @@ def run(ctx: Any) -> GateResult:
     # -- what verify alone does not prove
     spec = _lib.g3_spec(ctx.item)[0]
     allowed = _acrun.allowed_for(ctx, _acrun.visible_files(ctx, spec)) if spec["visible"] else None
-    parsed = _acparse.parse(_verify_output(res), ids, allowed)
+    parsed = _acparse.parse(_verify_output(res), ids, allowed, allow_json=False)   # G6 reads test lines only: JSON in verify output is product-reachable (UN-1)
     gates_rec = ctx.state_item.get("gates") if isinstance(ctx.state_item.get("gates"), dict) else {}
     ac_rec = ctx.state_item.get("ac") if isinstance(ctx.state_item.get("ac"), dict) else {}
     g3_fresh = isinstance(gates_rec.get("g3"), dict) and gates_rec["g3"].get("head") == _lib.head_of(ctx)
