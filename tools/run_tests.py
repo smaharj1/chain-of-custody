@@ -6,11 +6,15 @@ run concurrently. Each module runs in its own interpreter, exactly as `python3 -
 <module>` would, so modules cannot leak state into each other. Output of failing modules is
 printed in full; passing modules print nothing.
 
+Modules start longest-first, using the durations of the previous run (kept in the git common dir, never tracked),
+so one slow module does not start last and set the wall time.
+
 Usage: tools/run_tests.py [-j N]   (tools/test.sh calls this when given no arguments)
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -37,6 +41,36 @@ def discover_modules(root: str) -> list:
     return modules
 
 
+def timings_path(root: str) -> str:
+    try:
+        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=root, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True).stdout.strip()
+    except OSError:
+        return ""
+    return os.path.join(root, common, "kit-test-timings.json") if common else ""
+
+
+def load_timings(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return {k: float(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def save_timings(path: str, results: list) -> None:
+    if not path:
+        return
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({r[0]: round(r[4], 2) for r in results}, f, sort_keys=True)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
 def run_module(module: str) -> tuple:
     start = time.monotonic()
     proc = subprocess.run(
@@ -61,10 +95,15 @@ def main(argv=None) -> int:
     if not modules:
         print("no test modules found under tests/", file=sys.stderr)
         return 1
+    tpath = timings_path(REPO_ROOT)
+    previous = load_timings(tpath)
+    # Unknown (new) modules first: they may be slow, and running them early costs nothing.
+    order = sorted(modules, key=lambda m: -previous.get(m, float("inf")))
     start = time.monotonic()
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        results = list(pool.map(run_module, modules))
+        results = sorted(pool.map(run_module, order))
     elapsed = time.monotonic() - start
+    save_timings(tpath, results)
 
     failed = [r for r in results if not r[1]]
     for module, _, _, output, _ in failed:
