@@ -18,7 +18,7 @@
 - `.claude/agents/acceptance-author.md`: the separate, fresh-context agent that writes stubs, visible and held-out tests (engineer-class tools, never the implementation).
 - `.claude/templates/github/workflows/heldout.yml`, `heldout-sync.yml`, `mutation.yml`: TEMPLATES that pass `ci_lint` (no secret in a pull-request job: the held-out tests reach the job through the Actions cache, filled by a trusted job).
 - Config schema `kitlib/schema/4b-gates.json` (11 keys); `.claude/loop.config.md` and `examples/loop.config.md` regenerated.
-- Tests: `tests/loopctl/gates/` (14 modules, 270 tests, none above 6 s alone), including the Phase 4b exit criterion on the real hello-loop fixture. Whole suite 53 s here (48 s before this phase).
+- Tests: `tests/loopctl/gates/` (17 modules, 269 tests, none above 5 s alone), including the Phase 4b exit criterion on the real hello-loop fixture. Whole suite: 2059 tests, about 53 s on this machine under load (48 s before this phase).
 - Outside this phase's ownership, each for a stated reason (see Conductor): `kitlib/caller.py` (roster), `tests/test_frontmatter.py`, `tests/doctor/test_level_caps.py`, `tests/loopctl/__init__.py`, `tests/loopctl/test_gates.py`, `tests/loopctl/test_cli.py`.
 
 ## Upgrade impact
