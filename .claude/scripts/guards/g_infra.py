@@ -512,6 +512,10 @@ MUTATING_WORDS = {"create", "update", "delete", "remove", "put", "post", "send",
                   "enable", "disable", "configure", "provision", "scale", "migrate", "sync", "forward", "share", "transition", "close", "open"}
 
 
+# a tool that runs a command line or a script it is handed: the verb it performs is in an argument the guard cannot read
+GENERIC_EXEC_WORDS = {"call", "cli", "shell", "bash", "terminal", "eval"}
+
+
 def _split_words(s: str) -> List[str]:
     s = re.sub(r"([a-z])([A-Z])", r"\1_\2", s)
     return [w for w in re.split(r"[_\-\s]+", s.lower()) if w]
@@ -528,12 +532,22 @@ def check_mcp(ctx: Ctx) -> Optional[Decision]:
         return deny(G, "mcp", "%s: mcp__*__run_script and mcp__*deploy* are denied in a loop session; an MCP tool is a tool plane that can reach cloud "
                     "control planes (report §5.6, CO-39)" % tool)
     first = words[0] if words else ""
-    reads = bool(first) and any(first == p or first.startswith(p) for p in READ_PREFIXES) and first not in MUTATING_WORDS
-    mutating = any(w in MUTATING_WORDS for w in words) and not reads
+    # A tool is a read only when it starts with a read verb AND no word of its name is a mutating one (`check_and_apply`, `get_or_create`, `list_then_delete`
+    # are not reads; IN-10). "open" directly after the read verb is an adjective (`list_open_issues`).
+    tail = words[1:]
+    if tail[:1] == ["open"]:
+        tail = tail[1:]
+    reads = bool(first) and any(first == p or first.startswith(p) for p in READ_PREFIXES) and first not in MUTATING_WORDS and \
+        not any(w in MUTATING_WORDS or w in GENERIC_EXEC_WORDS for w in tail)
+    generic = any(w in GENERIC_EXEC_WORDS for w in words)
+    mutating = (any(w in MUTATING_WORDS for w in words) and not reads) or generic
     if ctx.is_subagent:
         if reads:
             return None
         return deny(G, "mcp", "%s: engineers and critics have no MCP mutation tools; add a read-only docs server on purpose instead (report §5.6)" % tool)
+    if generic:
+        return ask(G, "mcp", "%s runs a CLI command or script the guard cannot classify (`call_aws`, a shell, an eval tool): it reaches whatever the server's credentials reach. "
+                   "Confirm it is intended (report §5.6)" % tool)
     if mutating:
         return ask(G, "mcp", "%s looks like a mutating MCP tool (cloud, database or SaaS). Confirm it is intended (report §5.6)" % tool)
     return None

@@ -5,6 +5,9 @@
     wiring.py --write                 write .claude/settings.v2.json and the templates under .claude/templates/settings/
     wiring.py --check                 exit 1 if either differs from what the manifest generates (CI runs this)
     wiring.py --plugin                the plugin hooks.json content (Phase 9 reuses build_hooks with its own root)
+    wiring.py --sandbox-snippet       the sandbox denyWrite / Edit-deny lines with the ABSOLUTE git-dir paths of this checkout, to paste
+                                      into .claude/settings.local.json (writes nothing; needed in a linked worktree, where the git
+                                      directory is outside the project directory, D1)
 
 The manifest is the single source. `build_hooks` takes the root expression and the scripts directory so the same
 manifest wires a copy install (`$CLAUDE_PROJECT_DIR/.claude/scripts`) and a plugin (`${CLAUDE_PLUGIN_ROOT}/scripts`).
@@ -45,6 +48,13 @@ NO_PYTHON_BANNER = ("kit guards: python3 was not found, so the guards and the li
 # ---------------------------------------------------------------------------------------------------------------------
 # the deny block (report §7.2). A typo guard that works even in bypass mode (P25).
 
+# deploy-class MCP tools (IN-10). The same list is `.claude/templates/infra/mcp-deploy-deny.settings.json` and `templates/security/mcp-lockdown.settings.json`;
+# tests/guards/test_sandbox_template.py keeps the three equal. (A constant, not a file read: the doctor imports this module in a plugin install too.)
+MCP_DEPLOY_DENY = [
+    "mcp__*__run_script", "mcp__*deploy*", "mcp__*apply*", "mcp__*destroy*", "mcp__*terminate*", "mcp__*provision*", "mcp__*rollout*", "mcp__*change_set*",
+    "mcp__*__create_stack", "mcp__*__update_stack", "mcp__*__delete_stack",
+]
+
 DENY_BASELINE = [
     # infrastructure mutators (H4)
     "Bash(terraform apply:*)", "Bash(terraform destroy:*)", "Bash(terraform import:*)", "Bash(terraform state:*)", "Bash(terraform taint:*)",
@@ -72,8 +82,15 @@ DENY_BASELINE = [
     "Edit(.claude/agents/**)", "Edit(.claude/skills/**)", "Edit(.claude/commands/**)", "Edit(.github/workflows/**)", "Edit(.github/CODEOWNERS)",
     "Edit(.mcp.json)", "Edit(.claude-plugin/**)", "Edit(.git/hooks/**)", "Edit(.git/config)",
     # the MCP tool plane (§5.6) and Workflow (RC-17)
-    "mcp__*__run_script", "mcp__*deploy*", "Workflow",
+    *MCP_DEPLOY_DENY, "Workflow",
 ]
+
+# the rest of the H6 write set as Edit rules (D1): one list, `paths.SANDBOX_DENY_WRITE`, shared with the sandbox template and the doctor
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+from guards import paths as _paths  # noqa: E402
+
+DENY_BASELINE += [r for r in (_paths.sandbox_edit_rule(e) for e in _paths.SANDBOX_DENY_WRITE) if r not in DENY_BASELINE]
 
 ALLOW_EXAMPLE = [
     "Read", "Grep", "Glob", "Edit", "Write",
@@ -192,6 +209,19 @@ def build_templates(manifest: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def sandbox_snippet(cwd: str) -> Dict[str, Any]:
+    """The settings fragment that denies sandboxed writes to the git directory's hooks, config, info and the session registry by absolute path.
+    In a plain checkout the relative entries of the sandbox template already cover them; in a linked worktree `.git` is a file and only these do."""
+    from kitlib import gitutil
+    common = gitutil.common_dir(cwd)
+    if not common:
+        raise ValueError("not inside a git repository: %s" % cwd)
+    entries = [os.path.join(common, "hooks"), os.path.join(common, "config"), os.path.join(common, "info"), os.path.join(common, "loopctl", "sessions")]
+    ed = ["/" + e for e in entries]       # a permission rule spells an absolute path with a leading `//` [probe]
+    return {"sandbox": {"filesystem": {"denyWrite": entries}},
+            "permissions": {"deny": ["Edit(%s)" % ed[1]] + ["Edit(%s/**)" % e for e in ed[:1] + ed[2:]]}}
+
+
 def dumps(obj: Any) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
 
@@ -210,6 +240,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     g.add_argument("--write", action="store_true")
     g.add_argument("--check", action="store_true")
     g.add_argument("--plugin", action="store_true")
+    g.add_argument("--sandbox-snippet", action="store_true", dest="sandbox_snippet")
     ap.add_argument("--manifest", default=None)
     args = ap.parse_args(argv)
     manifest = load_manifest(args.manifest)
@@ -218,6 +249,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.plugin:
         sys.stdout.write(dumps(build_plugin_hooks(manifest)))
+        return 0
+    if args.sandbox_snippet:
+        try:
+            sys.stdout.write(dumps(sandbox_snippet(os.getcwd())))
+        except ValueError as exc:
+            sys.stderr.write("wiring: %s\n" % exc)
+            return 2
         return 0
     files = expected_files(manifest)
     if args.write:

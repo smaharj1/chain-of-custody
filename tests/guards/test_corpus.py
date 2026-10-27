@@ -10,6 +10,7 @@ Every row in tests/guards/corpus/*.json is `{caller, command or path, expected d
     loopctl.json    loopctl read, flag-read and write commands by caller, and under HALT (Phase 4a)
     callers.json    caller classification: roster, plugin prefix, registered and unknown sessions, --agent sessions
     adversarial.json  bypass attempts that cross guards: wrappers, quoting, env tricks, paths, symlinks, case
+    adversarial6.json the v1 hook bypass list closed under v2 (D10) and the human-run apply paths (GD-8)
     allow.json      ordinary development commands that must be allowed (the false-positive corpus)
 
 A deny row names the rule id, so a guard that denies for the wrong reason fails the test too.
@@ -24,7 +25,7 @@ from tests.helpers import gitfast
 from tests.guards.harness import CORPUS_DIR, Fixtures, evaluate_row
 
 FILES = ["git.json", "file.json", "infra.json", "exec.json", "critic.json", "callers.json", "adversarial.json", "adversarial2.json", "adversarial3.json",
-         "adversarial4.json", "adversarial5.json", "loopctl.json", "allow.json"]
+         "adversarial4.json", "adversarial5.json", "adversarial6.json", "loopctl.json", "allow.json"]
 
 
 class CorpusTests(unittest.TestCase):

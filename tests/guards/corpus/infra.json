@@ -170,5 +170,18 @@
 {"id":"mcp-009","caller":"engineer","tool":"mcp__github__delete_branch","input":{},"expect":"deny","rule":"guard-infra:mcp"},
 {"id":"mcp-010","caller":"engineer","tool":"mcp__aws__call_aws","input":{},"expect":"deny","rule":"guard-infra:mcp","why":"unknown verb: subagents fail closed"},
 {"id":"mcp-011","caller":"critic","tool":"mcp__notion__notion-update-page","input":{},"expect":"deny","rule":"guard-infra:mcp"},
-{"id":"mcp-012","caller":"conductor","tool":"mcp__aws__call_aws","input":{},"expect":"allow","why":"unclassifiable name in a main session: no opinion (the settings deny block and B2 are the stops)"}
+{"id":"mcp-012","caller":"conductor","tool":"mcp__aws__call_aws","input":{},"expect":"ask","rule":"guard-infra:mcp","why":"IN-10: a tool that runs a CLI line is asked in a main session (the verb is in an argument the guard cannot read)"},
+{"id":"mcp-013","caller":"conductor","tool":"mcp__aws__check_and_apply","input":{},"expect":"ask","rule":"guard-infra:mcp","why":"IN-10: a read verb first does not make `check_and_apply` a read"},
+{"id":"mcp-014","caller":"engineer","tool":"mcp__aws__check_and_apply","input":{},"expect":"deny","rule":"guard-infra:mcp","why":"IN-10: not a read, so a subagent is denied"},
+{"id":"mcp-015","caller":"conductor","tool":"mcp__db__get_or_create_table","input":{},"expect":"ask","rule":"guard-infra:mcp","why":"IN-10: a mutating word anywhere in the name"},
+{"id":"mcp-016","caller":"engineer","tool":"mcp__db__list_then_delete_rows","input":{},"expect":"deny","rule":"guard-infra:mcp","why":"IN-10"},
+{"id":"mcp-017","caller":"engineer","tool":"mcp__cloud__describe_and_terminate_instance","input":{},"expect":"deny","rule":"guard-infra:mcp","why":"IN-10"},
+{"id":"mcp-018","caller":"conductor","tool":"mcp__shell__run_cli","input":{},"expect":"ask","rule":"guard-infra:mcp","why":"IN-10: generic command execution"},
+{"id":"mcp-019","caller":"conductor","tool":"mcp__ops__terminal_eval","input":{},"expect":"ask","rule":"guard-infra:mcp","why":"IN-10: generic command execution"},
+{"id":"mcp-020","caller":"engineer","tool":"mcp__aws__call_aws","input":{},"expect":"deny","rule":"guard-infra:mcp","why":"IN-10: generic execution for a subagent"},
+{"id":"mcp-021","caller":"engineer","tool":"mcp__tracker__list_open_issues","input":{},"expect":"allow","why":"an adjective after the read verb is not a mutation"},
+{"id":"mcp-022","caller":"engineer","tool":"mcp__docs__validate_and_render_diagram","input":{},"expect":"allow","why":"validate/render: read-only words"},
+{"id":"mcp-023","caller":"engineer","tool":"mcp__github__get_issue","input":{},"expect":"allow","why":"plain read"},
+{"id":"mcp-024","caller":"conductor","tool":"mcp__github__get_issue","input":{},"expect":"allow","why":"plain read"},
+{"id":"mcp-025","caller":"conductor","tool":"mcp__aws__apply_changes","input":{},"expect":"ask","rule":"guard-infra:mcp","why":"asked by the guard; the settings deny block (mcp__*apply*) is the stop"}
 ]

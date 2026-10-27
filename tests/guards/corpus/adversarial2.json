@@ -86,5 +86,5 @@
 {"id":"adv2-085","caller":"conductor","cmd":"python3 .claude/scripts/guards/wiring.py --write","expect":"deny","rule":"guard-exec:guards-cli","why":"wiring --write regenerates H6 files; --check is read-only"},
 {"id":"adv2-085b","caller":"conductor","cmd":"python3 .claude/scripts/guards/wiring.py --check","expect":"allow"},
 {"id":"adv2-086","caller":"conductor","cmd":"python3 .claude/scripts/doctor.py --level","expect":"allow","why":"the doctor is read-only"},
-{"id":"adv2-087","caller":"conductor","cmd":"bash .claude/scripts/github/apply-boundary.sh --repo o/r --apply","expect":"allow","why":"known gap: the script refuses inside Claude Code itself (CLAUDECODE set)"}
+{"id":"adv2-087","caller":"conductor","cmd":"bash .claude/scripts/github/apply-boundary.sh --repo o/r --apply","expect":"deny","rule":"guard-exec:human-apply","why":"GD-8: the guard now denies the apply step (the script also refuses inside Claude Code, a tripwire that env -u passes)"}
 ]

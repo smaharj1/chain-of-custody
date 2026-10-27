@@ -234,5 +234,29 @@ class DoctorAcceptsTheTemplates(BaseTestCase):
         self.assertTrue(all(r.status == "pass" for r in res), res)
 
 
+def _kit_major():
+    try:
+        with open(os.path.join(REPO_ROOT, ".claude", "KIT_VERSION"), "r", encoding="utf-8") as fh:
+            m = re.match(r"^(\d+)\.", fh.readline().strip())
+        return int(m.group(1)) if m else 0
+    except OSError:
+        return 0
+
+
+@unittest.skipUnless(_kit_major() >= 2, "the v1 hooks are removed by the release stage; until KIT_VERSION is 2.x they are still live and still shipped")
+class V1HooksDoNotShip(unittest.TestCase):
+    """D10 (GD-7): once the release stage has activated the v2 wiring, neither the live settings, the repository, `dist/` nor `plugin/` may carry a v1 hook."""
+
+    def test_no_v1_hook_script_or_reference_remains(self) -> None:
+        import glob
+        for root in (REPO_ROOT, os.path.join(REPO_ROOT, "dist", "copy-install"), os.path.join(REPO_ROOT, "plugin")):
+            found = glob.glob(os.path.join(root, ".claude", "hooks", "*.sh")) + glob.glob(os.path.join(root, "hooks", "*.sh"))
+            self.assertEqual(found, [], "v1 hook scripts shipped under %s" % root)
+        with open(os.path.join(REPO_ROOT, ".claude", "settings.json"), encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertNotIn("guard-git.sh", text)
+        self.assertNotIn("guard-main-edit.sh", text)
+
+
 if __name__ == "__main__":
     unittest.main()

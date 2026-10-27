@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import safeio
@@ -381,21 +382,106 @@ def sandbox_denies(settings: Dict[str, Any], kind: str) -> List[str]:
     return vals
 
 
-@check("sandbox.deny-paths", "sandbox")
+def _h6_write_set() -> Optional[Tuple[str, ...]]:
+    """`guards.paths.SANDBOX_DENY_WRITE`, the one list the sandbox template, the generated settings and this check share (D1). None if the guard
+    package was not installed (the doctor must run anyway)."""
+    scripts = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    try:
+        from guards import paths as gpaths
+        return tuple(gpaths.SANDBOX_DENY_WRITE)
+    except Exception:
+        return None
+
+
+def _norm_deny(entry: str, repo: str, home: str) -> str:
+    """A denyWrite spelling reduced to the form of SANDBOX_DENY_WRITE: no `./`, no leading `**/`, no trailing `/` or `/**`, project-relative when
+    it is the absolute path of an entry below the project, `~/` expanded."""
+    e = entry.strip()
+    if e.startswith("~/"):
+        e = os.path.join(home, e[2:])
+    if e.startswith("./"):
+        e = e[2:]
+    while e.startswith("**/"):
+        e = e[3:]
+    for suf in ("/**", "/*", "/"):
+        if e.endswith(suf) and len(e) > len(suf):
+            e = e[:-len(suf)]
+    if os.path.isabs(e):
+        prefix = repo.rstrip("/") + "/"
+        if e.startswith(prefix):
+            e = e[len(prefix):]
+    return e
+
+
+def _has_entry(want: str, have: "set") -> bool:
+    """`want` is denied if it is in `have` or lies below a denied directory (`.claude` covers `.claude/scripts`)."""
+    parts = want.split("/")
+    return any("/".join(parts[:k]) in have for k in range(1, len(parts) + 1))
+
+
+@check("sandbox.deny-paths", "sandbox", emits=("sandbox.registry-path",))
 def check_sandbox_paths(ctx: Context) -> List[Result]:
     st = ctx.fact("settings")
     rd, wr = sandbox_denies(st, "denyRead"), sandbox_denies(st, "denyWrite")
     need_read = [".aws", ".ssh", ".config/gh", ".kube", ".env.production"]
-    need_write = ["hooks", "config", "info"]
     miss_r = [n for n in need_read if not any(n in x for x in rd)]
-    miss_w = [n for n in need_write if not any(("/" + n) in x or x.endswith(n) or ("/" + n + "/") in x for x in wr)]
+    h6 = _h6_write_set()
+    if h6 is None:                       # no guard package: the three git directories are all this check can ask for
+        need_write = ["hooks", "config", "info"]
+        miss_w = [n for n in need_write if not any(("/" + n) in x or x.endswith(n) or ("/" + n + "/") in x for x in wr)]
+    else:
+        have = {_norm_deny(x, ctx.repo, ctx.home) for x in wr}
+        miss_w = [e for e in h6 if e != ".git/loopctl/sessions" and not _has_entry(e, have)]     # the registry is the next row's
     if not rd and not wr:
-        return unknown("sandbox.deny-paths", "no sandbox denyRead/denyWrite lists found",
-                       "merge .claude/templates/security/sandbox.settings.json; the key names follow report §7.2 and must be checked against your Claude Code version (V19)")
-    if miss_r or miss_w:
-        return failed("sandbox.deny-paths", "sandbox lists miss: denyRead %s; denyWrite on git dir %s" % (miss_r or "ok", miss_w or "ok"),
-                      "see .claude/templates/security/sandbox.settings.json", severity=WARN)
-    return passed("sandbox.deny-paths", "sandbox denyRead/denyWrite cover credential dirs and the git hooks/config/info dirs")
+        out = [unknown("sandbox.deny-paths", "no sandbox denyRead/denyWrite lists found",
+                       "merge .claude/templates/security/sandbox.settings.json; the key names follow report §7.2 and must be checked against your Claude Code version (V19)")]
+    elif miss_r or miss_w:
+        # a guardrail path the sandbox lets a Bash command write is a hole in H6; a missing credential directory is the older, softer finding
+        out = [failed("sandbox.deny-paths", "sandbox lists miss: denyRead %s; denyWrite %s" % (miss_r or "ok", (", ".join(miss_w[:8]) + (" (+%d more)" % (len(miss_w) - 8) if len(miss_w) > 8 else "")) if miss_w else "ok"),
+                      "merge .claude/templates/security/sandbox.settings.json (denyWrite is the whole H6 write set, D1)", severity=ERROR if miss_w else WARN)]
+    else:
+        out = [passed("sandbox.deny-paths", "sandbox denyRead/denyWrite cover the credential directories and the whole H6 write set (hooks, scripts, agents, skills, settings, CI, ...)")]
+    out.extend(_registry_row(ctx, wr))
+    return out
+
+
+def _registry_row(ctx: Context, wr: List[str]) -> List[Result]:
+    """`sandbox.registry-path` (D1 item 3): the session registry is the authority behind the conductor role; a sandboxed Bash command must not write it.
+    `.git` is a directory: the relative entry is enough. `.git` is a file (a linked worktree, the normal driver case): the git directory is outside
+    the project directory, so the effective denyWrite needs its absolute path."""
+    rc, out, err = ctx.git(["rev-parse", "--git-common-dir"])
+    if rc != 0 or not out.strip():
+        return [skipped("sandbox.registry-path", "not a git repository")]
+    common = out.strip().splitlines()[0]
+    common = os.path.realpath(common if os.path.isabs(common) else os.path.join(ctx.repo, common))
+    dotgit = os.path.join(ctx.repo, ".git")
+    inside = os.path.isdir(dotgit)
+    want_rel = ".git/loopctl/sessions"
+    want_abs = os.path.join(common, "loopctl", "sessions")
+    have = set()   # type: set
+    for x in wr:
+        have.add(_norm_deny(x, ctx.repo, ctx.home))
+        have.add(os.path.realpath(_norm_deny(x, ctx.repo, ctx.home)) if os.path.isabs(_norm_deny(x, ctx.repo, ctx.home)) else _norm_deny(x, ctx.repo, ctx.home))
+    ok = (_has_entry(want_rel, have) or _has_entry(want_abs, have)) if inside else _has_entry(want_abs, have)
+    if ok:
+        return [passed("sandbox.registry-path", "the sandbox denies writes to the session registry (%s)" % (want_rel if inside else want_abs))]
+    strict = False
+    why = ""
+    try:
+        from . import levelcalc
+        lvl = levelcalc.configured_level(ctx)
+        strict = ctx.cfg("runner", None) == "driver" or lvl >= levelcalc.L.L2 or ctx.cfg("autonomy", None) == "unattended"
+        why = "runner %s, level %s" % (ctx.cfg("runner", None) or "unset", ctx.cfg("autonomy_level", "L1"))
+    except Exception:
+        pass
+    line = '"%s"' % (want_rel if inside else want_abs)
+    return [failed("sandbox.registry-path",
+                   "the sandbox does not deny writes to the session registry %s: a sandboxed command could register itself as the conductor (%s)" % (
+                       want_abs, why or "level unknown"),
+                   "add %s to sandbox.filesystem.denyWrite in .claude/settings.local.json (`python3 .claude/scripts/guards/wiring.py --sandbox-snippet` prints the lines for this checkout)" % line,
+                   severity=ERROR if strict else WARN)]
 
 
 def sandbox_denies_metadata(settings: Dict[str, Any]) -> bool:

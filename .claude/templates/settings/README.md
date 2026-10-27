@@ -17,13 +17,13 @@ It is a typo guard (P25): permission deny rules are not a security boundary, and
 
 ## Sandbox
 
-`sandbox.enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, no `docker` in `excludedCommands`, the network allowlist with `169.254.0.0/16` denied, `denyRead` on credential directories and `denyWrite` on `.git/hooks`, `.git/config`, `.git/info`, `.claude/settings.json`, `.claude/hooks` and `.mcp.json`. The source is `.claude/templates/security/sandbox.settings.json`; the key names follow the report and are unverified against a live CLI (V19). Mandatory from L2.
+`sandbox.enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, no `docker` in `excludedCommands`, the network allowlist with `169.254.0.0/16` denied, `denyRead` on credential directories and `denyWrite` on the whole H6 write set: `.git/hooks`, `.git/config`, `.git/info`, the session registry `.git/loopctl/sessions`, every settings file, `.claude/hooks|scripts|agents|skills|commands|rules|templates`, `.claude/loop.config.md`, CI definitions, `.mcp.json`, CODEOWNERS (the list is `SANDBOX_DENY_WRITE` in `guards/paths.py`; docs/security/sandbox.md says what it does not cover). In a linked worktree add the absolute git-dir paths: `python3 .claude/scripts/guards/wiring.py --sandbox-snippet`. The source is `.claude/templates/security/sandbox.settings.json`; the key names follow the report and are unverified against a live CLI (V19). Mandatory from L2.
 
 ## Not in these files
 
 - **Model pinning and fork mode.** `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (when a model profile is pinned) and the fork-mode and background-task variables go into the child's `env` block, per runner, written by the driver (report 11.3, 11.4). The template leaves `env` empty.
 - **Managed settings** for L3 and above (`allowManagedHooksOnly`, `permissions.disableBypassPermissionsMode`, the kit hooks as managed hooks): `.claude/templates/security/managed-settings.example.json`.
-- **MCP lockdown.** The deny block already refuses `mcp__*__run_script` and `mcp__*deploy*`; the fuller snippet (`enabledMcpjsonServers`, per-server denies) is `.claude/templates/security/mcp-lockdown.settings.json`.
+- **MCP lockdown.** The deny block already refuses the deploy-class patterns (`mcp__*__run_script`, `mcp__*deploy*`, `mcp__*apply*`, `mcp__*destroy*`, `mcp__*terminate*`, `mcp__*provision*`, `mcp__*rollout*`, `mcp__*change_set*`, create/update/delete stack); the fuller snippet (`enabledMcpjsonServers`, per-server denies) is `.claude/templates/security/mcp-lockdown.settings.json`, which carries the same list as `.claude/templates/infra/mcp-deploy-deny.settings.json`.
 - **Modes never edit settings.** They print a snippet for the human (CO-16).
 
 To make the staged v2 wiring live, merge the hooks block of `.claude/settings.v2.json` into `.claude/settings.json` in one reviewed commit and remove the v1 hooks; the doctor's `guards.wiring` check says when it is consistent.

@@ -56,6 +56,9 @@ class Fixtures(object):
         for repo in (self.main, self.feat):
             os.symlink("../.claude/settings.json", os.path.join(repo.path, "src", "settings-link.json"))
             os.symlink(".claude", os.path.join(repo.path, "dotclaude"))
+            os.symlink("../.claude/scripts/github/labels.py", os.path.join(repo.path, "src", "apply-link"))
+            os.symlink("../.claude/scripts/migrate.py", os.path.join(repo.path, "src", "mig-link"))
+            os.symlink("../.claude/scripts/loopctl", os.path.join(repo.path, "src", "lc-link"))
             repo.git("config", "alias.shove", "push origin")
             repo.git("config", "alias.pp", "!git push")
             repo.git("config", "alias.st", "status")
@@ -98,6 +101,8 @@ class Fixtures(object):
         r.write("scripts/evil.sh", "#!/bin/sh\nterraform apply\n")
         r.write("scripts/ok.sh", "#!/bin/sh\necho fine\nnpm test\n")
         r.write("scripts/tracked_deploy.py", "import subprocess\nsubprocess.run(['terraform', 'apply'])\n")
+        r.write("scripts/tracked_registry.py", "from kitlib.runstate import RunState\nRunState('.git').register_session('s', 'conductor')\n")
+        r.write("scripts/tracked_uses_kitlib.py", "import kitlib\nprint(kitlib.__name__)\n")
         r.git("add", "-A")
         r.git("commit", "-q", "-m", "fixtures")
         # agent-authored (untracked) scripts
@@ -106,6 +111,12 @@ class Fixtures(object):
         r.write("scripts/untracked_push.js", "require('child_process').execSync('git push origin main')\n")
         r.write("scripts/untracked_writes_settings.py", "open('.claude/settings.json', 'w').write('{}')\n")
         r.write("scripts/untracked_sdk.py", "import claude_agent_sdk\n")
+        r.write("scripts/untracked_register.py", "from kitlib.runstate import RunState\nRunState('.git').register_session('s', 'conductor')\n")
+        r.write("scripts/untracked_kitlib_only.py", "import kitlib\nprint(kitlib.__name__)\n")
+        r.write("scripts/untracked_via_helper.py", "import reg_helper\nreg_helper.go()\n")
+        r.write("scripts/reg_helper.py", "import deep_helper\n\ndef go():\n    deep_helper.go()\n")
+        r.write("scripts/deep_helper.py", "def go():\n    from kitlib.runstate import RunState\n    RunState('.git').register_session('s', 'conductor')\n")
+        r.write("scripts/untracked_calls_loopctl.py", "from loopctl import cli\ncli.main(['approve', 'plan', '--by', 'x'])\n")
         self._archives(r)
         return r
 

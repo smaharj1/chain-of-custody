@@ -4,8 +4,8 @@
 #
 #   verify-boundary.sh --repo OWNER/NAME [--run] [--out FILE]
 #
-# Refuses to run when CLAUDECODE is set (inside a Claude Code session). Thin wrapper: the logic is in boundary.py.
-if [ -n "${CLAUDECODE:-}" ]; then
+# Refuses to run when CLAUDECODE or CLAUDE_CODE_ENTRYPOINT is present, even empty (inside a Claude Code session). Thin wrapper: the logic is in boundary.py.
+if [ -n "${CLAUDECODE+x}" ] || [ -n "${CLAUDE_CODE_ENTRYPOINT+x}" ]; then
   echo "verify-boundary: refusing to run inside a Claude Code session (CLAUDECODE is set). Run it from a plain terminal." >&2
   exit 2
 fi
