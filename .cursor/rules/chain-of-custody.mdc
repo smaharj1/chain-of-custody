@@ -13,11 +13,11 @@ workflow available in Cursor; it does not duplicate those definitions.
 
 Route work as follows:
 
-- Requirements: `.claude/commands/pm.md`
-- Architecture/API design: `.claude/commands/architect.md`
-- Dispatch and review: `.claude/commands/tech-lead.md`
-- Project planning: `.claude/commands/planner.md`
-- Autonomous execution: `.claude/commands/orchestrate.md`
+- Requirements: `.claude/skills/pm/SKILL.md`
+- Architecture/API design: `.claude/skills/architect/SKILL.md`
+- Dispatch and review: `.claude/skills/tech-lead/SKILL.md`
+- Project planning: `.claude/skills/planner/SKILL.md`
+- Autonomous execution: `.claude/skills/orchestrate/SKILL.md`
 
 When delegating, use the matching definition in `.claude/agents/`. Read
 `.claude/context/engineer-protocol.md` and the relevant domain primer before

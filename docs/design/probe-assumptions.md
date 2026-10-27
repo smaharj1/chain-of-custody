@@ -117,8 +117,7 @@ Summary:
 
 - **Assumption.** No. Brief-path enforcement is by report parse and prose, not a SubagentStart hook.
 - **Encoded in.** The engineer-report validator in `.claude/scripts/loopctl.py` *(planned)* (the report
-  must name the brief path); dispatch prose in `.claude/commands/tech-lead.md` (becomes
-  `.claude/skills/tech-lead/` in Phase 9, *planned*).
+  must name the brief path); dispatch prose in `.claude/skills/tech-lead/SKILL.md`.
 - **If otherwise.** Add a SubagentStart guard in `.claude/scripts/guards/` *(planned)* that denies a
   dispatch whose prompt names no brief path. Keep the report check as the second layer.
 
@@ -191,7 +190,7 @@ Summary:
 ### V16. Named spawn with teams off: teammate or subagent (P34)
 
 - **Assumption.** Documentation only. Resume is by `agent_id` (SendMessage), never by `name`.
-- **Encoded in.** The conductor prose in `.claude/commands/tech-lead.md` / skills *(planned)* ("resume by
+- **Encoded in.** The conductor prose in `.claude/skills/tech-lead/SKILL.md` / skills *(planned)* ("resume by
   `agent_id`"); a guard-corpus row for `name` on an Agent call *(planned)*.
 - **If otherwise.** None required; record the result for the FAQ.
 

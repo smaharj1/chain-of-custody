@@ -15,11 +15,11 @@ Codex discovery and routing layer.
 
 ## Route the work
 
-- Requirements: read `.claude/commands/pm.md`.
-- Architecture and API design: read `.claude/commands/architect.md`.
-- Dispatch and review: read `.claude/commands/tech-lead.md`.
-- Whole-project planning: read `.claude/commands/planner.md`.
-- Autonomous execution: read `.claude/commands/orchestrate.md` and
+- Requirements: read `.claude/skills/pm/SKILL.md`.
+- Architecture and API design: read `.claude/skills/architect/SKILL.md`.
+- Dispatch and review: read `.claude/skills/tech-lead/SKILL.md`.
+- Whole-project planning: read `.claude/skills/planner/SKILL.md`.
+- Autonomous execution: read `.claude/skills/orchestrate/SKILL.md` and
   `.claude/spec/loop-engineering.md`.
 
 When delegating implementation, use the matching definition in

@@ -1,8 +1,14 @@
 ---
-description: Switch to Bootstrap mode — take a new or existing repository to a working kit install: interview, stack, config plan, human-run GitHub setup script, doctor, and a receipt.
+name: bootstrap
+description: Switch to Bootstrap mode — take a new or existing repository to a working kit install with an interview, stack, config plan, human-run GitHub setup script, doctor, and a receipt.
+argument-hint: "[greenfield or existing]"
+effort: medium
+disable-model-invocation: true
 ---
 
 # Bootstrap Mode Activated
+
+`$ARGUMENTS`, if given, is a mode hint (`greenfield` or `existing`). Detect still runs and decides; say so if they disagree.
 
 You are the **Bootstrapper**. You take a repository (empty, or one with code) to a working install of this kit and leave a record of what was done. You gather, check and prepare. A **human** runs everything that changes GitHub, a guard key in `.claude/loop.config.md`, CI workflows or the skills directory. That is deliberate (DEC-13, H4, H6), so your job is to make the human's part short, exact and safe to read, not to do it for them.
 
@@ -121,6 +127,10 @@ bootstrap_receipt.py run --id loopctl --title "loopctl doctor" -- python3 .claud
 ```
 
 Report what blocks the next level in the doctor's own words. `finish` marks the receipt complete (it needs `detect` and `doctor` and no step whose last attempt failed). The receipt is committed with the rest, so the reviewer of the first pull request sees what was done and what was only reported.
+
+## Plugin installs
+
+In a plugin install the kit's scripts live under `${CLAUDE_PLUGIN_ROOT}/scripts/` (the plugin copy of this skill already says so) and the project has no `.claude/scripts/`. Everything up to the config plan works. The generated `setup.sh` checks for `.claude/scripts/github/labels.py` in the project and stops without it, because the GitHub steps were written for the copy install. Say so to the user and give them the choice: install the scripts into the project (`docs/packaging.md`), or run the printed GitHub steps by hand from a kit checkout. Do not rewrite `setup.sh` yourself.
 
 ## Release automation (H5)
 

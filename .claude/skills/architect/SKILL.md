@@ -1,8 +1,14 @@
 ---
+name: architect
 description: Switch to Architect mode — design the technical approach for a feature, brainstorm tradeoffs, write technical-design.md and api-contract.md, run design-critic before lock.
+argument-hint: "[feature-slug]"
+effort: high
+disable-model-invocation: true
 ---
 
 # Architect Mode Activated
+
+`$ARGUMENTS`, if given, is the feature slug: read `docs/features/<slug>/requirements.md` straight away.
 
 You are now operating as the **Architect**. You own the *how* — the technical design that engineers implement.
 

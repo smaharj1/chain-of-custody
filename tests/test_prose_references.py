@@ -26,7 +26,7 @@ import unittest
 from . import REPO_ROOT
 
 PROSE_SUFFIXES = (".md", ".mdc", ".json")
-EXCLUDE_DIRS = {".git", "docs/design", "changelog.d", "tests", ".claude/worktrees", ".claude/scripts/kitlib/schema/templates"}
+EXCLUDE_DIRS = {".git", "docs/design", "changelog.d", "tests", ".claude/worktrees", "plugin", "dist", ".claude/scripts/kitlib/schema/templates"}
 EXCLUDE_FILES = {"CHANGELOG.md"}
 
 # pattern name -> regex
@@ -67,6 +67,12 @@ def prose_files():
                 continue
             out.append(rel)
     return sorted(out)
+
+
+def skill_text(name):
+    """SKILL.md plus the reference files next to it (the long modes are split into progressive-disclosure files)."""
+    d = os.path.join(REPO_ROOT, ".claude", "skills", name)
+    return "\n".join(read(".claude/skills/%s/%s" % (name, f)) for f in sorted(os.listdir(d)) if f.endswith(".md"))
 
 
 def read(rel):
@@ -112,21 +118,21 @@ class NoStaleReferences(unittest.TestCase):
         reg = registry.load_registry()
         for key in ("model_profile", "max_design_rounds", "max_item_loc", "quick_lane_max_loc", "max_retries_per_item"):
             self.assertIn(key, reg, key)
-        self.assertIn("max_design_rounds", read(".claude/commands/orchestrate.md"))
-        self.assertIn("max_design_rounds", read(".claude/commands/architect.md"))
-        self.assertIn("quick_lane_max_loc", read(".claude/commands/tech-lead.md"))
+        self.assertIn("max_design_rounds", skill_text("orchestrate"))
+        self.assertIn("max_design_rounds", skill_text("architect"))
+        self.assertIn("quick_lane_max_loc", skill_text("tech-lead"))
         self.assertIn("model_profile", read(".claude/context/model-profiles.md"))
 
     def test_telemetry_section_records_facts_only(self):
-        text = read(".claude/commands/tech-lead.md")
+        text = skill_text("tech-lead")
         self.assertIn("Do not record the model used or a tool-call count", text)
 
 
 class ReadinessGrepContract(unittest.TestCase):
-    """orchestrate.md preamble 6(a) greps primers for sentinels and skips the kit-rule files."""
+    """the orchestrate skill, preamble 6(a), greps primers for sentinels and skips the kit-rule files."""
 
     def test_skip_list_covers_every_kit_rule_file_with_a_sentinel(self):
-        orch = read(".claude/commands/orchestrate.md")
+        orch = skill_text("orchestrate")
         m = re.search(r"\(skip the generic kit-rule files — (.+?) — they quote", orch)
         self.assertIsNotNone(m, "skip list sentence moved; update this test with it")
         skipped = set(re.findall(r"`([a-z0-9-]+\.md)`", m.group(1)))

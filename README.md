@@ -268,7 +268,7 @@ Copy the adapter your tool loads along with `.claude/`.
 **Which files are yours and which are the kit's:**
 
 - **Yours, written by the agents:** `.claude/CLAUDE.md`, `.claude/context/*.md` (except the kit-logic files listed in the tree below), `.claude/loop.config.md`, `.claude/settings.json`. Review and correct them freely. Never overwrite them when updating the kit.
-- **The kit's, safe to replace on update:** `.claude/agents/`, `.claude/commands/`, the kit-logic files in `.claude/context/` (the protocols, rules and `choosing-your-stack.md`), `.claude/hooks/`, `.claude/spec/`, `.claude/templates/`, `.claude/KIT_VERSION`. You can edit the templates, but an update will overwrite your changes, so keep a note of them.
+- **The kit's, safe to replace on update:** `.claude/agents/`, `.claude/skills/`, the kit-logic files in `.claude/context/` (the protocols, rules and `choosing-your-stack.md`), `.claude/hooks/`, `.claude/spec/`, `.claude/templates/`, `.claude/KIT_VERSION`. You can edit the templates, but an update will overwrite your changes, so keep a note of them.
 
 ## Updating the kit
 
@@ -298,12 +298,12 @@ Your copy records its version in `.claude/KIT_VERSION`, and every change is list
     security-reviewer.md             #   Security auditor (read-only)
     design-critic.md                 #   Design reviewer, before code (read-only)
     code-reviewer.md                 #   Independent code reviewer in the loop (read-only)
-  commands/                          # Slash commands
-    pm.md                            #   /pm: requirements
-    architect.md                     #   /architect: technical design
-    tech-lead.md                     #   /tech-lead: briefs, dispatch, review
-    planner.md                       #   /planner: whole-idea build plan
-    orchestrate.md                   #   /orchestrate: run the plan item by item
+  skills/                            # The modes, as skills (each is <mode>/SKILL.md)
+    pm/                              #   /pm: requirements
+    architect/                       #   /architect: technical design
+    tech-lead/                       #   /tech-lead: briefs, dispatch, review
+    planner/                         #   /planner: whole-idea build plan
+    orchestrate/                     #   /orchestrate: run the plan item by item
   context/                           # Primers: project knowledge (agent-written)
     engineer-protocol.md             #   Shared rules for all engineers (kit logic)
     primer-protocol.md               #   How agents write and maintain primers (kit logic)

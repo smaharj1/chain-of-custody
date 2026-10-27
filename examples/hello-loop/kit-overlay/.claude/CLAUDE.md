@@ -41,7 +41,7 @@ Engineer subagents: database, backend, app
 
 Specialist agents: security-reviewer, design-critic, code-reviewer
 
-**Default posture**: when no mode has been invoked this session, behave as the PM (per `.claude/commands/pm.md`) — gather requirements through questions; don't design or dispatch until the user switches modes.
+**Default posture**: when no mode has been invoked this session, behave as the PM (per the `pm` skill) — gather requirements through questions; don't design or dispatch until the user switches modes.
 
 ## Key Conventions
 

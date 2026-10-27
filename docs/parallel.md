@@ -29,7 +29,7 @@ The plan decides how much runs together. An item starts only when:
 - it does not need a lane someone else holds. A migration (or `touches.schema: true`) uses the **schema** lane and a dependency change (`touches.deps_change: true`) the **deps** lane: one item at a time in each, from its start until it has merged;
 - an item with **no** `touches.paths` runs alone.
 
-So slice the plan the way the slicing rules ask (`.claude/commands/planner.md`): vertical slices with a footprint. A plan whose items declare nothing runs exactly like the serial loop. `loopctl parallel check` shows the width you actually get.
+So slice the plan the way the slicing rules ask (`.claude/skills/planner/SKILL.md`): vertical slices with a footprint. A plan whose items declare nothing runs exactly like the serial loop. `loopctl parallel check` shows the width you actually get.
 
 Each item gets `.claude/worktrees/<slug>-a<n>` on its own branch `feat/<slug>-a<n>`, its own port block (`KIT_PORT_OFFSET`, a multiple of 100 added to every `verify_ports` entry) and its own child sessions. When it is reviewed and green it waits for the **integrator**, which merges one finished item at a time, in plan order: it checks the item stayed inside its declared footprint, rebases it onto the branch if the branch moved, runs `verify` again on the rebased code, and then merges with the usual `Loop-Item` trailer.
 

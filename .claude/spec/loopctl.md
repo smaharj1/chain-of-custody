@@ -4,7 +4,7 @@
 
 `python3 .claude/scripts/loopctl <command>` is one Python 3.9 standard-library program that owns every *deterministic* decision the LLM conductor used to make from prose: state transitions, counters and caps, the lock, topological order, gate execution, the spend ledger, reconciliation, abort. The conductor keeps judgment: design, briefs, integration conflicts, summaries for humans.
 
-It is **OPT-IN** (IMP-1). The V1 prose loop in `.claude/commands/orchestrate.md` is still the default (`runner: sequential`, `loopctl_tier2: false`), so unproven Tier 2 code never runs unless a human chooses it. If the baseline shows three or fewer control-flow rescues (kill criteria, `docs/baseline/kill-criteria.md`), Tier 2 is deprecated and Tier 1 stays.
+It is **OPT-IN** (IMP-1). The V1 prose loop in `.claude/skills/orchestrate/SKILL.md` is still the default (`runner: sequential`, `loopctl_tier2: false`), so unproven Tier 2 code never runs unless a human chooses it. If the baseline shows three or fewer control-flow rescues (kill criteria, `docs/baseline/kill-criteria.md`), Tier 2 is deprecated and Tier 1 stays.
 
 | Tier | Commands | Needs |
 |---|---|---|

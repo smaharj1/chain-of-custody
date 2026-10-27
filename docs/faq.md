@@ -34,7 +34,7 @@ The loop **cannot span repos**: one plan, one git history, one local main. If yo
 
 Yes, with one rule: **one conductor per clone**. The run lock (`.claude/orchestrate.lock`) is per-checkout, so two people can't safely drive `/orchestrate` against the same working copy. Two teammates each running the loop in their own clone on different milestones is fine. If a teammate pushes to the remote mid-run, nothing corrupts silently: the next run's preamble reconciles the JSON against git (every `done` item's merge commit is checked against main) and flags anything that moved underneath the plan.
 
-For the shared `.claude/` directory, **commit** the shared files: `CLAUDE.md`, `agents/`, `commands/`, `context/`, `loop.config.md`, and the hooks. **Gitignore** the personal and telemetry files: `settings.local.json`, `loop.jsonl`, `metrics.jsonl`, and `orchestrate.lock`. That keeps the team's shared context in git and each developer's run state out of it.
+For the shared `.claude/` directory, **commit** the shared files: `CLAUDE.md`, `agents/`, `skills/`, `context/`, `loop.config.md`, and the hooks. **Gitignore** the personal and telemetry files: `settings.local.json`, `loop.jsonl`, `metrics.jsonl`, and `orchestrate.lock`. That keeps the team's shared context in git and each developer's run state out of it.
 
 ## The loop keeps stopping to ask permission. I set autonomy to unattended.
 
