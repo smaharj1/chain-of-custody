@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from kitlib import evidence, levels, runstate
 
-from . import deploy, extras
+from . import delivery, deploy, extras  # noqa: F401  (delivery registers its check by being imported)
 from .model import Context, Result, check, failed, passed, skipped, ERROR, WARN, PASS, FAIL, UNKNOWN
 
 L = levels
@@ -48,12 +48,21 @@ def attested(ctx: Context) -> List[str]:
 
 
 def env_reviewers_available(ctx: Context) -> bool:
+    """IN-4: true only when the Environment *named by each apply job* has required reviewers in the recorded GitHub data. An apply job with no
+    static Environment is gated by a human dispatch instead (`apply_human_dispatch`), not by reviewers. With no GitHub data, the
+    `environment_reviewers` attestation stands. A repo with no apply job in its workflows falls back to "some Environment has reviewers"."""
     gh = ctx.fact("gh")
-    if gh.get("environments"):
-        for e in gh["environments"]:
-            for r in e.get("protection_rules") or []:
-                if isinstance(r, dict) and r.get("type") == "required_reviewers" and r.get("reviewers"):
-                    return True
+    data = gh.get("environments")
+    jobs = deploy.apply_jobs(ctx)
+    if jobs:
+        if any(not j["environment"] for j in jobs):
+            return False
+        if data:
+            by_name = {e.get("name"): e for e in data if isinstance(e, dict)}
+            return all(n in by_name and deploy._env_has_reviewers(by_name[n]) for n in {j["environment"] for j in jobs})
+        return "environment_reviewers" in attested(ctx)
+    if data and any(deploy._env_has_reviewers(e) for e in data if isinstance(e, dict)):
+        return True
     return "environment_reviewers" in attested(ctx)
 
 
@@ -89,9 +98,14 @@ def cap_sandbox(ctx: Context, rs: R) -> L.Cap:
     cfg_ok = all(r.status == PASS for r in rs.with_prefix("sandbox.") if r.id in ("sandbox.enabled", "sandbox.failIfUnavailable",
                                                                                    "sandbox.allowUnsandboxedCommands", "sandbox.excludedCommands"))
     att = rs.first("sandbox.attestation")
+    # GT-12: a sandbox that is on but does not deny the kit's protected paths (sandbox.deny-paths, sandbox.registry-path) is not an L4/L5 sandbox.
+    # A FAIL caps at L3; "unknown" (no lists found to judge) does not.
+    deny_fail = [r for r in rs.with_prefix("sandbox.") if r.id in ("sandbox.deny-paths", "sandbox.registry-path") and r.status == FAIL]
     if cfg_ok and att is not None and att.status == PASS:
+        if deny_fail:
+            return L.Cap("sandbox", L.L3, "sandbox on and attested, but its deny lists are incomplete: " + _short(deny_fail))
         return L.Cap("sandbox", L.L5, "sandbox configured fail-closed and attested")
-    why = [r.id for r in rs.with_prefix("sandbox.") if r.status != PASS and r.id != "sandbox.deny-paths"]
+    why = [r.id for r in rs.with_prefix("sandbox.") if r.status != PASS]
     return L.Cap("sandbox", L.L1, "sandbox not proven (V19): " + (", ".join(why) + " not satisfied" if why else "no attestation"))
 
 

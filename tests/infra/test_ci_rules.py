@@ -121,6 +121,8 @@ ERROR_ROWS = [
     ("env: the apply checks out a ref chosen elsewhere", mutate(ENV, "      - name: Checkout the planned commit\n        uses: actions/checkout@v4 # pin to SHA\n        with:\n", "      - name: Checkout the planned commit\n        uses: actions/checkout@v4 # pin to SHA\n        with:\n          ref: ${{ github.head_ref }}\n"), "infra.apply-ref-input"),
     ("env: a stored cloud key", mutate(ENV, "      - name: terraform init\n        run: terraform -chdir=\"$TF_ROOT\" init -lockfile=readonly\n      - name: terraform apply", "      - name: terraform init\n        env:\n          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}\n        run: terraform -chdir=\"$TF_ROOT\" init -lockfile=readonly\n      - name: terraform apply"), "infra.static-credentials"),
     ("env: a workflow input in a script", mutate(ENV, "      - name: terraform apply of the saved plan\n        run: terraform -chdir=\"$TF_ROOT\" apply -input=false tfplan", "      - name: terraform apply of the saved plan\n        run: echo ${{ inputs.who }} && terraform -chdir=\"$TF_ROOT\" apply -input=false tfplan"), "infra.input-in-run"),
+    ("env: no approval check (IN-4: an Environment can be created with no reviewers)", mutate(ENV, "gate.py require-run-approval", "gate.py hash-file"), "infra.environment-approval-unverified"),
+    ("env: the command hidden behind a variable (a credentialed job, IN-6)", mutate(ENV, "      - name: terraform apply of the saved plan\n        run: terraform -chdir=\"$TF_ROOT\" apply -input=false tfplan", "      - name: terraform apply of the saved plan\n        run: |\n          $TF_BIN apply -auto-approve\n          terraform -chdir=\"$TF_ROOT\" apply -input=false tfplan"), "infra.apply-indirect"),
     # --- the dispatch variant ---
     ("dispatch: no actor check", mutate(DISPATCH, "gate.py authorize", "gate.py hash-file"), "infra.apply-ungated"),
     ("dispatch: no main ref check", mutate(mutate(DISPATCH, "gate.py require-main-ref", "gate.py hash-file"), "    if: ${{ github.ref == 'refs/heads/main' }}\n", ""), "infra.dispatch-ref-unchecked"),
@@ -169,11 +171,9 @@ ERROR_ROWS = [
 ]
 
 WARN_ROWS = [
-    ("env: no approval check", mutate(ENV, "gate.py require-run-approval", "gate.py hash-file"), "infra.environment-approval-unverified"),
     ("env: no concurrency", mutate(ENV, "concurrency:\n  group: infra-apply\n  cancel-in-progress: false\n\n", ""), "infra.apply-concurrency"),
     ("dispatch: no concurrency", mutate(DISPATCH, "concurrency:\n  group: infra-apply\n  cancel-in-progress: false\n\n", ""), "infra.apply-concurrency"),
     ("plan: a computed path warning is not here but a pinned-by-tag action is", PLAN, "ci.floating-action-tag"),
-    ("env: the command hidden behind a variable", mutate(ENV, "      - name: terraform apply of the saved plan\n        run: terraform -chdir=\"$TF_ROOT\" apply -input=false tfplan", "      - name: terraform apply of the saved plan\n        run: |\n          T=terraform\n          $T apply -auto-approve\n          terraform -chdir=\"$TF_ROOT\" apply -input=false tfplan"), "infra.apply-indirect"),
 ]
 
 

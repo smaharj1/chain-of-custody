@@ -1,0 +1,66 @@
+# fix-d-infra-lint: infra CI lint and doctor strictness (review findings IN-1 to IN-9, IN-11 to IN-15, GT-12, DEC-1)
+
+## Changes
+
+Rule: anything that can put a credentialed, deploy-class job behind a gate the lint cannot verify is an error; things that only hide intent in a job with no credentials stay warnings. No path was loosened, and nothing here lets an agent apply infrastructure: a person still approves every apply (H4).
+
+- **IN-1, non-main pushes (`ci_rules.bot_reachable`, `workflows.push_main_only`).** A `push` that is not main-only (any other branch, `**`, `branches-ignore`, tags, no filter) is bot-reachable, like the pull-request events. `infra.plan-ungated` uses it. New rule `ci.credentials-on-bot-push` (error): a job with OIDC, a credential action, a stored cloud key or any non-`GITHUB_TOKEN` secret that such a push starts, with no static `environment:`. The doctor (`deploy.py`) now counts a credentialed job on `push:branches` or a tag as a deploy, so B5 caps the level at L1.
+- **IN-2 and IN-6, vocabulary and command words.** `sam deploy`, `cdktf deploy`, `pulumi up|update|destroy`, `terragrunt run --all apply`, `terragrunt run-all apply`, `copilot [svc|env|job] deploy`, `eb deploy|create|terminate`, `serverless|sls deploy`, `ansible-playbook`, `gruntwork-io/terragrunt-action`, `dflook/tofu-apply`, `dawidd6/action-ansible-playbook` are applies, in both `ci_rules` and the doctor scan. `workflows.normalize_shell` reads a command word through `/usr/local/bin/terraform`, `./bin/tofu`, `terraform 'apply'`, `$(which terraform)`, `` `command -v tofu` ``, `${TF:-terraform}`, a backslash inside a word, `TF=terraform` set in the same script, and a container tag or digest (`docker run hashicorp/terraform:1.9 apply`). A command word that is still a bare `$VAR`, `${VAR}`, `"$VAR"` or `$(...)` before `apply|destroy|deploy|up` is `infra.apply-indirect`: an error in a credentialed job, a warning elsewhere. A workflow whose only infra signal is such a command in a credentialed job is now treated as an infra workflow.
+- **IN-3, `docker://`.** `ci.docker-uses-unpinned` (error with credentials, warning without) for an image with no `@sha256:` digest. A docker step is read as its `entrypoint` and `args`; a known IaC image (terraform, tfc-agent, opentofu, terragrunt, pulumi, kubectl, helm, aws-cli, or a repository name containing terraform/tofu/terragrunt/pulumi/kubectl/helm) with no args, or args computed at run time, is deploy-capable. `ci.deploy-in-pr-job` and the doctor read docker steps the same way.
+- **IN-4, Environment approval.** `infra.environment-approval-unverified` is an error. `levelcalc.env_reviewers_available` now asks about the Environment each apply job names (new `deploy.apply_jobs`): true only if every one exists with required reviewers in the recorded GitHub data; an apply job with no static environment is not credited; with no GitHub data the `environment_reviewers` attestation stands; a repo with no apply job keeps the old "some Environment has reviewers" reading.
+- **IN-5, actor check.** `gate.py authorize` counts only as the command itself (not an `echo` argument, not in a comment), in a step with no `if:`, `continue-on-error` absent or the literal `false`, no `if`/`case`/loop/`&&`/`||`/`exit` before it, a `--actor` argument taken from the run (a `$` in it), and in the apply job before the apply or in a job it needs.
+- **IN-7, remote reusable workflows.** `ci.remote-workflow-secrets`: a `uses: owner/repo/.github/workflows/x.yml@ref` job that gets `secrets:` (any value) or runs under `id-token: write` is an error when the workflow has a bot-reachable trigger, `pull_request_target` or `workflow_run`, or its ref is not a 40-character SHA; otherwise a warning. The doctor treats the same job as a deploy surface; the name heuristic stays as an extra signal.
+- **IN-8, script injection.** `ci.script-injection` replaces the old field list: in `run:` and `github-script` any `${{ }}` with `github.event.*` (except `number`, `pull_request.number`, `issue.number`, `action`, `repository.*`), `inputs.*`, `github.head_ref`, `github.ref_name`, `github.ref`, `client_payload`, `toJSON(github.event)`; property names are case-insensitive and `github['event']` counts. `github.actor` is a warning. A comparison, negation or `contains()` yields true/false and is allowed; `&&` and `||` operands are judged one by one.
+- **IN-9, pull-request code in a privileged job.** In `pull_request_target` and `workflow_run` jobs that hold secrets or `id-token`: `ci.pr-target-checkout-expression` (a computed `ref` or `repository` outside the allowlist), `ci.pr-code-fetch` (an archive fetched by curl, wget or `gh api` and unpacked), and `ci.artifact-from-pr-run` now covers `pull_request_target` and any action with `download-artifact` in its name.
+- **IN-11.** New doctor check `deploy.environment-branch-policy` (warning): an Environment an apply job names has no deployment branch policy (or does not exist yet) in the recorded GitHub data. Best effort; skipped without data.
+- **IN-12 (doc).** `.claude/templates/security/oidc/README.md` (new) and `docs/security/infra-ci.md`: the two apply trusts are alternatives; the `job_workflow_ref` one needs a repository-wide subject-claim customisation that changes every other trust.
+- **IN-13.** `plan-readonly.policy.json`: a `Deny` on secret values and `kms:Decrypt` with `Resource: "*"`, and a `Deny` on `s3:GetObject` with `NotResource` the state bucket. No `aws:ResourceArn` condition.
+- **IN-14.** `ci_lint._job_perm_for` is gone; `Ctx` gets `_job_perm`. `_perm` is `workflows.perm_level`.
+- **IN-15.** `label-guard.yml` lower-cases the label, the sender and every approver, drops a leading `@`, and splits the approver list on commas and white space, as `gate.py` does; no globbing (`set -f`).
+- **GT-12 and D1 item 5.** `levelcalc.cap_sandbox`: a FAIL on `sandbox.deny-paths` or `sandbox.registry-path` (package A's new row) caps the level at L3 when the sandbox is otherwise on and attested; the row is no longer left out of the "not proven" explanation. Unknown does not cap.
+- **DEC-1.** `doctorlib/delivery.py`: `delivery.suggest-draft-pr`, an information row when `delivery` is `local` and the main-protection, code-owner, required-checks and bypass checks all pass. `levelcalc` imports it, so the doctor picks it up with no `doctor.py` edit. It never fails.
+- **G4 docstring (D5).** `loopctl/gates/g4_mutation.py` says the gate runs in the driver and in CI.
+- **Hostile input.** The new matching is linear in the text (`str.find` for `${{ }}`, no `[^\n]*` after a repeated word). The four existing deploy patterns that were quadratic in a line of repeated `curl`/`rsync`/`scp`/`vercel`/`docker buildx build` words now use `workflows._Near`; the old `_TF_SUBCMD` no longer lets a verb on the next line belong to `terraform`.
+- Tests: `tests/infra/test_ci_rules_review_fixes.py` (65, one positive and one negative per item plus bypass variants and a linear-time test), `tests/infra/test_templates_lint_clean.py` (every shipped workflow template: zero errors, warning set pinned), `tests/infra/test_label_guard_and_iam.py`, `tests/infra/test_delivery_suggestion.py`, new classes in `tests/doctor/test_deploy_surface.py` and `test_level_caps.py`. Two rows of `tests/infra/test_ci_rules.py` moved from warnings to errors.
+
+## Upgrade impact
+
+Stricter, by design. A project that already installed the infra workflows keeps passing (the shipped templates are lint-clean, and a test keeps them so). A project with its own workflows may now see: errors for a credentialed job on a push to any branch or a tag, for `docker://` images without a digest in a credentialed job, for a remote reusable workflow that gets secrets, for `${{ github.event.* }}` or `${{ inputs.* }}` in `run:`, for an Environment-only apply with no `require-run-approval`, and for `$VAR apply` in a credentialed job; and a doctor level cap where a credentialed job runs on a bot-pushable push. Those errors are unmet L3 "split CI" prerequisites. `env_reviewers_available` is stricter: reviewers on an Environment no apply job names no longer count.
+
+## New config keys
+
+None.
+
+## Pending-human actions
+
+- If you use the dispatch apply variant, read `.claude/templates/security/oidc/README.md` before changing the repository's OIDC subject claim template; it changes every role's trust.
+- A state bucket encrypted with a customer-managed KMS key needs an exception to the `kms:Decrypt` deny in `plan-readonly.policy.json`, written by you for your key (the template cannot know it). The deny was already there; it is now unconditional.
+- Give each apply Environment a deployment branch policy (the new doctor warning says which).
+
+## Docs impact
+
+- `docs/security/infra-ci.md` is updated (rule table, what counts as an apply, the actor-check conditions, OIDC alternatives, branch policy).
+- `docs/security/split-ci.md` (not mine): its list of `ci.*` rules can add `ci.credentials-on-bot-push`, `ci.docker-uses-unpinned`, `ci.remote-workflow-secrets`, `ci.pr-target-checkout-expression`, `ci.pr-code-fetch`, and the wider `ci.script-injection`.
+- The doctor check list (`--list-checks`) gains `deploy.environment-branch-policy` and `delivery.suggest-draft-pr`.
+
+## Decisions made
+
+- **Findings.** IN-1 fixed; IN-2 fixed; IN-3 fixed; IN-4 fixed (lint and doctor); IN-5 fixed; IN-6 fixed; IN-7 fixed; IN-8 fixed; IN-9 fixed; IN-10 not mine (package A); IN-11 fixed as a warning; IN-12 documented; IN-13 fixed; IN-14 fixed; IN-15 fixed; GT-12 fixed; D1 item 5 fixed; DEC-1 carry-over built.
+- **A new rule for IN-1 instead of widening `ci.secrets-in-pr-job`.** The decision said "R2 ... a credentialed job needs a gate on these triggers". Widening R2 to a push would also change the checkout test every other rule uses. `ci.credentials-on-bot-push` is separate, exempts a job with a static `environment:` (the human gate for a non-apply job; for an apply the Environment rules above apply), and does not exempt `environment: ${{ ... }}`.
+- **Deviation from D9 item 8 (`download-artifact`).** The official `actions/download-artifact` under `pull_request_target` is flagged only when it names another run (`run-id`, `repository` or `github-token`); under `workflow_run` it is flagged as before. Reason: the shipped `infra-plan.yml` plan job (OIDC, `pull_request_target`) downloads the same run's artifact and checks its hash first, and the decision's "no shipped template fails" would not hold otherwise. Any other action with `download-artifact` in its name is flagged.
+- **`--actor` must come from the run (extra to D9 item 5).** `gate.py authorize --actor alice` passes for ever. Cheap, and the shipped templates already pass `"$ACTOR"`.
+- **`TF=terraform` is followed (extra to D9 item 2).** Resolving a same-script assignment turns `$TF apply` into a normal apply (all the apply rules fire) instead of only an indirect-command error. At most 16 assignments per script, so a hostile script cannot make it expensive.
+- **Docker image tags are read through (extra).** `docker run hashicorp/terraform:1.9 apply` is an apply.
+- **Delivery check without a `doctor.py` edit.** `levelcalc.py` (mine) imports `doctorlib/delivery.py`, which registers the check. Group `config`.
+- **G4 docstring.** The decisions file gives it to package C with the spec; this task's brief gave the docstring to D. Only the docstring changed here; the spec row (`.claude/spec/loopctl-gates.md`) is under pointers.
+- **Not done: attestation exemption for IN-7.** The decision said "unless the repo attests it". The lint has no attestation input; the doctor's `deploy_triggers` attestation is where a person accepts such a workflow.
+- **Known gaps.** A command inside a script file, `eval`, `sh -c "$CMD"` or `make` target is outside the lint (the doctor follows one level of scripts; `.github/**` is a CODEOWNERS path). A value laundered through `steps.*.outputs` or `needs.*.outputs` into `run:` is not seen as untrusted. A static `environment:` on a non-apply credentialed job is taken as the human gate without checking reviewers (the doctor's `gh.environments` row reports a repo where none has reviewers). `ci.credentials-on-bot-push` does not look at `issue_comment`, `release` and similar events. The docker image list is names, not behaviour. A required `--actor` with a `$` is a shape check, not proof the variable holds the actor.
+
+## Conductor: pointers to add
+
+- `.claude/spec/loopctl-gates.md`: the G4 table row should say "driver and CI" (decision D5; package C's file).
+- `docs/security/split-ci.md`: add the new `ci.*` rule ids listed under Docs impact.
+- `docs/security/README.md` "Files" table: `.claude/templates/security/oidc/README.md`.
+- Package A: `levelcalc.cap_sandbox` reads the doctor row ids `sandbox.deny-paths` and `sandbox.registry-path`; keep those ids.
+- No `doctor.py` change is needed for `delivery.suggest-draft-pr` (see Decisions made). If you prefer an explicit import there, the line is: `from doctorlib import (ci, codeowners, creds, delivery, deploy, extras, github, guardchecks, levelcalc, parallel, secrets, settings, versions)`.
+- Regenerate `plugin/`, `dist/copy-install/` and `.claude/KIT_MANIFEST` after merging (new files: `doctorlib/delivery.py`, `templates/security/oidc/README.md`).

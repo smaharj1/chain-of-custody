@@ -361,5 +361,207 @@ class AttestationAndFingerprint(SurfaceCase):
         self.assertIn("fingerprint:", out)
 
 
+# --- review fixes (package D): IN-1, IN-2, IN-3, IN-4, IN-7, IN-11 ---------------------------------------------------------------------
+
+SHA40 = "0123456789abcdef0123456789abcdef01234567"
+CRED_BUILD = """name: build
+on:
+  %s
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm run build
+"""
+
+
+class ReviewFixes(SurfaceCase):
+    def wf(self, repo):
+        return self.ctx(repo).fact("deploy_surface")["workflows"][0]
+
+    def test_a_credentialed_job_on_a_push_the_bot_can_make_is_a_deploy(self):
+        for on in ("push:\n    branches: ['**']", "push:\n    branches-ignore: [docs]", "push:\n    tags: ['v*']", "push:"):
+            with self.subTest(on):
+                w = self.wf(self.repo_with({".github/workflows/b.yml": CRED_BUILD % on}))
+                self.assertTrue(w["deploys"])
+                self.assertIn("cloud credentials", " ".join(w["labels"]))
+                self.assertTrue(any(f in ("push:branches", "tag") for f in w["fires_on"]))
+
+    def test_the_same_job_on_main_only_or_a_dispatch_is_not(self):
+        for on in ("push:\n    branches: [main]", "workflow_dispatch:"):
+            with self.subTest(on):
+                self.assertFalse(self.wf(self.repo_with({".github/workflows/b.yml": CRED_BUILD % on}))["deploys"])
+
+    def test_a_job_without_credentials_on_any_push_is_not_a_deploy(self):
+        text = (CRED_BUILD % "push:\n    branches: ['**']").replace("  id-token: write\n", "")
+        self.assertFalse(self.wf(self.repo_with({".github/workflows/b.yml": text}))["deploys"])
+
+    def test_the_credentialed_job_caps_the_level_at_l1(self):
+        repo = self.repo_with({".github/workflows/b.yml": CRED_BUILD % "push:\n    branches: ['**']"})
+        ctx = self.ctx(repo)
+        res = self.results(ctx)
+        self.assertEqual(levelcalc.cap_b5(ctx, levelcalc.R(res)).level, 1)
+
+    def test_the_review_vocabulary_is_a_deploy_on_push(self):
+        repo = self.repo_with({})
+        for cmd in ("sam deploy --guided", "cdktf deploy", "pulumi update --yes", "terragrunt run --all apply", "copilot deploy", "eb deploy", "ansible-playbook site.yml",
+                    "/usr/local/bin/terraform apply -auto-approve", "./bin/tofu apply", "terraform 'apply'", "$(which terraform) apply"):
+            with self.subTest(cmd):
+                repo.write(".github/workflows/x.yml", "name: x\non: push\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n" % json.dumps(cmd))
+                self.assertTrue(self.wf(repo)["deploys"], cmd)
+
+    def test_the_review_actions_are_deploys(self):
+        repo = self.repo_with({})
+        for uses in ("gruntwork-io/terragrunt-action@v2", "dflook/tofu-apply@v1", "dawidd6/action-ansible-playbook@v2"):
+            with self.subTest(uses):
+                repo.write(".github/workflows/x.yml", "name: x\non: push\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: %s\n" % uses)
+                self.assertTrue(self.wf(repo)["deploys"], uses)
+
+    def test_docker_steps_are_read(self):
+        repo = self.repo_with({})
+        digest = "sha256:" + "ab" * 32
+        cases = {"hashicorp/terraform:1.9@%s" % digest: "", "alpine@%s" % digest: "        with:\n          args: terraform apply -auto-approve\n"}
+        for image, extra in cases.items():
+            with self.subTest(image):
+                repo.write(".github/workflows/x.yml", "name: x\non: push\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker://%s\n%s" % (image, extra))
+                self.assertTrue(self.wf(repo)["deploys"], image)
+        repo.write(".github/workflows/x.yml", "name: x\non: push\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker://alpine@%s\n        with:\n          args: echo hi\n" % digest)
+        self.assertFalse(self.wf(repo)["deploys"])
+
+    def test_a_remote_reusable_workflow_with_secrets_or_a_token_is_a_deploy_whatever_it_is_called(self):
+        callee = "acme/shared/.github/workflows/build.yml@" + SHA40
+        for extra, perms in (("    secrets: inherit\n", ""), ("    secrets:\n      token: ${{ secrets.T }}\n", ""), ("", "permissions:\n  id-token: write\n")):
+            with self.subTest(extra=extra, perms=perms):
+                text = "name: c\non: push\n%sjobs:\n  go:\n    uses: %s\n%s" % (perms, callee, extra)
+                w = self.wf(self.repo_with({".github/workflows/c.yml": text}))
+                self.assertTrue(w["deploys"])
+                self.assertIn("external reusable workflow", " ".join(w["labels"]))
+
+    def test_a_remote_reusable_workflow_with_nothing_handed_over_is_not(self):
+        text = "name: c\non: push\npermissions:\n  contents: read\njobs:\n  go:\n    uses: acme/shared/.github/workflows/lint.yml@%s\n" % SHA40
+        self.assertFalse(self.wf(self.repo_with({".github/workflows/c.yml": text}))["deploys"])
+
+    def test_the_name_heuristic_stays_as_an_extra_signal(self):
+        text = "name: c\non: push\npermissions:\n  contents: read\njobs:\n  go:\n    uses: acme/shared/.github/workflows/deploy.yml@%s\n" % SHA40
+        self.assertTrue(self.wf(self.repo_with({".github/workflows/c.yml": text}))["deploys"])
+
+
+APPLY_ENV = """name: apply
+on:
+  push:
+    branches: [main]
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - run: terraform plan -out=tfplan
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: %s
+    steps:
+      - run: terraform apply tfplan
+"""
+
+
+class ApplyEnvironments(SurfaceCase):
+    """IN-4 and IN-11: the Environment each apply job names is the one judged."""
+
+    def gh(self, *envs):
+        from doctorlib import github
+        from . import ghfixtures as gf
+        return github.fixture_ghapi(gf.build(environments={"environments": list(envs)}))
+
+    def ctx_for(self, text, *envs, files=None, **kw):
+        repo = self.repo_with(dict({".github/workflows/apply.yml": text}, **(files or {})))
+        return self.ctx(repo, ghapi=self.gh(*envs) if envs else None, **kw)
+
+    def test_apply_jobs_are_found_with_their_environment(self):
+        ctx = self.ctx_for(APPLY_ENV % "production")
+        self.assertEqual(deploy.apply_jobs(ctx), [{"file": ".github/workflows/apply.yml", "job": "apply", "environment": "production", "dynamic": False}])
+
+    def test_a_dynamic_or_missing_environment_is_reported_as_such(self):
+        dyn = self.ctx_for(APPLY_ENV % "${{ vars.E }}")
+        self.assertEqual([(j["environment"], j["dynamic"]) for j in deploy.apply_jobs(dyn)], [(None, True)])
+        none = self.ctx_for((APPLY_ENV % "x").replace("    environment: x\n", ""))
+        self.assertEqual([j["environment"] for j in deploy.apply_jobs(none)], [None])
+
+    def test_reviewers_on_some_other_environment_do_not_count(self):
+        from . import ghfixtures as gf
+        ctx = self.ctx_for(APPLY_ENV % "production", gf.env_with_reviewers("staging"), {"name": "production", "protection_rules": []})
+        self.assertFalse(levelcalc.env_reviewers_available(ctx))
+
+    def test_reviewers_on_the_environment_the_apply_names_do(self):
+        from . import ghfixtures as gf
+        ctx = self.ctx_for(APPLY_ENV % "production", gf.env_with_reviewers("production"))
+        self.assertTrue(levelcalc.env_reviewers_available(ctx))
+
+    def test_an_apply_job_with_no_environment_is_not_gated_by_reviewers(self):
+        from . import ghfixtures as gf
+        ctx = self.ctx_for((APPLY_ENV % "x").replace("    environment: x\n", ""), gf.env_with_reviewers("production"))
+        self.assertFalse(levelcalc.env_reviewers_available(ctx))
+
+    def test_a_dynamic_environment_name_is_never_credited(self):
+        from . import ghfixtures as gf
+        ctx = self.ctx_for(APPLY_ENV % "${{ vars.E }}", gf.env_with_reviewers("production"))
+        self.assertFalse(levelcalc.env_reviewers_available(ctx))
+
+    def test_every_apply_job_needs_its_own_reviewed_environment(self):
+        from . import ghfixtures as gf
+        two = APPLY_ENV % "production" + "  apply2:\n    needs: plan\n    runs-on: ubuntu-latest\n    environment: dr\n    steps:\n      - run: terraform apply tfplan2\n"
+        self.assertFalse(levelcalc.env_reviewers_available(self.ctx_for(two, gf.env_with_reviewers("production"))))
+        self.assertTrue(levelcalc.env_reviewers_available(self.ctx_for(two, gf.env_with_reviewers("production"), gf.env_with_reviewers("dr"))))
+
+    def test_with_no_github_data_only_the_attestation_stands(self):
+        text = APPLY_ENV % "production"
+        self.assertFalse(levelcalc.env_reviewers_available(self.ctx_for(text)))
+        repo = self.kit_repo(config={"platform_attested": ["environment_reviewers"]}, files={".github/workflows/apply.yml": text})
+        self.assertTrue(levelcalc.env_reviewers_available(self.ctx(repo)))
+
+    def test_github_data_beats_the_attestation(self):
+        from . import ghfixtures as gf
+        repo = self.kit_repo(config={"platform_attested": ["environment_reviewers"]}, files={".github/workflows/apply.yml": APPLY_ENV % "production"})
+        ctx = self.ctx(repo, ghapi=self.gh(gf.env_with_reviewers("staging"), {"name": "production", "protection_rules": []}))
+        self.assertFalse(levelcalc.env_reviewers_available(ctx))
+
+    def test_a_repo_with_no_apply_job_keeps_the_old_reading(self):
+        from . import ghfixtures as gf
+        repo = self.repo_with({"infra/main.tf": ""})
+        ctx = self.ctx(repo, ghapi=self.gh(gf.env_with_reviewers("production")))
+        self.assertTrue(levelcalc.env_reviewers_available(ctx))
+
+    def branch_policy(self, *envs, text=None):
+        ctx = self.ctx_for(text or APPLY_ENV % "production", *envs)
+        return self.check_one(ctx, "deploy.environment-branch-policy")[0]
+
+    def test_an_environment_with_no_deployment_branch_policy_is_a_warning(self):
+        from . import ghfixtures as gf
+        r = self.branch_policy(gf.env_with_reviewers("production"))
+        self.assertEqual((r.status, r.severity), ("fail", "warn"))
+        self.assertIn("production", r.message)
+
+    def test_a_deployment_branch_policy_passes(self):
+        from . import ghfixtures as gf
+        env = gf.env_with_reviewers("production")
+        env["deployment_branch_policy"] = {"protected_branches": False, "custom_branch_policies": True}
+        self.assertEqual(self.branch_policy(env).status, "pass")
+
+    def test_an_environment_that_does_not_exist_yet_is_a_warning(self):
+        from . import ghfixtures as gf
+        r = self.branch_policy(gf.env_with_reviewers("staging"))
+        self.assertEqual((r.status, r.severity), ("fail", "warn"))
+        self.assertIn("do not exist", r.message)
+
+    def test_no_github_data_or_no_apply_job_is_skipped_never_a_pass(self):
+        ctx = self.ctx_for(APPLY_ENV % "production")
+        self.assertEqual(self.check_one(ctx, "deploy.environment-branch-policy")[0].status, "skipped")
+        from . import ghfixtures as gf
+        ctx2 = self.ctx(self.repo_with({"infra/main.tf": ""}), ghapi=self.gh(gf.env_with_reviewers("production")))
+        self.assertEqual(self.check_one(ctx2, "deploy.environment-branch-policy")[0].status, "skipped")
+
 if __name__ == "__main__":
     unittest.main()
