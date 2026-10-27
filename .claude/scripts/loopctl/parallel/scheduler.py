@@ -345,7 +345,7 @@ class ParallelDriver(Driver):
         occ = self.occupying(st)
         skipped = []  # type: List[str]
         now = common.now()
-        for iid in st.eligible(order, deps):
+        for iid in self.eligible_now(st, order, deps):
             if len(self.slots) >= self.max_parallel:
                 break
             if iid in self.slots:
@@ -678,7 +678,7 @@ class ParallelDriver(Driver):
                 if self.draining:
                     return self.drain_code()
                 waiting = st.by_status("awaiting_human", "pr_open")
-                eligible = [i for i in st.eligible(order, deps)]
+                eligible = [i for i in self.eligible_now(st, order, deps)]
                 if not eligible:
                     if waiting:
                         self.outcome = "awaiting_human"

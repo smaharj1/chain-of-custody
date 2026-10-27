@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from kitlib import evidence, levels, runstate
 
-from . import deploy
+from . import deploy, extras
 from .model import Context, Result, check, failed, passed, skipped, ERROR, WARN, PASS, FAIL, UNKNOWN
 
 L = levels
@@ -154,6 +154,26 @@ def _nonces_present(ctx: Context) -> bool:
         return False
 
 
+def _unattended_rows(ctx: Context) -> List[Tuple[str, bool, str]]:
+    """L4 also needs a notify_command that works and an external watchdog that has checked in (R2, DEC-31; Phase 7). The judgement is `loopctl.unattended`'s
+    own (`notify_row`, `watch_row`: the same two rows `loopctl unattended check` and `loopctl run` print); this only asks them."""
+    try:
+        from loopctl import unattended
+    except ImportError:
+        return []                                                  # no loopctl: the "loopctl installed" row already caps L4
+    st = runstate.RunState.for_path(ctx.repo)
+    common_dir = st.common_dir if st is not None else os.path.join(ctx.repo, ".git")
+    rows = []  # type: List[Tuple[str, bool, str]]
+    if ctx.config is not None:
+        n = unattended.notify_row(ctx.config, ctx.env, ctx.repo, common_dir)
+        rows.append(("notify_command usable", n["ok"], n["message"]))
+    else:
+        rows.append(("notify_command usable", False, "no loop.config to read notify_command from"))
+    w = unattended.watch_row(st, ctx.now) if st is not None else {"ok": False, "message": "this is not a git repository"}
+    rows.append(("external watchdog has checked in", w["ok"], w["message"]))
+    return rows
+
+
 def prerequisites(ctx: Context, rs: R) -> Dict[int, List[Tuple[str, bool, str]]]:
     kind = str(ctx.cfg("bot.kind", "none"))
     bot_errs = rs.errors("bot.identity")
@@ -188,11 +208,12 @@ def prerequisites(ctx: Context, rs: R) -> Dict[int, List[Tuple[str, bool, str]]]
         ("loopctl installed", os.path.isdir(loopctl_dir), "loopctl is not installed (Phase 4)"),
         ("spend ceiling set", ctx.config is not None and ctx.config.is_set("run_budget_usd"), "run_budget_usd is not set in loop.config"),
     ]
+    l4 += _unattended_rows(ctx)
     explicit = ctx.config.explicit if ctx.config is not None else {}
     l5 = [
         ("promotion bar attested", bool(str(ctx.cfg("promotion_attested", "") or "").strip()), "promotion_attested is empty (§6.3)"),
         ("mutation testing on", explicit.get("gates.g4") == "on", "gates.g4 is not explicitly on"),
-    ]
+    ] + extras.l5_prerequisites(ctx)
     return {2: l2, 3: l3, 4: l4, 5: l5}
 
 

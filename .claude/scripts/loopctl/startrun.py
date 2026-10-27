@@ -99,6 +99,10 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
         from . import parallel                       # Phase 8: OPT-IN; a run that does not ask for it never loads the package
         for p in parallel.rows(ctx):
             chk(p["id"], p["ok"], p["message"])
+    if ctx.cfg.get("remote_lock"):
+        from . import remote_lock                    # Phase 11b: OPT-IN; a run that does not ask for it never loads the module
+        for p in remote_lock.rows(ctx):
+            chk(p["id"], p["ok"], p["message"])
     lk = ctx.lock().status()
     mine = bool(lk["held"] and session and (lk.get("record") or {}).get("sessionId") == session)
     dead = bool(ctx.runner == "driver" and lk["held"] and not lk["corrupt"] and lock_mod.owner_dead(lk.get("record") or {}))
@@ -197,10 +201,22 @@ def start(ctx: Any, out: Any, session: Optional[str], nonce: Optional[str], as_j
             lk.takeover(run_id, sid, ctx.repo, os.getpid(), plan_rev)          # a driver that crashed: its lock is nobody's (Phase 4c)
         else:
             lk.acquire(run_id, sid, ctx.repo, os.getpid(), plan_rev)
+        keeper = None
+        if ctx.cfg.get("remote_lock") and ctx.runner == "driver":
+            from . import remote_lock                    # Phase 11b: one run per plan across machines (advisory); taken after the local lock, given back before it
+            try:
+                keeper = remote_lock.Keeper.for_context(ctx, run_id=run_id)
+                keeper.start()
+            except BaseException:
+                lk.release(sid)
+                raise
+            ctx.remote_keeper = keeper
         rec = _write_run(ctx, run_id, sid, order, plan_rev, "driver")
         try:
             rc = driver.run(ctx, loop, rec, as_json)
         finally:
+            if keeper is not None:
+                keeper.release()
             lk.release(sid)
         return int(rc or 0)
     assert session is not None

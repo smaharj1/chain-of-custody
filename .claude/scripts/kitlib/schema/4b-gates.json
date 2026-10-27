@@ -37,6 +37,28 @@
       ]
     },
     {
+      "name": "gates.g10",
+      "type": "enum",
+      "default": "off",
+      "owner_phase": "11b-loopctl-extras",
+      "h6_protected": true,
+      "evidence_gated": [
+        "on",
+        "report"
+      ],
+      "deprecated_by": null,
+      "section": "gates",
+      "doc": [
+        "on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G10 product checks (accessibility, performance budget, PII, observability): you supply the commands (g10_*_cmd);",
+        "  no tool is bundled. Refuses `on` and `report` until the evidence gate has passed. Other gates default to on."
+      ],
+      "choices": [
+        "on",
+        "report",
+        "off"
+      ]
+    },
+    {
       "name": "g5_ast_lint",
       "type": "list",
       "default": [],

@@ -26,6 +26,10 @@ Modules (the ones other phases import are marked):
     launch     the one module that starts a child session: launch line, profile, environment, process group, orphans
     heartbeat  the driver's lock heartbeat, a child's liveness, the canary
     compact_hook  the SessionStart(compact) hook (a script, not imported)
+    remote_lock, claims  the advisory remote ref lock and per-item claims (Phase 11b; OPT-IN, evidence-gated)
+    merge_class  the L5 eligibility classifier: answers a question, merges nothing (Phase 11b)
+    manifest   the sealed reproducibility manifest (Phase 11b)
+    extras     the command line of the four above
 """
 from __future__ import annotations
 
