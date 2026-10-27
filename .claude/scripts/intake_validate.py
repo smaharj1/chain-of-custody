@@ -19,7 +19,7 @@ The only label it can ever ask for is `factory:<type>` with <type> from a fixed 
 holds the triage object, bare or in a code fence). Exit 0 whenever it wrote the two files, including status "invalid" (the
 workflow then posts the "a human should read it" comment). Exit 2: unusable arguments or an unwritable output directory.
 
-The schema is the CI-side minimum. The loop's own intake (Phase 7) validates the same fields with its schema file; keep them in step.
+The schema is `.claude/templates/intake_schema.json`, the same file the loop's own stage 2 (`loopctl/intake.py`, Phase 7) reads.
 """
 from __future__ import annotations
 
@@ -35,13 +35,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio  # noqa: E402
 
-TYPES = ("feature", "bug", "deps", "chore")
-SEVERITIES = ("low", "medium", "high", "critical", "unknown")
-FIELDS = {"type", "title", "problem", "acceptance", "severity", "repro_steps", "duplicate_of"}
-REQUIRED = ("type", "title", "problem", "acceptance")
-LIMITS = {"title": 120, "problem": 1500, "acceptance_item": 200, "acceptance_n": 10, "repro_item": 200, "repro_n": 10}
+SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "intake_schema.json")
+
+
+def load_schema(path: str = SCHEMA_PATH) -> Dict[str, Any]:
+    """The one intake schema (`.claude/templates/intake_schema.json`, Phase 7). The loop's stage 2 (loopctl/intake.py) reads the same file.
+    A missing or malformed schema is an error at import: the CI job then fails closed instead of validating against a guess."""
+    with open(path, "r", encoding="utf-8") as fh:
+        doc = json.load(fh)
+    if not isinstance(doc, dict) or doc.get("schema") != "intake.schema.v1":
+        raise ValueError("%s is not an intake.schema.v1 document" % path)
+    return doc
+
+
+_SCHEMA = load_schema()
+TYPES = tuple(_SCHEMA["types"])
+SEVERITIES = tuple(_SCHEMA["severities"])
+FIELDS = set(_SCHEMA["fields"])
+REQUIRED = tuple(_SCHEMA["required"])
+LIMITS = dict(_SCHEMA["limits"])
 MARKER = "<!-- factory-intake:v1 -->"
-DEFAULT_MAX_BYTES = 200 * 1024
+DEFAULT_MAX_BYTES = int(_SCHEMA["max_bytes"])
 
 
 class Invalid(ValueError):

@@ -24,6 +24,7 @@ COMMANDS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "commands", "*.md
 ENGINEERS = {"database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer", "infra-engineer"}
 AUTHORS = {"acceptance-author"}     # Phase 4b: writes the tests the engineers are graded by; engineer-class tools, never the implementation
 CRITICS = {"design-critic", "code-reviewer", "security-reviewer"}
+TRIAGE = {"intake-triage"}          # Phase 7: stage 1 of two-stage intake; read-only, every tool denied at launch (report 5.3)
 HIGH_EFFORT = CRITICS | {"database-engineer", "backend-engineer"}
 DENY = {"Agent", "Skill", "Workflow", "mcp__*"}
 FORBIDDEN_TOOLS = {"Agent", "Skill", "Workflow"}
@@ -61,7 +62,7 @@ def csv(value):
 class AgentFrontmatter(unittest.TestCase):
     def test_all_nine_agents_present(self):
         names = {os.path.basename(p)[:-3] for p in AGENTS}
-        self.assertEqual(names, ENGINEERS | CRITICS | AUTHORS)
+        self.assertEqual(names, ENGINEERS | CRITICS | AUTHORS | TRIAGE)
 
     def test_required_keys_and_name_matches_file(self):
         for path in AGENTS:
@@ -102,8 +103,10 @@ class AgentFrontmatter(unittest.TestCase):
             name = os.path.basename(path)[:-3]
             with self.subTest(name):
                 tools = set(csv(split_frontmatter(path)[0]["tools"]))
-                if name in CRITICS:
+                if name in CRITICS | TRIAGE:
                     self.assertFalse(tools & WRITE_TOOLS, "read-only role has a write tool")
+                    if name in TRIAGE:
+                        self.assertEqual(tools, {"Read"}, "the triage agent lists only Read; the launch denies it too")
                 else:
                     self.assertTrue({"Edit", "Write"} <= tools)
 

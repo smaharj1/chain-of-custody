@@ -276,6 +276,28 @@ dep_check_cmd: ""                # G9 only. Optional registry lookup for each NE
 license_allowlist: []            # G9 only. SPDX ids a new dependency's licence must be in (reported by dep_check_cmd). Empty = licences are listed, not enforced.
 secrets_scan_cmd: ""             # G11 only. Optional external scanner (gitleaks, trufflehog) run in the worktree on top of the built-in pattern scan. Environment:
                                  #   LOOPCTL_BASE and LOOPCTL_HEAD. Exit 0 = clean, anything else = findings. The built-in scan always runs.
+
+# --- Unattended L4 (report 6.2, 6.3, 10.4, 16.1 row 7; python3 .claude/scripts/loopctl unattended ...) ---
+# Unattended mode is `autonomy: unattended` + `autonomy_level: L4` (both refuse until the evidence gate passes). These keys say how a run that nobody
+# watches reaches a person, and the promotion bar. Read from the BASE sha, never from the branch under judgement (CO-11).
+notify_command: ""               # OPT-IN. A program (and fixed arguments) the kit runs to reach you when a run stops, parks or stalls (DEC-31). It is run with no shell,
+                                 #   so write the program and its arguments only: no pipes, redirects, `$VAR` or `;` (wrap those in a script of yours). The message is
+                                 #   never on the command line: it arrives on stdin as JSON and in KIT_NOTIFY_* variables, as plain text with a strict character set. It must be an
+                                 #   absolute path or a name on PATH, and must not live inside the repository (an agent could edit it). The kit never sends anything itself.
+                                 #   Empty = no notifications; unattended mode then refuses to start.
+notify_timeout_s: 20             # Seconds the notify_command may run before it is killed. A command that hangs must not hang the run.
+notify_env_allow: []             # Names of environment variables passed to notify_command (for a webhook URL or a topic name). It otherwise gets only PATH, HOME, the locale
+                                 #   and KIT_NOTIFY_*. Cloud, GitHub, SSH, git and Claude credential families are never passed, whatever this says.
+stall_run_min: 30                # Minutes the driver may go without a sign of life before the stall watchdog notifies (the driver itself is stuck or gone). Not the child's
+                                 #   stall limit (dispatch_timeout_min). Keep it above the longest gate command you run. Used by the in-process watchdog and by `loopctl unattended watch` (cron or launchd, every 5 minutes; an unattended start needs it to have checked in).
+stall_storm_n: 3                 # Stalls (a child with no tool call for dispatch_timeout_min, or a child past its wall limit) inside stall_storm_window_min that count as a
+                                 #   stall storm. A storm demotes the effective level to L3 (report 6.3): unattended runs refuse until a human runs `loopctl approve demotion`. 0 = off.
+stall_storm_window_min: 180      # The window, in minutes, for stall_storm_n.
+promotion_min_prs: 10            # The promotion bar (report 6.3): consecutive merged draft PRs, at L2 or L3, before `loopctl unattended promotion` calls the install eligible
+                                 #   for L4. Server-side facts only (a file made from GitHub or CI; never the local event log, which can be forged). The bar is advice for a human; nothing here promotes.
+promotion_max_correctness_changes: 1   # Most reviewer-requested changes of class `correctness` across those PRs (default 1).
+promotion_max_reverts: 0         # Most reverted PRs across the window (default 0).
+promotion_max_integrity_flags: 0   # Most test-integrity flags (a weakened or deleted assertion, a reward hack) across the window (default 0).
 ```
 
 ## Notes
