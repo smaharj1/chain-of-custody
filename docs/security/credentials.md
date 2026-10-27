@@ -34,7 +34,7 @@ Say these out loud to yourself before you trust a clean run:
 - **Your running processes.** On Linux a process can read the environment of the same user's other processes; an IDE or terminal you left open may hold tokens the doctor never sees.
 - **An unlocked keychain.** On macOS, `security find-internet-password` hands over the stored GitHub password for the logged-in user, with no helper configured. The Linux secret service is the same through D-Bus.
 - **Browser sessions and cookies**, a cloud console you are signed into, an `ssh` connection you left open with agent forwarding.
-- **Tunnels that are already up.** A running `ssh -L`, `kubectl port-forward` or `aws ssm start-session` makes a production database reachable on localhost with no credential file anywhere. The guards deny starting one (Phase 2); the doctor does not list listening ports.
+- **Tunnels that are already up.** A running `ssh -L`, `kubectl port-forward` or `aws ssm start-session` makes a production database reachable on localhost with no credential file anywhere. The guards deny starting one ([guards.md](guards.md)); the doctor does not list listening ports.
 - **Secrets held by an IDE or a terminal multiplexer** (VS Code secret storage, a tmux session where you are logged in).
 - **Dashboard settings** on a git-integrated host (see [deploy-surface.md](deploy-surface.md)).
 

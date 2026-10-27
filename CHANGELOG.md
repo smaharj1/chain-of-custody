@@ -4,22 +4,169 @@ All notable changes to Chain of Custody. Format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
-### Changed — `docs/` boundary: kit runtime moved into `.claude/`
+## [2.0.0-rc.1] — 2026-10-27
 
-`docs/` held three unrelated things at once: files the modes read at run time, files the agents write per feature, and files humans read. Nothing marked which was which, so the install needed four `cp` commands and the update procedure needed an 8-path "never-edit set" (the gap logged at review-2026-07 §4.3).
+The v2 release candidate. The safety hooks are replaced by a fail-closed guard suite and a doctor that computes how much autonomy the install has earned; the five commands become skills; the loop gains `loopctl` (state, gates, a driver, unattended and parallel runs, a learning loop) as opt-in layers over the unchanged prose loop; and the kit ships as a plugin or a copy install with a `/migrate` upgrade path. Nothing in v2 has run against a live Claude Code, GitHub or cloud account: the checks that need one are in [`docs/v2-pending-human.md`](docs/v2-pending-human.md) and the designs not built are in [`docs/design/deferred.md`](docs/design/deferred.md).
 
-Runtime files now live with the rest of the runtime:
+The per-topic fragments stay in `changelog.d/` for rc.1. Where they disagree, the newest wins; in particular `changelog.d/11b-loopctl-extras.md` says the conductor runs `remote-lock` and `claim` writes, and `changelog.d/fix-c-loopctl-core.md` supersedes that (they are human-only, printed as HUMAN STEP lines). Upgrading a v1.2.0 install: [`docs/migrating-to-v2.md`](docs/migrating-to-v2.md).
 
-- `docs/design/loop-engineering.md` → **`.claude/spec/loop-engineering.md`**
-- `docs/features/_templates/*.md` → **`.claude/templates/*.md`**
+### Upgrade impact
 
-`docs/` now holds only human reading (`getting-started.md`, `faq.md`, `choosing-your-stack.md`) and agent output (`docs/features/<slug>/`). **Every reference to `docs/features/<slug>/` is untouched** — the output path did not move.
+Breaking changes first. Each says what an install must do.
 
-**Upgrading**: re-copy `.claude/` and delete `docs/design/loop-engineering.md` and `docs/features/_templates/` from your project. Nothing you authored moves; `docs/features/<slug>/` is unaffected.
+- **The v2 guards are on, and the v1 shell hooks are gone.** `.claude/settings.json` now wires `.claude/scripts/guards/run.py` (fail closed: any error on a blocking event denies, and the wired command exits 2 if `python3` is missing). `.claude/hooks/guard-git.sh` and `.claude/hooks/guard-main-edit.sh` are removed in 2.0.0. An install must switch its own `settings.json` (the migration never edits it; [`docs/packaging.md`](docs/packaging.md#activating-the-v2-guards-copy-install)) in the same commit that removes the v1 hooks, then run `python3 .claude/scripts/guards/wiring.py --check` and `python3 .claude/scripts/doctor.py`. Python 3.9 or later is required; the Claude Code floor is `claude_code_min` in `.claude/KIT_VERSION`.
+- **Modes moved from `.claude/commands/` to skills.** `/pm`, `/architect`, `/tech-lead`, `/planner`, `/orchestrate` are `.claude/skills/<mode>/SKILL.md`, with `/bootstrap`, `/retro`, `/init` and `/migrate` added. There are no aliases. An unmodified command file is removed by `/migrate`; a modified one stays and is listed (move your edit into the skill). Anything that read `.claude/commands/<mode>.md` by path must read the skill. Only `pm` can be started by the model; the rest are person-started. Plugin installs are namespaced (`/chain-of-custody:pm`).
+- **The conductor no longer pushes and no longer grants human-only approvals (D3, D11).** `git push` is denied to every caller; `pr_prepare.py` prints the commands for you. `approve plan|item|env|breaker|cost|demotion`, `approve unblock --choice reset`, `resume`, `reconcile --live`, `parallel ... --apply`, `migrate-plan --force`, `remote-lock acquire|renew|release|steal` and `claim take|release` are denied to every agent, the conductor included. A human runs each as a HUMAN STEP in a plain terminal (or with `!`); `loopctl status --pending-human` prints them. A merge approval is bound to its kind, item, attempt and head commit: approvals written before this change carry none of those, no longer merge, and must be given again. `loopctl advance` without `--head` uses the branch tip and refuses when the branch is missing. `approve checkpoint` is accepted only during a driver checkpoint pause; `approve item` takes `approve|reject|stop`.
+- **`report_trailers` now defaults to `warn`, and `gates.docs` runs in `report` mode.** This loosens the 4a/4c strictness for soft trailer problems (a missing trailer, a missing non-Status section, `NONE` without `checked:`); they are recorded as `report_warning` events instead of failing the item. Hard problems (an unreadable decision, a trailer that contradicts the report, trailer-shaped JSON a strict parser refuses) still fail in both modes. Set `report_trailers: block` in a reviewed commit to keep the old strictness. `gates.docs` records `docs.*` findings and never blocks until you set it `on`.
+- **The doctor's sandbox rows are stricter.** The row `sandbox.registry-path` fails at L2 and above, with `runner: driver`, or in an unattended run, when `denyWrite` lacks `<git-common-dir>/loopctl/sessions` (in a linked worktree by absolute path; `wiring.py --sandbox-snippet` prints the lines), and it caps the level at L3. With no sandbox lists at all, `sandbox.deny-paths` stays unknown, but the registry row still fails and caps. `sandbox.deny-paths` is now an error when any H6 write path is not denied. Merge the new `.claude/templates/security/sandbox.settings.json` into your settings. The template denies writes to `.claude/scripts`, `.claude/agents`, `.claude/skills`, `.github`, `CODEOWNERS` and the rest of H6, so a kit-development session does not use it.
+- **Unknown cost parks until `approve cost`.** A missing, renamed, negative, infinite or non-numeric `total_cost_usd`, an unreadable ledger line, or a child killed with no result records an unknown spend and parks the run. An unacknowledged unknown of any earlier run parks every later run too. Run `loopctl approve cost --by NAME` after reading it. (With unattended measurement, a killed child is priced as `estimated`, at least half its allowance.)
+- **Tier 2 opt-in projects get gates enforced at advance.** For a project with `loopctl_tier2: true`, `loopctl advance` enforces every installed gate that is `on`: an item with no `ext.g3` in its plan item fails G2 until the plan declares its acceptance artifacts (or `ext.g3.exempt` with a reason). A gate run can now fail where it passed before (see Fixed). Nothing changes for anyone who has not opted in: `loopctl_tier2: false`, `runner: sequential`.
+- **The effective level starts at L1.** Out of the box the doctor computes L1 until a human attests the boundary; run `python3 .claude/scripts/doctor.py --level` and follow what blocks the next level. An install with an existing reachable credential sees `cred.*` errors. The L4 and L5 rows also need a usable `notify_command`, a watchdog check-in and `merge_policy: auto-low-risk`, so a configured L4 or L5 can drop.
+- **Agent files and briefs changed.** No `mcp__plugin_context7_*` tools in the agents' `tools:` (add them back, and drop `mcp__*` from `disallowedTools:`, if you relied on them); new frontmatter `disallowedTools`, `effort`, `model`; `max_review_rounds` and `tool_call_budget` are gone from the brief template (the cap is `max_retries_per_item`); engineers write their own report file ending in a JSON trailer; the Tech Lead no longer uses the `code-review:code-review` skill and dispatches the `code-reviewer` agent in every lane; no in-session DB+Backend parallelism; the orchestrate preamble is renumbered; loop item branches are `feat/<slug>-a<n>`, discarded `dead/*`, parked `blocked/*`. Forked agent files conflict on changed lines; `/migrate` merges them.
+- **`docs/` boundary (from the old Unreleased).** `docs/design/loop-engineering.md` moved to `.claude/spec/loop-engineering.md` and `docs/features/_templates/*.md` to `.claude/templates/*.md`; `docs/choosing-your-stack.md` moved to `.claude/context/choosing-your-stack.md`. Delete the old copies from your project; `docs/features/<slug>/` is unaffected. Install is one step, `cp -r .claude .` (or `dist/copy-install/`); no `docs/` file is load-bearing.
+- **Stricter checks may fail work that passed before.** `notify_command` may not name a shell, interpreter, `env`, `curl`, `ssh`, `sudo` or similar, an `@` argument, or a path in the repository or a credential directory (wrap it in your own script). The doctor and `ci_lint.py` report new `infra.*` and `ci.*` errors (an apply on push to `main` without an `environment:`, a credentialed job on a push to any branch or tag, `docker://` images without a digest, `${{ github.event.* }}` in `run:`). Gates G3, G5, G9 and G11 fail on more (Fixed, below). `redact()` redacts more key names.
+- **Plugin and copy installs.** The plugin covers the modes, agents, guard hooks and stand-alone scripts; `runner: driver`, unattended, parallel and the generated GitHub setup script need the copy install. `.claude/scripts/intake_validate.py` reads `.claude/templates/intake_schema.json`: a hand-picked copy must take both.
+- **Plans.** `loopctl migrate-plan --check|--write` converts a v1 `build-plan.json` to `plan/`; `loopctl approve plan --by NAME --seed-v1 build-plan.json` carries item statuses over. Optional: the prose loop still works.
+- `.claude/loop.config.md` gains keys (110 registered in `.claude/scripts/kitlib/schema/`); old files load and defaults fill in. `.gitignore` gains `.claude/pr/`, `.claude/bootstrap/`, secrets patterns and `__pycache__/`.
 
-Install is now a single required step — `cp -r .claude .` — with the `docs/` files optional. `/planner` previously depended on `docs/choosing-your-stack.md` being present; it now reads that file when it exists and recommends a stack on its own when it doesn't, so no `docs/` file is load-bearing.
+### Added
 
-Also: `orchestrate.md`'s primer-sentinel grep gained an explicit "never widen past `.claude/context/*.md` + `CLAUDE.md`" guard — the new `spec/` and `templates/` files quote sentinel tokens by design, and sweeping them in would pin every run to `per-feature`.
+#### Guards
+- `.claude/scripts/guards/` (`run.py`, one manifest-driven hook entry point, Python 3.9, standard library): shell analysis (quotes, substitutions, heredocs, wrappers, `npm run`/`make` expansion, `cd` tracking), caller classification (engineer, critic, conductor, unknown), git rules (push denied, protected branches, `--no-verify`, `gh pr merge` denied), file rules (main-edit, guardrail paths, credential files, H6 self-modification), infra verb classifier, `claude` and `loopctl` exec rules, HALT, ConfigChange blocker, injection taint, telemetry, and `run.py --selftest [--record]`.
+- `run.py explain <command>` (why a command was denied, by rule id); `register-session`, `unregister-session`, `set-halt`, `clear-halt` (human only).
+- `.claude/settings.v2.json`, `.claude/templates/settings/` (`interactive`, `headless-child`, `critic`, `deny-baseline.json`), generated by `guards/wiring.py --print|--write|--check|--plugin|--sandbox-snippet`.
+- `docs/security/guards.md`: every rule id and a "What the guards cannot see" section; a corpus of about 1,400 rows plus 20 synthetic eval cases (`evals/`, `tools/evals/run_local.py`).
+- `guard-exec:human-apply`: `migrate.py`, `init_project.py`, `bootstrap_config.py apply`, `github/labels.py --apply`, `github/boundary.py --apply|--run`, `apply-boundary.sh`, `apply-labels.sh`, `verify-boundary.sh --run` and a generated `setup.sh --apply` are denied to every agent.
+
+#### Boundary and doctor
+- `.claude/scripts/doctor.py` (`doctorlib/`, about 70 checks, `doctor.v1` JSON): credentials audit, deploy surface with a fingerprint attestation, GitHub rulesets and bypass actors, settings and sandbox, MCP lockdown, secrets, CODEOWNERS, and the effective level L0 to L5 with every cap and its reason. Flags include `--credentials`, `--deploy-surface`, `--level`, `--live` (human only), `--config-ref`.
+- `.claude/scripts/ci_lint.py` (split-CI linter), `session_start.py` (liveness canary and version banner), `probe_run.py` (sandboxed first-run probe), `.claude/scripts/github/{apply-boundary.sh,verify-boundary.sh,boundary.py}` (human-run rulesets, dry run by default), `.claude/templates/security/` (rulesets, `CODEOWNERS.template`, OIDC trust examples, sandbox and MCP lockdown settings, managed-settings example), `label-guard.yml`, `docs/security/` (17 pages).
+- New config keys: `autonomy_level`, `bot.*`, `solo_maintainer`, `deploy_triggers`, `git_integrated_hosts`, `deploy_surface.*`, `sandbox_verified`, `agent_isolation`, `managed_settings_verified`, `platform_attested`, `factory_approvers`, `promotion_attested`, `mcp_allowed_servers`.
+- Doctor rows `delivery.suggest-draft-pr`, `deploy.environment-branch-policy`, `sandbox.registry-path`, `guards.v1-residue`, `fork.env`, `l5.merge-policy`, `l5.b5`, `lock.remote`, `g10.config`, `parallel.mode`, `parallel.pipeline-host`.
+
+#### PR delivery
+- `.claude/scripts/verify.py` (the kit-owned G6 definition read from the base sha; stages, environment scrub, process groups, ports, native dev server, test-count parsing) and `pr_prepare.py` (`init`, `check`, `prepare`, `reverts`; prints the push and PR commands for a human, never runs `gh`).
+- `.claude/templates/pr-body.md` (the audit block), `.claude/templates/github/workflows/verify.yml` and `claude-review.yml`, `.claude/context/delivery.md`, `docs/delivery.md`.
+- New config keys: `delivery` (`local | push-branch | draft-pr`), `git_autonomy` (`none | branch | branch+commit`), `max_ci_fix_attempts`, `always_human_paths`, `verify_build|lint|typecheck|dev|require|ports|ready_path|timeout_s|run_timeout_s|env_allow`.
+
+#### loopctl core
+- `python3 .claude/scripts/loopctl <command>` (`.claude/spec/loopctl.md`): plan files (`plan/plan.json`, `plan/items/<id>.json`) with a dependency DAG, critical path and slicing checks; a 13-state machine on `refs/loopctl/state/<plan>` written by compare-and-swap; run lock, failure taxonomy, cost ledger with run, item and day ceilings, branch lifecycle, `status` (`--pending-human`, `--matrix`, `--bypass`), `render`, `reconcile`, `abort`, `audit`, `report`, `migrate-plan`, `run --dry-run`, `halt`, `resume`.
+- One shared command table (`kitlib/loopctl_table.py`) classifies every command as read, write or human for the guards and the CLI.
+- New config keys: `runner`, `loopctl_tier2`, `run_budget_usd`, `item_budget_usd`, `day_budget_usd`, `lock_stale_min`, `max_transient_retries`, `max_platform_retries`, `platform_backoff_base_s`, `dispatch_timeout_min`, `orphan_retention_days`, `state_remote`, `db_migrate_down`, and the 0b keys `model_profile`, `max_design_rounds`, `max_item_loc`, `quick_lane_max_loc`.
+
+#### Gates
+- `loopctl gate <name> <item>` with G0 (environment), G1 (acceptance ids), G2 (stubs red), G3 (acceptance and held-out tests), G5 (test integrity), G6 (verify, migrations up/down/up), G7 (saved reviews), G9 (supply chain), G11 (secrets), Evidence, and opt-in G4 (mutation) and G10 (product checks); `.claude/agents/acceptance-author.md`; held-out workflows `heldout.yml`, `heldout-sync.yml`, `mutation.yml`, `g10-product.yml`; `.claude/spec/loopctl-gates.md`.
+- Docs Delta gate `gates.docs` (`loopctl/gates/docs_delta.py`, default `report`).
+- New config keys: `gates.g4`, `gates.g10`, `g5_ast_lint`, `heldout_cmd`, `mutation_cmd`, `mutation_min`, `mutation_timeout_s`, `env_check_cmd`, `migrate_check_cmd`, `dep_check_cmd`, `license_allowlist`, `secrets_scan_cmd`, `g10_*_cmd`, `g10_timeout_s`.
+
+#### Driver
+- `runner: driver` (opt-in): `loopctl run` from a plain terminal launches one `claude -p` child per piece of judgement work (`loopctl/launch.py`, `driver.py`, `heartbeat.py`), with a validated child profile, scrubbed environment, per-child budget, stall and wall-clock limits, crash recovery and an orphan reaper; `compact_hook.py` (SessionStart `compact`) restores state after a compaction; checkpoints follow `autonomy`; `.claude/spec/loopctl-driver.md`; 21 fault-injection cases.
+
+#### Infra CI
+- `.claude/scripts/infra/` (HCL scanner, pre-plan source policy with 40 rule ids, gate checks, 22 `infra.*` lint rules) and `.claude/templates/infra/` (`infra-check.yml`, `infra-plan.yml`, `infra-apply.environment.yml`, `infra-apply.dispatch.yml`, `infra-drift.yml`, OIDC trusts, IAM policies, a conftest bundle, `infra-policy.json`, MCP deploy-deny settings); `docs/security/infra-ci.md`. A person approves every apply.
+
+#### Unattended (L4, opt-in, evidence-gated)
+- `autonomy: unattended`: `loopctl unattended check|status|promotion|intake|watch|notify-test`; no-acknowledge start rules; one closing message per run through `notify.py` (your `notify_command`, no shell); stall watchdog (in-process and external `watch`); demotion on a human revert, security block, test-integrity flag or stall storm (`loopctl approve demotion`); estimated cost for a killed child; the promotion bar over a `promotion.facts.v1` file; two-stage intake (`intake-triage` agent, `.claude/templates/intake_schema.json`, `intake_validate.py`); `docs/unattended.md`.
+- New config keys: `notify_command`, `notify_timeout_s`, `notify_env_allow`, `stall_run_min`, `stall_storm_n`, `stall_storm_window_min`, `promotion_min_prs`, `promotion_max_correctness_changes`, `promotion_max_reverts`, `promotion_max_integrity_flags`.
+
+#### Parallel items (opt-in, evidence-gated, experimental)
+- `parallel_mode: worktree` with `max_parallel` and `lease_ttl_s`: `loopctl/parallel/` (scheduler, footprint conflicts, leases, schema mutex, port slots, worktrees, serial integration, reject cascade), `loopctl parallel check|status|leases|cleanup|cascade`, `worktree_hook.py` and the opt-in `templates/parallel/worktree-hooks.settings.json`; `docs/parallel.md`, `.claude/spec/loopctl-parallel.md`. `pipeline_host` is registered; `workflow` is design-only and a doctor error.
+
+#### Learning loop
+- `loopctl report scan`, `retro` and the `/retro` mode, `gaps [--write]` (rule and primer drafts under the git directory, commands printed for you), `calibration scan|record|report`, `harness [--ablation FILE]` with `tools/evals/ablate.py`; `docs/learning.md`, `docs/harness-review.md`, `.claude/spec/loopctl-learning.md`.
+- New config keys: `report_trailers`, `docs_delta_min_words`, `gaps_min_occurrences`, `calibration_min_samples`, `harness_min_item_runs`.
+
+#### Packaging
+- `tools/build-dist.py` generates `plugin/`, `.claude-plugin/marketplace.json`, `dist/copy-install/` and `.claude/KIT_MANIFEST`; `tools/validate-plugin.py` (offline) and `tools/validate-plugin-real.sh` (the real `claude plugin validate`).
+- `/migrate` (`.claude/scripts/migrate.py`, base archive `.claude/migrate/v1.2.0.tar`) upgrades a copy install with three-way merges and never overwrites your changes; `/init` (`.claude/scripts/init_project.py`) writes the deny block, sandbox profile and MCP lockdown; `docs/packaging.md`, [`docs/migrating-to-v2.md`](docs/migrating-to-v2.md).
+
+#### Bootstrap and ops
+- `/bootstrap` with `bootstrap_detect.py`, `bootstrap_receipt.py` (hash-chained receipt), `bootstrap_config.py plan|apply` (apply is human-only) and `github/repo_script.py` (prints `.claude/bootstrap/setup.sh` for you to run); `github/labels.py`, `apply-labels.sh`, `.claude/templates/github/labels.json`.
+- Workflow templates `intake.yml`, `dependency-check.yml`, `smoke.yml`; `dependency_report.py`; `docs/bootstrap.md`, `docs/ops.md`, `docs/release-automation.md`; `.claude/templates/launch-app-skill.md`.
+
+#### Extras
+- `loopctl remote-lock status|acquire|renew|release|steal` (`remote_lock`, advisory, evidence-gated) and `claim list|show|take|release` (`claim_ttl_h`); `merge-class ITEM` (L5 eligibility classifier; it never merges); `manifest write|show|verify` (reproducibility manifest); `merge_policy`, `low_risk_paths`; `docs/loopctl-extras.md`, `.claude/spec/loopctl-extras.md`.
+
+#### Prose and context
+- New context files: `model-profiles.md` (`quality | balanced | economy`), `migrations.md` (expand, backfill, contract; data-loss classes), `local-dev-rules.md`, `probe-protocol.md`, `platform-notes.md`; templates `domain-glossary.md` and `rule.md`; slicing rules (`size: S|M|L`, walking skeleton first), blocker definitions for the critic and the reviewer, `NEEDS_CLARIFICATION` versus `ESCALATION_NEEDED`, Doc Delta in the engineer report.
+
+#### Measurement and development
+- Baseline kit: `examples/hello-loop/` (runnable fixture), `docs/baseline/`, `tools/baseline/` (`run-baseline.sh`, `observe.py`, `summarize.py`); platform probes: `tools/probes/` (`make-scratch.sh`, `analyze.py`) and `docs/design/probe-assumptions.md`.
+- Foundations: `.claude/scripts/kitlib/` (registry, config, git, JSON, redaction, semver, evidence, run state, caller, levels), `tools/gen-config.py`, `tools/check-refs.py`, `tools/test.sh`, `tools/run_tests.py` (parallel runner), `.github/workflows/kit-tests.yml`.
+
+### Changed
+
+- **Guards.** Replace the two v1 shell hooks (see Upgrade impact); `enforce_engineer_git_hook` is documented as a no-op.
+- **PR delivery.** `/tech-lead` branches and commits at `git_autonomy: branch|branch+commit`, ends in `pr_prepare.py prepare`, and never pushes; slices are the delivery units.
+- **Modes.** `/pm`, `/planner` and `/orchestrate` are skills with inline interview checklists, the renumbered preamble, a dedicated-clone rule, a design-critic cap (`max_design_rounds`), recorded approvals and waivers, and (with `runner: driver`) a conductor that only answers `status --pending-human`. `/orchestrate` offers `/retro` at a milestone.
+- **Agents.** Frontmatter on all agents (`disallowedTools`, `effort`, no `mcp__` tools); `design-critic`, `code-reviewer` and `security-reviewer` rewritten around blockers, test integrity and scanners; `acceptance-author` and `intake-triage` added.
+- **Docs boundary.** Runtime files moved into `.claude/` (see Upgrade impact); `orchestrate`'s primer-sentinel grep never widens past `.claude/context/*.md` and `CLAUDE.md`.
+- **Adapters.** `AGENTS.md`, the Cursor rule and `skills/chain-of-custody/` carry an "advisory runtime" banner and a parity table.
+- `LICENSE` names the copyright holder (pending confirmation).
+
+### Fixed
+
+#### Review fixes (guards, sandbox, corpus)
+- `loopctl` is classified once, from the shared table; `loopctl lock --session status steal` is a write (it was read as `status`); a word the guard cannot read in the command position is a human step.
+- Agent-authored script files are scanned for writers of run state and `loopctl` calls (`kit-internals`); a script counts as reviewed only when unchanged from every trusted base.
+- Infra tools whose names look like reads (`check_and_apply`, `get_or_create_*`) are no longer reads; generic exec tools (`call_aws`, shell) are asked in a main session.
+- `labels.py`, `boundary.py`, the boundary shell scripts and `humanonly.py` refuse on `CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT`, even empty.
+- `boundary.py` slug regexes no longer accept a trailing newline.
+
+#### Review fixes (gates, secrets, supply chain)
+- Acceptance verdicts merge across channels and a failure on any channel wins; a JSON-only pass counts only in G3 visible and held-out runs, never G6; a held-out command that exits non-zero fails (`g3.heldout-failed`).
+- G5 reads TOML tables properly, flags harness-shaped output (`g5.harness-shaped-output`), hard exits (`g5.hard-exit`) and ignored config files (`g5.ignored-config`, `g11.ignored-config`); G9 flags a dependency moved to a git, URL or path source (`g9.source-changed`) and changed indexes (`g9.index-changed`); G11 catches unquoted secrets in config files and more token shapes; `redact()` matches `DB_PASSWORD=`, `apiSecret=` style names.
+- A recorded gate result with no head is stale (`evidence.stale`); G1 splits `git grep -z` output; only `reports/` and `.claude/pr/` are excepted from the dirty-tree check.
+
+#### Review fixes (loopctl core)
+- Approvals are bound to kind, item, attempt and head; moving the head voids an unused approval; a gate result for another head is stale; `Loop.preflight_merge` runs before the driver's `git merge`.
+- Parked work is kept: `feat/*` moves to `blocked/*` on park, clarify and fail; the platform counter resets on a forward step; an escalated transient is judged as an item failure.
+- An unknown cost of any run parks every run until `approve cost`; the driver judges the ledger before recording a failed child's failure.
+- Parallel integration re-runs every verify gate after a rebase; G4 runs in the driver's verify round; after an approved merge the driver runs G6 on the integration tip and stops with `integration_red` when it is red.
+- Gate messages and failure detail reach a later prompt only inside one data fence; `status --pending-human` prints `HUMAN STEP:` lines with the 12-character head; preflight warns when a driver run is not in a linked worktree.
+
+#### Review fixes (infra lint)
+- Credentialed jobs on a push to any branch or tag, `docker://` images, remote reusable workflows with secrets, expression injection (`github.event.*`, `inputs.*`), pull-request code in a privileged job, and indirect apply commands (`$VAR apply`, `sam deploy`, `pulumi up`, `terragrunt run-all apply`) are errors; `gate.py authorize` counts only as a real, unconditional step; Environment reviewers must be on the Environment the apply job names; `label-guard.yml` normalises case and list separators.
+- `plan-readonly.policy.json` denies secret values, `kms:Decrypt` and reads outside the state bucket; `.claude/templates/security/oidc/README.md` explains the two apply trusts are alternatives.
+
+#### Review fixes (untrusted text)
+- `notify_command` allow-list (see Upgrade impact); intake rejection reasons never echo a name the stranger chose; the draft item's `riskClass` is fixed `medium`; PR-body Primer Delta, Doc Delta and design-critic cells are escaped; `intake.yml` wraps the issue in a random-nonce fence; promotion facts report `origin` and `claimed_source`; the PR audit block carries a `Manifest:` line (`audit.manifest-broken|absent|unknown`).
+
+#### Tests
+- The suite runs in about 40 s: `tests/helpers/gitfast.py` answers read-only git calls without a process (`TESTS_GITFAST=0` turns it off), fixtures are copied from templates, CLIs run in-process, and waits survive a loaded machine.
+
+### Known unverified
+
+Platform assumptions the build makes and no probe has confirmed. The harness is `tools/probes/`; assumptions and what changes if one is wrong: [`docs/design/probe-assumptions.md`](docs/design/probe-assumptions.md).
+
+- Hook event names (the 16 the probe logger subscribes to, plus `Notification`, `StopFailure`, `PermissionRequest`, `WorktreeCreate`, `WorktreeRemove`) and their input fields; `agent_id` and `agent_type` at depth 2 and 3 (V1); that SubagentStart sees the dispatch prompt (V7).
+- `onFailure: block` on a hook entry, and where it goes (V9).
+- `sandbox.*` keys (`enabled`, `failIfUnavailable`, `allowUnsandboxedCommands`, `network.allowLocalBinding`, `filesystem.denyRead|denyWrite`), the `Edit(//absolute/path)` and glob spellings in `denyWrite`, and that hooks are not sandboxed (V19).
+- Fork environment variables `CLAUDE_CODE_FORK_SUBAGENT` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, and whether a settings `env` block applies early enough (V18).
+- The `--setting-sources`, `--plugin-dir`, `--agents` and `--agent` flags, `--session-id` with `-p`, `--allowedTools` taking one argument per rule (and `""`), `--max-budget-usd` bounding a killed child, and the `-p` JSON fields `total_cost_usd` and `subtype` (V5, V22, P26).
+- The `sandbox:` agent-frontmatter keys (V24) and the managed-settings paths (V21).
+- Plugin behaviour: `${CLAUDE_PLUGIN_ROOT}` expansion in skill text, the skill name `init` against the built-in `/init`, plugin hooks firing (V13); `claude plugin eval --ablation` flags (P27); `claude "/orchestrate"` as a first message; whether `!` commands and child processes carry `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT`.
+- GitHub: ruleset features per plan (V27), the shape of `gh pr list --json ...`, rule-suite entries and `GET /actions/runs/{id}/approvals`; Actions cache restore across pull requests; the AWS `job_workflow_ref` condition; conftest's release asset name; `opa test` on the rego bundle.
+- Test-runner verbose output formats read by `_acparse.py`, and git 2.31 as the floor for `GIT_CONFIG_COUNT` hardening.
+- No workflow, script or plan has run against live GitHub, a cloud account or a live `claude`; the baseline (`docs/baseline/`) has no recorded runs and `docs/baseline/evidence.json` is absent, so the evidence gate has not passed and `claude_code_tested_max` is `none`.
+
+### Known gaps
+
+- The guards are a typo guard against code, not a boundary: they do not see tree-switching git operations, `git ls-files | xargs rm`, `defaults write`, races between hook and execution, pip install scripts, archive or patch contents that do not exist at hook time, computed paths, modules found through `sys.path`, Node `require` chains, or a command assembled from pieces (`'loop' + 'ctl'`).
+- The sandbox `denyWrite` on `<git-common-dir>/loopctl/sessions` is the real stop for forging a session and is only as good as the platform's enforcement; `run.json`, `lock`, `HALT` and `nonces/` stay writable from the sandbox on purpose.
+- `--by` on `loopctl approve` is recorded, not authenticated; `approve` has no `CLAUDECODE` check on purpose (a printed command run with `!`), so the guard is its only boundary, and `!` is not seen by it; a person who pastes a printed command unread is out of the kit's reach.
+- `humanonly` is a tripwire (`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` passes it); `guard-exec:human-apply` denies that only for the script names in its table, and a renamed copy outside a `github/` directory is not recognised.
+- No test-output channel is unforgeable: product code that prints a runner line or an all-pass JSON object and then exits can still pass G3's visible and held-out runs when no real runner line contradicts it; the CI re-run on the merge candidate is the backstop. The harness-shaped lint is a literal-shape check; ignored files in dependency directories and ignored `.env*` files are not scanned.
+- Held-out isolation under `runner: driver` is only as strong as the guards until the child sandbox is confirmed to deny reading `<git-common-dir>/loopctl/heldout/`.
+- Local evidence is forgeable (a PR body, a report and a verify JSON are files in the agent's tree); CI is the evidence. A stage log has no size limit (the timeout bounds it); the verify job's network egress cannot be set in a workflow file. The PR that installs the kit cannot pass `verify`.
+- Locks: a process id reused on the same host keeps a lock from looking stale (delete `<git-common-dir>/loopctl/lock` by hand); heartbeat, release and takeover are not atomic; a process group can outlive its leader after a driver crash. The remote lock is advisory and has only been tested against local bare remotes; a remote lock whose owner pid was recycled needs a hand-deleted ref.
+- The cost of a killed child is an estimate bounded by its allowance and can be wrong in either direction. The post-merge check detects a red integration branch but does not prevent or revert it. An approved item is merged three-way and not re-verified after other items merged. Under a delivery other than `local`, a squash merge is recorded by `reconcile`, not `advance`; `reconcile.scan` trusts any integration-branch commit its PR facts name (the facts are human-supplied).
+- `ci_lint` and the doctor do not see a command inside a script file, `eval`, `sh -c "$CMD"` or a `make` target (the doctor follows one level of scripts); values laundered through `steps.*.outputs` are not seen as untrusted; a static `environment:` on a non-apply credentialed job is taken as the human gate; `ci.credentials-on-bot-push` ignores `issue_comment` and `release` events.
+- `notify_command`: a renamed copy of a shell or interpreter is not detected (the check is on names and resolved paths). Promotion `origin` is only as good as the caller and the facts file lives inside the repository, so promotion stays advice. The intake nonce fence and `--allowedTools ""` are defence in depth around an already tool-less model.
+- The reproducibility manifest is not a signature, and its `Manifest:` PR line is opt-in and advisory; claims are labels, not identities; a G10 check that imports other repository files is protected only for the files on its command line.
+- The Docs Delta gate covers three trigger families (env var, route, command-line flag); the empty-Primer-Delta streak is shown by `loopctl retro`, not `status`; calibration outcomes beyond "a later round dropped it" are manual; the external unattended watchdog is a cron line the kit cannot install, and the promotion-facts recipe is prose only.
+- A hand-picked copy install needs `loopctl/learning/` with `gates/docs_delta.py` and the intake schema template; a kit-development session that runs untracked tests importing `loopctl` trips `kit-internals`; Windows is not supported (POSIX process groups).
+- Not built: pushing from the loop (L2 bot push), batching loopctl's git calls, a design stage in the driver, the G8 verifier, G10 contract tests, `pipeline_host: workflow`, L5 auto-merge enabling, the UAT widget, monitoring intake, the reproduce-first bug lane, an Infracost delta and a DB-migration workflow ([`docs/design/deferred.md`](docs/design/deferred.md)).
 
 ## [1.2.0] — 2026-07-30
 

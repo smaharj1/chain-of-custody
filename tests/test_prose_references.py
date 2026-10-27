@@ -43,9 +43,7 @@ BANNED = {
 
 # File -> set of banned pattern names still present there on purpose until the release stage edits it.
 PENDING_RELEASE = {
-    "GLOSSARY.md": {"context7 (hardcoded tool or requirement)"},
-    "docs/getting-started.md": {"old stack guide path"},
-    # tools/check-refs.allow keeps the old path allowlisted for the entries above
+    # tools/check-refs.allow keeps the old path allowlisted: CHANGELOG.md history still names it
     "tools/check-refs.allow": {"old stack guide path"},
 }
 

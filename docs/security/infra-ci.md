@@ -50,7 +50,7 @@ The preview plan is a preview. It is never applied. The plan that is applied is 
 6. Install `label-guard.yml` ([split-ci.md](split-ci.md)) so `plan-ok` applied by anyone outside `factory_approvers` is removed. `infra-plan.yml` does not rely on it: it checks the approver itself.
 7. Copy `infra-policy.json` to `.claude/infra-policy.json` and a `.tflint.hcl` to the repository root, both through a pull request. The first infrastructure PR has no baseline: set the repository variable `INFRA_INITIAL=true` for that PR only, then unset it.
 8. Attest the deployment surface ([deploy-surface.md](deploy-surface.md)): the Environment variant's `infra-apply.yml` is a deploy that fires on `push:main` with `gate: gated-by-environment`; the dispatch variant is human-started and needs no trigger entry.
-9. Merge `mcp-deploy-deny.settings.json` into the settings an agent session uses (the rules are a superset of `mcp-lockdown.settings.json`; remove a pattern only for a server you named on purpose, [mcp.md](mcp.md)).
+9. Merge `mcp-deploy-deny.settings.json` into the settings an agent session uses (the rules are the same list as `mcp-lockdown.settings.json`; remove a pattern only for a server you named on purpose, [mcp.md](mcp.md)).
 
 `.claude/templates/infra/policy/` is read from the checkout of `main` at run time. Copy it wherever you like and change the `--policy` path in the two apply workflows.
 

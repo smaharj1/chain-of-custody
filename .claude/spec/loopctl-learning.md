@@ -1,6 +1,6 @@
 # loopctl learning loop: retro, gaps, calibration, report conformance, Docs Delta, harness review
 
-**Status**: Phase 10, FULL in warn mode; `report_trailers: block` is a person's switch. Implements report sections 9 ("Critic calibration", G7 owner metric), 16.1 row 10, 16.2 (the pruning rule) and 19.7 (L-32 Primer Delta, L-33 brief gaps, L-34 blocker definition, F-29 learning loop, F-30 Doc Delta), DEC-28 and DEC-29, under H6. Operator guide: `docs/learning.md`. The release procedure: `docs/harness-review.md`. The mode: `.claude/skills/retro/SKILL.md`.
+**Status**: built, FULL in warn mode; `report_trailers: block` is a person's switch. Implements report sections 9 ("Critic calibration", G7 owner metric), 16.1 row 10, 16.2 (the pruning rule) and 19.7 (L-32 Primer Delta, L-33 brief gaps, L-34 blocker definition, F-29 learning loop, F-30 Doc Delta), DEC-28 and DEC-29, under H6. Operator guide: `docs/learning.md`. The release procedure: `docs/harness-review.md`. The mode: `.claude/skills/retro/SKILL.md`.
 
 Code: `.claude/scripts/loopctl/learning/` (`data`, `retro`, `trailers`, `gaps`, `calibration`, `harness`, `docsdelta`, `commands`), `loopctl/report.py` (the hard and soft problems), `loopctl/gates/docs_delta.py`, `tools/evals/ablate.py`.
 
@@ -32,7 +32,7 @@ Read: `begin`, `fail` (`failure_class`, `reason`), `park` (`code`), `gate` (`gat
 
 ## Classification (the exec guard reads the same table)
 
-Reads, open to any caller: `retro`, `harness`, `gaps` (without `--write`), `calibration report|scan` (without `--write`), `report scan`. Tier 1 writes (conductor session only): `gaps --write`, `calibration scan --write`, `calibration record`; an unknown `calibration` action counts as a write. `tests/loopctl/test_guard_alignment.py` compares `cli.classification()` with `g_exec`; rows in `tests/guards/corpus/loopctl.json` (`loopctl-144` onward).
+Reads, open to any caller: `retro`, `harness`, `gaps` (without `--write`), `calibration report|scan` (without `--write`), `report scan`. Writes (the registered conductor session or a human; denied to other agents): `gaps --write`, `calibration scan --write`, `calibration record`; an unknown `calibration` action counts as a write. `tests/loopctl/test_guard_alignment.py` compares `cli.classification()` with `g_exec`; rows in `tests/guards/corpus/loopctl.json` (`loopctl-144` onward).
 
 ## The Docs Delta gate
 

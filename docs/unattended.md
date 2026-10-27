@@ -29,7 +29,7 @@ The config keys are in [the registry](../.claude/loop.config.md) under "Unattend
 | `autonomy` | `autonomy` is not `unattended` or `autonomy_level` is below L4 |
 | `runner` | `runner` is not `driver` |
 | `budget` | `run_budget_usd` or `day_budget_usd` is not set, today's ceiling is already spent, or the spend ledger has an unreadable line |
-| `notify` | `notify_command` is empty, uses shell syntax, names a missing or relative program, or a program inside the repository |
+| `notify` | `notify_command` is empty, uses shell syntax, names a missing or relative program, a program inside the repository, or a shell, interpreter or launcher program |
 | `level` | the doctor's effective level is below L4 (it prints which cap binds: a missing prerequisite, the canary, B5, the platform) |
 | `demotion` | the install was demoted to L3 and a human has not lifted it |
 | `parked` | the run was stopped or aborted (`loopctl approve breaker`), or waits at a checkpoint nobody has answered. Other parks are judged by the rows beside it: money by `budget` (`approve cost`), an item that needs a human by `work` |
@@ -49,6 +49,7 @@ notify_command: /usr/local/bin/notify-me --topic ops
 ```
 
 - **No shell.** The string is split into arguments once. `; | & < > $ ` \ ( ) { } * ? !` are refused rather than interpreted; wrap anything fancy in a script of yours. The program must be an absolute path or a bare name on `PATH`, and must not be inside the repository or its git directory (an agent can edit files there, and this runs with your rights).
+- **Your own program, not a launcher.** `notify_command` may not name a shell, an interpreter (`python3`, `node`, `perl` ...), `env`, `xargs`, `curl`, `wget`, `ssh`, `sudo` or a similar launcher or transfer tool, because those turn an argument into "run this file" or "send that file". No argument may start with `@` or name a path in the repository, the worktree or a credential directory (`~/.aws`, `~/.ssh`, ...). Write a small program of your own and name that.
 - **The message is never on the command line.** It arrives on standard input as one JSON document (`schema: kit.notify.v1`: `kind`, `level`, `title`, `body`, `run`, `item`, `code`, `outcome`, `host`, `at`) and in `KIT_NOTIFY_KIND`, `_LEVEL`, `_TITLE`, `_BODY`, `_RUN`, `_ITEM`, `_CODE`, `_OUTCOME`, `_HOST`, `_AT`.
 - **Plain text only.** Every field is closed vocabulary or text limited to letters, digits, space and `. , : _ ( ) / # @ % + = -`; anything else becomes a space. Item titles, report text, issue text and child output are never included: item ids that pass the id rule, run ids, reason codes and fixed sentences only. So a plan whose title is `'; rm -rf ~ #` cannot reach your command, even if your command is a shell script that forgets to quote.
 - **A scrubbed environment.** `PATH`, `HOME`, the locale, `KIT_NOTIFY_*` and the names in `notify_env_allow` (a webhook URL, a topic). Cloud, GitHub, SSH, git and Claude credential families are never passed, whatever `notify_env_allow` says. It runs from `HOME`, in its own process group, and is killed after `notify_timeout_s`.
@@ -104,7 +105,7 @@ A child the driver killed prints no result, so its cost is unknown, and an unkno
 python3 .claude/scripts/loopctl unattended promotion --facts promotion-facts.json
 ```
 
-How you fill the facts file is yours, because a "correctness" change is a convention of your reviews. A starting point with the GitHub CLI, run by you and never by an agent: `gh pr list --state merged --limit 50 --json number,mergedAt,labels,reviews,title` gives the merged PRs, the review states and the labels; count a PR as reverted when a later merged PR is titled `Revert "<its title>"`; count a requested change as `correctness` when your reviewer labelled it so (for example `review:correctness`); take `test_integrity_flags` and `ci_fix_attempts` from the audit block in each PR body; `eval_pass_k` is the result of the pass^k eval job in CI. Set `source` to `github` or `ci` and your name in `collected_by`.
+How you fill the facts file is yours, because a "correctness" change is a convention of your reviews. A starting point with the GitHub CLI, run by you and never by an agent: `gh pr list --state merged --limit 50 --json number,mergedAt,labels,reviews,title` gives the merged PRs, the review states and the labels; count a PR as reverted when a later merged PR is titled `Revert "<its title>"`; count a requested change as `correctness` when your reviewer labelled it so (for example `review:correctness`); take `test_integrity_flags` and `ci_fix_attempts` from the audit block in each PR body; `eval_pass_k` is the result of the pass^k eval job in CI. Set `source` to `github` or `ci` and your name in `collected_by`. The file's `source` is its own claim: the report shows `origin` (the file loopctl read, for example `file:promotion-facts.json`) and `claimed_source`, and nothing is verified against GitHub. A person reads the numbers; the tool does not authenticate them.
 
 It prints "ELIGIBLE" or each unmet condition against the bar in `promotion_*` (default: ten consecutive merged draft PRs at L2 or L3, at most one reviewer-requested correctness change, no reverts, no test-integrity flags, a green pass^k eval, and the evidence gate). It changes nothing. Promoting is a reviewed commit of `autonomy: unattended` and `autonomy_level: L4` (H6).
 
@@ -117,7 +118,7 @@ It prints "ELIGIBLE" or each unmet condition against the bar in `promotion_*` (d
 | a test-integrity flag (`g5` blocking, `reward_hack`) | `integrity_flag` |
 | `stall_storm_n` stalls inside `stall_storm_window_min` | `stall_storm` |
 
-While it is set, `loopctl run` with `autonomy: unattended` is refused and `unattended check` is not ready; attended runs (`autonomy: per-feature` or `per-milestone`) are unaffected. After you have looked at why: `python3 .claude/scripts/loopctl approve demotion --by <name>`. The conductor writes that record only after you said so in chat (L-10).
+While it is set, `loopctl run` with `autonomy: unattended` is refused and `unattended check` is not ready; attended runs (`autonomy: per-feature` or `per-milestone`) are unaffected. After you have looked at why: `python3 .claude/scripts/loopctl approve demotion --by <name>`. This is a human step: the conductor prints it as a `HUMAN STEP:` line and never runs it.
 
 ## Two-stage intake for untrusted sources (report 5.3)
 
@@ -129,7 +130,7 @@ An issue, a comment or a form is written by a stranger. It never reaches anythin
 
 Severity high or critical, or a change under `always_human_paths`, is never auto-merged. The injection corpus (`evals/cases/`) is where poisoned issues are exercised as safety cases.
 
-## Files and contracts (for the next phases)
+## Files and contracts
 
 | What | Where | Contract |
 |---|---|---|
@@ -139,7 +140,7 @@ Severity high or critical, or a change under `always_human_paths`, is never auto
 | Driver events | `.../events/loopctl.jsonl` | new: `demoted`, `cost_estimated` |
 | Quarantine | `.../intake/` | `loopctl.intake.v1` records and a review `.md` each |
 | State | `refs/loopctl/state/<plan>` | new header field `demotion` (`{to, reason, item, at, run, detail}` or null); new approval scope `demotion` |
-| Driver hooks | `Driver.observers`, `.stop_hooks`, `.finishers`, `.cost_hook`, `.tick` | a parallel scheduler (Phase 8) calls the same four; `Supervisor.attach(driver)` is the only user |
+| Driver hooks | `Driver.observers`, `.stop_hooks`, `.finishers`, `.cost_hook`, `.tick` | a parallel scheduler (`docs/parallel.md`) calls the same four; `Supervisor.attach(driver)` is the only user |
 
 `loopctl unattended` actions: `check`, `status`, `promotion`, `intake` (without `--write`) are reads; `watch`, `notify-test` and `intake --write` are writes (they run your command or write a record) and the exec guard allows them to the conductor only.
 
@@ -148,11 +149,11 @@ Severity high or critical, or a change under `always_human_paths`, is never auto
 - **Pushing branches and opening pull requests.** An item that needs a PR (`delivery` other than `local`, a human-gated or infra item) stops at `awaiting_human` and the run reports "waiting for you"; `pr_prepare` prints the human's commands. The L2 bot push needs a live bot credential and `gh`, which this build never touches; it stays a pending-human step.
 - **A detached watchdog started by the driver.** The external watchdog is your scheduler's job, and a start is refused without it.
 - **A measured cost from a session transcript** for a killed child (the transcript format is a [probe] item); the estimate above is from this run's own measurements.
-- **Parallel items** (Phase 8).
+- **Parallel items in an unattended run.** Parallel mode exists (`docs/parallel.md`) and writes the list of current items into `unattended.json`, but it is experimental and has not been exercised unattended against a live CLI.
 
 ## Pending-human
 
-- Three unattended fixture runs with zero control-flow rescues (the Phase 7 exit criterion) and the promotion bar on real PRs need a live CLI, a real repository and your `notify_command`; the offline half (every stop notifies, the watchdogs, demotion, the estimate, the refusals, the intake path) is exercised by `tests/loopctl/unattended/`.
+- Three unattended fixture runs with zero control-flow rescues (the exit criterion for unattended mode) and the promotion bar on real PRs need a live CLI, a real repository and your `notify_command`; the offline half (every stop notifies, the watchdogs, demotion, the estimate, the refusals, the intake path) is exercised by `tests/loopctl/unattended/`.
 - Confirm on the pinned CLI the hook names `Notification`, `StopFailure`, `PermissionRequest` and the fields `notification_type` and `tool_name`.
 - Confirm that `--max-budget-usd` bounds a killed child's spend closely enough for the estimate's cap.
 - Run `unattended notify-test` with your real program, and schedule `unattended watch`.

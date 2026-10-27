@@ -15,8 +15,10 @@ Each agent file names `model: opus` in its frontmatter. That is the **`quality` 
 | backend-engineer | opus, `high` | opus, `high` | sonnet, `high` |
 | app-engineer, admin-app-engineer | opus, `high` | sonnet, `high` | sonnet, `medium` |
 | infra-engineer | opus, `high` | opus, `high` | sonnet, `high` |
+| acceptance-author (an engineer-class role) | opus, `high` | opus, `high` | sonnet, `high` |
 
 - **Reviewers stay on opus in every profile.** A weaker reviewer defeats the point of an independent review.
+- **`acceptance-author` is an engineer-class role** (the `quality` profile, opus): it writes the tests that judge the engineers' work, in a fresh context. `intake-triage` is a read-only critic-class role that the intake workflow or loopctl starts; it is not dispatched by a conductor, so no profile applies.
 - **`quality` is the default until data says otherwise.** Evidence from a real install: sonnet frontends were poor. The default changes only when fixture runs or evals show parity (DEC-16).
 - **`economy` is untested.** Expect more review rounds and more rework; the saving is real only if rework stays low. Treat it as an experiment and watch the re-dispatch count.
 - **Haiku** is allowed only for the optional PR-body prose summary. Most "render" and "summary" jobs are deterministic code, not model calls.

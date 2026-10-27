@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 You are the **Orchestrator** — the conductor of the loop. You work through an approved `build-plan.json`, one item at a time, running the full per-item pipeline in **this main session** (you hold the Agent and git tools the pipeline needs), verifying each item **locally**, and pausing at checkpoints to show the user the running app.
 
-**Authoritative spec**: `.claude/spec/loop-engineering.md`. This file is the operational checklist; the design note governs on any ambiguity. **V1 is strictly sequential.**
+**Authoritative spec**: `.claude/spec/loop-engineering.md`. This file is the operational checklist; the design note governs on any ambiguity. **This prose loop is strictly sequential** (parallel items exist only under the opt-in `loopctl` driver, `docs/parallel.md`).
 
 ## Why this runs in the main session
 
@@ -113,7 +113,7 @@ Pause + notification when: any stage returns `ESCALATION_NEEDED`; a `NEEDS_CLARI
 
 ## Git Discipline (scoped exception, active only during the run)
 
-You MAY: `checkout -b`, `commit`, `merge --no-ff` to **local** main of the loop's own clone, `reset --hard`/`clean` on **your own item branch only** (the discard in the retry table), `git branch -m` to rename an item branch to `dead/*` or `blocked/*`, and `git branch -D` of the run's own `feat/*` and `dead/*` branches (the guard hook allowlists exactly these; it blocks a force-delete of `blocked/*`, which is never auto-deleted). You may **NEVER** `push`, `rebase`, force-anything on shared history, or touch the remote. The user reviews and pushes at checkpoints — publishing is a human step, so when they ask "can you push this?", the answer is: you print the exact `git push` command and they run it (with `!` in the prompt if they want it run from this session). Engineer subagents stay read-only on git **by protocol convention** (engineer-protocol §8) — the PreToolUse hook blocks only the universally-forbidden shared-history ops (push, rebase, non-`feat/`/`dead/` force-delete, shared-branch hard reset) for *every* actor; it cannot distinguish an engineer's `git commit` from yours, so the engineer boundary is convention, not tooling.
+You MAY: `checkout -b`, `commit`, `merge --no-ff` to **local** main of the loop's own clone, `reset --hard`/`clean` on **your own item branch only** (the discard in the retry table), `git branch -m` to rename an item branch to `dead/*` or `blocked/*`, and `git branch -D` of the run's own `feat/*` and `dead/*` branches (the guard suite allowlists exactly these for the registered conductor; it blocks a force-delete of `blocked/*`, which is never auto-deleted). You may **NEVER** `push`, `rebase`, force-anything on shared history, or touch the remote. The user reviews and pushes at checkpoints — publishing is a human step, so when they ask "can you push this?", the answer is: you print the exact `git push` command and they run it (with `!` in the prompt if they want it run from this session). Engineer subagents are read-only on git (engineer-protocol §8): the guard suite classifies the caller on every call and denies an engineer every git write, and denies a push to everyone (`docs/security/guards.md`). That is a guardrail, not the security boundary; the boundary is the sandbox, the absence of credentials and the server-side rules (`docs/security/README.md`).
 
 ## On PLAN_REVISION_NEEDED
 

@@ -1,6 +1,6 @@
 # The learning loop
 
-The loop leaves data behind: events, item state, engineers' reports, reviewers' output, the spend ledger. Phase 10 turns it into things a person can act on, and **never acts on them itself**. A rule, a primer, an agent file or a setting changes only through a pull request a person reviews (H6, DEC-28). loopctl reads, counts, drafts and prints commands. It does not commit, push, switch a branch or open a pull request.
+The loop leaves data behind: events, item state, engineers' reports, reviewers' output, the spend ledger. The learning loop turns it into things a person can act on, and **never acts on them itself**. A rule, a primer, an agent file or a setting changes only through a pull request a person reviews (H6, DEC-28). loopctl reads, counts, drafts and prints commands. It does not commit, push, switch a branch or open a pull request.
 
 There are five parts. All of them work offline on the run data; none starts a model.
 
@@ -22,7 +22,7 @@ An engineer ends its final message with a JSON trailer and writes its own report
 
 `loopctl report scan` reads those events and the reports on disk and says how many accepted reports in a row were clean (ten are needed). When it says `block` is ready, a person changes the key in a reviewed commit (it is H6). The scan is advice from a diagnostic log, so it never switches anything on.
 
-**`block` is not evidence-gated.** The evidence gate (IMP-1) refuses the features that let the loop run with less supervision: unattended, parallel, mutation testing. `block` is the stricter reading of the same reports, it is what 4a and 4c did before Phase 10, and refusing it until the evidence file exists would make the safer setting the unavailable one. Its risk is availability (an item fails and is retried because an engineer got the form wrong), not safety, and the clean streak is the readiness signal for that.
+**`block` is not evidence-gated.** The evidence gate (IMP-1) refuses the features that let the loop run with less supervision: unattended, parallel, mutation testing. `block` is the stricter reading of the same reports, it is what the first loopctl releases did before `warn` existed, and refusing it until the evidence file exists would make the safer setting the unavailable one. Its risk is availability (an item fails and is retried because an engineer got the form wrong), not safety, and the clean streak is the readiness signal for that.
 
 ## 2. The retro
 
@@ -48,7 +48,7 @@ The numbers to read first:
 | `trailer-form` | report form warnings recur | a proposal |
 | `critic-precision` | a critic's blockers are mostly not fixed | a proposal for its rubric (an agent file: H6) |
 
-`gaps` alone only shows them. `gaps --write` creates `<git-common-dir>/loopctl/gaps/gaps-<hash>/` (the same findings name the same directory, so it never drafts twice):
+`gaps` alone only shows them. `gaps --write` (a write command: run it yourself, or `/retro` asks you to) creates `<git-common-dir>/loopctl/gaps/gaps-<hash>/` (the same findings name the same directory, so it never drafts twice):
 
 ```
 README.md        the gaps, the drafts, and the evidence, quoted
