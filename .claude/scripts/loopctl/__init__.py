@@ -22,6 +22,10 @@ Modules (the ones other phases import are marked):
     abort      abort and rollback before merge to main
     migrate    v1 build-plan.json -> plan/items/*.json
     cli        the command line
+    driver     the serial driver, `runner: driver` (Phase 4c; OPT-IN)
+    launch     the one module that starts a child session: launch line, profile, environment, process group, orphans
+    heartbeat  the driver's lock heartbeat, a child's liveness, the canary
+    compact_hook  the SessionStart(compact) hook (a script, not imported)
 """
 from __future__ import annotations
 

@@ -148,9 +148,11 @@ class Run(LoopTestCase):
     def test_driver_runner_needs_a_budget_and_the_driver_module(self):
         lr = self.approved(extra_cfg="runner: driver")
         r = lr.ctl("run")
-        self.assertEqual(r.rc, 2, r)                                      # the driver module is missing too
+        self.assertEqual(r.rc, 3, r)                                      # no ceiling: refused by policy (the driver module is installed since Phase 4c)
         self.assertIn("run_budget_usd is not set", r.err)
         lr2 = self.approved(extra_cfg="runner: driver\nrun_budget_usd: 5")
+        self.addCleanup(sys.modules.pop, "loopctl.driver", None)
+        sys.modules["loopctl.driver"] = None                              # a module that cannot be imported: "driver not installed"
         r = lr2.ctl("run")
         self.assertIn("driver not installed", r.err)
         self.assertEqual(r.rc, 2)

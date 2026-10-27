@@ -301,6 +301,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/loopctl/compact_hook.py\"; fi; echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"kit guards: python3 was not found, so the guards and the liveness canary did NOT load. Install python3 (3.9 or newer); until then the effective level is L0 (rule guards:no-python3).\"}}'",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

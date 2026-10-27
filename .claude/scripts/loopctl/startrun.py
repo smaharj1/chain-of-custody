@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from kitlib import gitutil, runstate
 
-from . import lgit, common, gates, ledger, plan as plan_mod
+from . import lgit, common, gates, ledger, lock as lock_mod, plan as plan_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, Refused
 
 __all__ = ["preflight", "dry_run", "start", "handoff_text", "load_driver"]
@@ -94,8 +94,10 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
         chk("driver", load_driver() is not None, "the driver module is installed" if load_driver() else "driver not installed")
     lk = ctx.lock().status()
     mine = bool(lk["held"] and session and (lk.get("record") or {}).get("sessionId") == session)
-    chk("lock", (not lk["held"]) or mine, "the run lock is free" if not lk["held"] else
-        ("the lock is yours" if mine else "the run lock is held by another session (loopctl lock status)"))
+    dead = bool(ctx.runner == "driver" and lk["held"] and not lk["corrupt"] and lock_mod.owner_dead(lk.get("record") or {}))
+    chk("lock", (not lk["held"]) or mine or dead, "the run lock is free" if not lk["held"] else
+        ("the lock is yours" if mine else ("the run lock belongs to a driver that is gone (pid %s): this run takes it over" % (lk.get("record") or {}).get("driverPid")
+                                          if dead else "the run lock is held by another session (loopctl lock status)")))
     return res
 
 
@@ -183,7 +185,11 @@ def start(ctx: Any, out: Any, session: Optional[str], nonce: Optional[str], as_j
         driver = load_driver()
         sid = "driver-%d" % os.getpid()
         run_id = "run-%d-%s" % (int(common.now()), secrets.token_hex(2))
-        lk.acquire(run_id, sid, ctx.repo, os.getpid(), plan_rev)
+        held = lk.status()
+        if held["held"] and not held["corrupt"] and lock_mod.owner_dead(held.get("record") or {}):
+            lk.takeover(run_id, sid, ctx.repo, os.getpid(), plan_rev)          # a driver that crashed: its lock is nobody's (Phase 4c)
+        else:
+            lk.acquire(run_id, sid, ctx.repo, os.getpid(), plan_rev)
         rec = _write_run(ctx, run_id, sid, order, plan_rev, "driver")
         try:
             rc = driver.run(ctx, loop, rec, as_json)
