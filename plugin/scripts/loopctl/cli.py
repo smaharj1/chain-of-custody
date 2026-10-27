@@ -1,24 +1,23 @@
 """The loopctl command line (report section 10.2). Run: `python3 .claude/scripts/loopctl <command> [options]`.
 
-Command classification. The guards (`guards/g_exec.py`, `guards/g_halt.py`) read the same table: a READ command is open to any
-caller; every other command is a write and is denied to everyone but the registered conductor session (RC-13). Keep the three
-in step (a test compares them).
+Command classification: ONE table, `kitlib/loopctl_table.py` (the guards, `guards/g_exec.py` and `guards/g_halt.py`, import it; a test
+compares it with the argparse choices). `classify(argv)` returns one of:
 
-    READ (no state, lock or file is written)
-        validate  status  render  doctor  audit  report  help  version
-        lock status   evidence --check   cost --projection   reconcile --dry-run   migrate-plan --check|--dry-run
-        run --dry-run   abort --dry-run   unattended check|status|promotion|intake (without --write)
-        parallel check|status|leases   (and `parallel cleanup|cascade --dry-run`)
-        retro   harness   gaps (without --write)   calibration report|scan (without --write)   report scan      (Phase 10, the learning loop)
-        merge-class   remote-lock status   claim list|show   manifest show|verify      (Phase 11b, the extras; merge-class merges nothing)
+    READ    open to any caller: validate status render doctor audit report help version retro harness gaps merge-class, and
+            lock status, evidence --check, cost --projection, reconcile --dry-run, migrate-plan --check|--dry-run, run --dry-run,
+            abort --dry-run, unattended check|status|promotion|intake, parallel check|status|leases|--dry-run,
+            calibration report|scan, remote-lock status, claim list|show, manifest show|verify
+    WRITE   the registered conductor (and a human) only: begin advance fail clarify park gate spend run abort halt lock acquire|release,
+            reconcile --apply (git facts only), migrate-plan --write, approve checkpoint, approve item --choice reject|stop,
+            approve unblock --choice keep|replan, manifest write, gaps/calibration --write ...
+    HUMAN   a human in a plain terminal only (the guard denies every agent, the conductor included): it grants an approval, lifts a stop or
+            pushes: approve plan|env|breaker|cost|demotion, approve item (merge or un-park), approve unblock reset, resume,
+            parallel --apply, migrate-plan --force, reconcile --live (or --apply with --prs/--rule-suites),
+            remote-lock acquire|renew|release|steal, claim take|release.
 
-    TIER 1 WRITES (work with `loopctl_tier2: false`)
-        lock acquire|release|steal   migrate-plan --write   halt   resume   unattended watch|notify-test|intake --write
-        parallel cleanup --apply (cascade --apply also needs Tier 2)   gaps --write   calibration scan --write|record
-        remote-lock acquire|renew|release|steal   claim take|release   manifest write      (Phase 11b; OPT-IN, evidence-gated, advisory)
-
-    TIER 2 WRITES (refuse unless `loopctl_tier2: true` in the BASE sha's loop.config; OPT-IN, IMP-1)
-        approve  begin  advance  fail  clarify  park  gate  spend  run  abort  reconcile --apply
+Tiers (a separate, loopctl-only axis): TIER 1 WRITES (lock, migrate-plan, halt, resume, unattended, parallel, calibration, remote-lock, claim,
+manifest) work with `loopctl_tier2: false`; TIER 2 WRITES (approve begin advance fail clarify park gate spend run abort reconcile --apply) refuse
+unless `loopctl_tier2: true` in the BASE sha's loop.config (OPT-IN, IMP-1).
 
 The first argument is the command, exactly: no abbreviations, and no option before it that takes a separate value, so the guards
 and this parser always agree on which command is being run. Options are not abbreviated either.
@@ -36,27 +35,29 @@ import subprocess
 import sys
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, TextIO
 
-from kitlib import runstate
+import humanonly
+from kitlib import loopctl_table, runstate
 
 from . import VERSION, common
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlError, Refused, UsageError
 
 __all__ = ["main", "READ_COMMANDS", "FLAG_READ", "TIER1_WRITES", "TIER2_WRITES", "classification"]
 
-READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version", "retro", "harness", "gaps", "merge-class")
-# command -> flags that make an otherwise-writing command read-only (and the flags that always make it a write)
-FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
-             "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake"),
-             "parallel": ("check", "status", "leases", "--dry-run"), "calibration": ("report", "scan"),
-             "remote-lock": ("status",), "claim": ("list", "show"), "manifest": ("show", "verify")}
-WRITE_FLAGS = ("--apply", "--write", "--force")
+# who may run what is `kitlib/loopctl_table.py` (the guards read the same module); these names are views of it
+READ_COMMANDS = tuple(sorted(loopctl_table.READ - {"--help", "-h", "--version"}))
+FLAG_READ = dict(loopctl_table.FLAG_READ)
+WRITE_FLAGS = loopctl_table.WRITE_FLAGS
 TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended", "parallel", "calibration", "remote-lock", "claim", "manifest")
 TIER2_WRITES = ("approve", "begin", "advance", "fail", "clarify", "park", "gate", "spend", "run", "abort", "reconcile")
 
 
 def classification() -> Dict[str, Any]:
-    """The table the guards must agree with (tests/loopctl/test_guard_alignment.py)."""
+    """The table the guards use (kitlib/loopctl_table.py), plus the loopctl-only tiers (tests/loopctl/test_guard_alignment.py)."""
     return {"read": list(READ_COMMANDS), "flag_read": {k: list(v) for k, v in FLAG_READ.items()}, "write_flags": list(WRITE_FLAGS),
+            "action_read": {k: sorted(v) for k, v in loopctl_table.ACTION_READ.items()},
+            "human_only": {k: sorted(v) for k, v in loopctl_table.HUMAN_ONLY.items()}, "human_sub": sorted(loopctl_table.HUMAN_SUB),
+            "human_flag": {k: list(v) for k, v in loopctl_table.HUMAN_FLAG.items()}, "approve_relay": {k: (None if v is None else sorted(v))
+                                                                                                         for k, v in loopctl_table.APPROVE_RELAY.items()},
             "tier1": list(TIER1_WRITES), "tier2": list(TIER2_WRITES)}
 
 
@@ -463,9 +464,9 @@ def cmd_halt(args: List[str], env: Mapping[str, str], out: Out) -> int:
 def cmd_resume(args: List[str], env: Mapping[str, str], out: Out) -> int:
     ap = _parser("resume", "Clear HALT. Human only: refuses inside a Claude Code session.")
     a = ap.parse_args(args)
-    if env.get("CLAUDECODE"):
-        raise Refused("resume is a human command and refuses to run inside a Claude Code session (the kill switch is not the agent's to release); "
-                      "use a plain terminal, or `!` in the prompt")
+    msg = humanonly.refusal("loopctl resume", env)
+    if msg:
+        raise Refused(msg + " (the kill switch is not the agent's to release; use a plain terminal, or `!` in the prompt)")
     ctx = _ctx(a, env, plan="none")
     out.text("HALT cleared" if ctx.rs.clear_halt() else "no HALT was set")
     return EXIT_OK
@@ -480,15 +481,21 @@ def _loop(a: argparse.Namespace, env: Mapping[str, str], plan: str = "base") -> 
     return Loop(ctx)
 
 
-def cmd_approve(args: List[str], env: Mapping[str, str], out: Out) -> int:
+def _approve_parser() -> _Parser:
     ap = _parser("approve", "approve plan|item|checkpoint|unblock|env|breaker|cost|demotion [TARGET] --by NAME")
     ap.add_argument("scope", choices=("plan", "item", "checkpoint", "unblock", "env", "breaker", "cost", "demotion"))
     ap.add_argument("target", nargs="?", default=None)
-    ap.add_argument("--by", required=True, help="the human who approves (recorded)")
+    ap.add_argument("--by", required=True, help="the human who approves (recorded; not authenticated)")
     ap.add_argument("--choice", default="approve")
     ap.add_argument("--note", default="")
     ap.add_argument("--seed-v1", default=None, metavar="build-plan.json", help="plan: take item statuses from a v1 plan")
-    a = ap.parse_args(args)
+    return ap
+
+
+def cmd_approve(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    # No humanonly marker check here on purpose (D11): the human-only approvals are enforced by the guard (kitlib/loopctl_table), which a
+    # `!` command does not go through; a refusal under CLAUDECODE would lock the human out of running a printed command with `!`.
+    a = _approve_parser().parse_args(args)
     loop = _loop(a, env)
     if a.scope == "plan":
         seed = None
@@ -659,8 +666,9 @@ def cmd_reconcile(args: List[str], env: Mapping[str, str], out: Out) -> int:
     prs = None
     suites = None
     if a.live:
-        if env.get("CLAUDECODE"):
-            raise Refused("--live is human-only and refuses to run inside a Claude Code session")
+        msg = humanonly.refusal("loopctl reconcile --live", env)
+        if msg:
+            raise Refused(msg)
         proc = subprocess.run(reconcile.live_prs_argv(), cwd=os.path.abspath(a.repo), stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=60)
         if proc.returncode != 0:
             raise Refused("gh failed: %s" % common.clean_text(proc.stderr.decode("utf-8", "replace"), 160))
@@ -807,7 +815,7 @@ def cmd_unattended(args: List[str], env: Mapping[str, str], out: Out) -> int:
         if raw is None or os.path.islink(_rel(a, a.facts)):
             raise UsageError("--facts: %s" % (problem or "a symbolic link"))
         try:
-            facts = promotion.parse_facts(raw)
+            facts = promotion.parse_facts(raw, origin="file:" + os.path.basename(a.facts))
         except ValueError as exc:
             raise UsageError("--facts: %s" % common.clean_text(exc, 160))
         res = promotion.evaluate(facts, promotion.bar_from_config(ctx.cfg), ctx.evidence_passed())

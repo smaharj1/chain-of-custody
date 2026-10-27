@@ -35,6 +35,11 @@ KIT_ROOT = os.path.dirname(SCRIPTS)  # .claude
 TEMPLATES = os.path.join(KIT_ROOT, "templates", "security", "rulesets")
 DOCTOR = os.path.join(SCRIPTS, "doctor.py")
 
+if SCRIPTS not in sys.path:
+    sys.path.insert(0, SCRIPTS)
+
+import humanonly  # noqa: E402
+
 _SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 
 
@@ -131,9 +136,7 @@ def run_gh(call: Call, runner: Callable = subprocess.run, env: Optional[Dict[str
 
 
 def refuse_in_session(env: Dict[str, str]) -> Optional[str]:
-    if "CLAUDECODE" in env:
-        return "boundary: refusing to run inside a Claude Code session (CLAUDECODE is set). This is a human-run script: run it from a plain terminal."
-    return None
+    return humanonly.refusal("boundary", env)
 
 
 def cmd_apply(args: argparse.Namespace, env: Dict[str, str], runner: Callable) -> int:

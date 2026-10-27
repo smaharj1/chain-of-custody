@@ -112,14 +112,15 @@ def review_text(rec: Dict[str, Any]) -> str:
 def draft_item(rec: Dict[str, Any]) -> Dict[str, Any]:
     """A plan-item draft for the human to finish. Nothing the stranger wrote is copied into a field the engineer is instructed by (title, intent,
     acceptance): those are `<fill: ...>`, for the human to write after reading the review file. The stranger's summary is carried only under
-    `ext.intake`, which the brief renders inside the untrusted block."""
+    `ext.intake`, which the brief renders inside the untrusted block. `riskClass` is a fixed "medium": it is never derived from the stranger's
+    severity (a stranger could claim "low" to lighten the review), and the human sets the real one."""
     t = rec["triage"]
     return {"schema": "loopctl.item.v1", "id": "<fill: letters and digits, e.g. X1>", "milestone": "<fill>",
             "title": "<fill: a short title in your own words>", "slug": "<fill: lowercase words and dashes>", "size": "S", "dependsOn": [],
             "intent": "<fill: what you want built, in your own words>",
             "acceptance": [{"id": "AC-<fill>-%d" % (i + 1), "text": "<fill: criterion %d as a check a test or a person can pass or fail; see the review file>" % (i + 1)}
                            for i in range(len(t["acceptance"]))],
-            "requiresEnv": [], "estimate": {"loc": 100, "engineers": ["backend-engineer"]}, "riskClass": "medium" if t["severity"] in ("high", "critical") else "low",
+            "requiresEnv": [], "estimate": {"loc": 100, "engineers": ["backend-engineer"]}, "riskClass": "medium",
             "ext": {"intake": {"id": rec["id"], "source": rec["source"], "triage": t}}}
 
 

@@ -12,12 +12,16 @@ Cross-checks (all `error`): the body's Head sha is the branch tip now; every pla
 no row says PASS where state holds a failing result; Verify (G6) says PASS only if the recorded g6 result passed (when one exists);
 Waivers lists every unexpired waiver of the item; the Notes carry the cost line (cost and model per agent are the audit's job,
 §10.5); `CI-Fix-Of` names the commits that carry the trailer and their count stays within `max_ci_fix_attempts`.
+
+The Notes also carry a `Manifest:` line (Phase 11b's carry-over): the hash of the reproducibility manifest `loopctl manifest write` stored for this
+item's head, and whether `manifest.verify` still holds against git. The manifest is opt-in, so none written is only a note; a stored one that does
+not verify, or a body whose `Manifest:` hash is not the stored one, is an error. That puts the hash where the writer of the manifest cannot edit it.
 """
 from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from kitlib import gitutil
 
@@ -62,9 +66,56 @@ def collect_facts(ctx: Any, st: Any, iid: str, lane: str = "full") -> Dict[str, 
     cost = None
     if run and isinstance(run.get("runId"), str):
         cost = ctx.ledger().totals(run_id=run["runId"], item=iid)
-    return {"item": item, "rec": rec, "slug": slug, "lane": lane, "delivery": ctx.cfg.get("delivery"), "branch": branch, "base": base,
+    return {"manifest": _stored_manifest(ctx, iid, head), "item": item, "rec": rec, "slug": slug, "lane": lane, "delivery": ctx.cfg.get("delivery"), "branch": branch, "base": base,
             "base_sha": base_sha, "head": head, "commits": commits, "ci_fix": ci_fix, "reports": reports, "waivers": waivers, "cost": cost,
             "max_ci_fix": ctx.cfg.get_int("max_ci_fix_attempts")}
+
+
+def _stored_manifest(ctx: Any, iid: str, head: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The newest reproducibility manifest stored for this item at this head: {doc, name}, or None. Never raises: the manifest is opt-in."""
+    if not head:
+        return None
+    from . import manifest as mf
+    try:
+        d = mf.manifests_dir(ctx.rs)
+        names = [n for n in os.listdir(d) if mf._NAME_RE.match(n) and n.endswith("-%s.json" % head[:12])]
+    except OSError:
+        return None
+    best = None  # type: Optional[Tuple[float, str, Dict[str, Any]]]
+    for n in names:
+        try:
+            doc = mf.read_file(os.path.join(d, n))
+            mtime = os.stat(os.path.join(d, n)).st_mtime
+        except (common.LoopctlError, OSError):
+            continue
+        if (doc.get("plan") or {}).get("item") != iid or (doc.get("repo") or {}).get("head") != head:
+            continue
+        if best is None or mtime > best[0]:
+            best = (mtime, n, doc)
+    return {"name": best[1], "doc": best[2]} if best else None
+
+
+def manifest_result(ctx: Any, stored: Optional[Dict[str, Any]], expect_hash: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """`manifest.verify` of a stored manifest (None when there is none). A verify that cannot run counts as not holding."""
+    if not stored:
+        return None
+    from . import manifest as mf
+    try:
+        return mf.verify(stored["doc"], ctx.repo, expect_hash)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "problems": ["the manifest could not be checked: %s" % common.clean_text(exc, 80)], "facts": [], "checked": []}
+
+
+def _manifest_line(ctx: Any, stored: Optional[Dict[str, Any]]) -> str:
+    if not stored:
+        return ("Manifest: none written for this head (optional: `loopctl manifest write ITEM --head <head sha>`, then render this block again; "
+                "the hash here is what `manifest verify --expect-hash` needs).")
+    h = common.clean_text(stored["doc"].get("hash"), 70)
+    res = manifest_result(ctx, stored) or {}
+    if res.get("ok"):
+        return "Manifest: %s (seal and %s re-read from git at the recorded commits: they hold)." % (h, ", ".join(res.get("checked") or ["nothing"]))
+    why = "; ".join(common.md_text(p, 120) for p in (res.get("problems") or ["unknown"])[:2])
+    return "Manifest: %s DOES NOT HOLD (%s)." % (h, why)
 
 
 def _reports_at(ctx: Any, head: str, slug: str) -> List[Dict[str, Any]]:
@@ -114,7 +165,8 @@ def render_body(ctx: Any, st: Any, iid: str, lane: str = "full") -> str:
     verify = ("PASS: g6 passed for %s" % (g6.get("head") or "")[:12]) if g6 and g6.get("status") == "pass" else _fill("PASS, then the verify.py run")
     sec = rec.get("review", {}).get("security")
     review = rec.get("review", {})
-    design = review.get("design") or (_fill("DESIGN_APPROVED (round N), or N/A (quick lane)") if lane == "full" else "N/A (quick lane)")
+    design = (common.md_cell(review.get("design"), 60) if review.get("design")
+              else (_fill("DESIGN_APPROVED (round N), or N/A (quick lane)") if lane == "full" else "N/A (quick lane)"))
     if lane == "quick":
         design = "N/A (quick lane)"
     gated = rec.get("humanGate") or []
@@ -149,7 +201,7 @@ def render_body(ctx: Any, st: Any, iid: str, lane: str = "full") -> str:
     docd = _deltas(f["reports"], "Doc Delta")
     L += ["", "## Doc Delta", "", docd or _fill("NONE with a checked: line, or each doc that must change"), "", "## Primer Delta", "",
           primer or _fill("NONE with a checked: line, or each primer change applied"), "", "## Notes", "",
-          _notes(f, rec), "", "---", "Prepared by an agent from a feature branch. A human pushed it and a human merges it.", ""]
+          _notes(f, rec, _manifest_line(ctx, f["manifest"])), "", "---", "Prepared by an agent from a feature branch. A human pushed it and a human merges it.", ""]
     return "\n".join(L)
 
 
@@ -163,9 +215,9 @@ def _deltas(reports: Sequence[Dict[str, Any]], name: str) -> str:
         if body.split(None, 1)[0] == "NONE":
             m = re.search(r"checked:\s*(.+)", body)
             if m:
-                checked.append(m.group(1).strip())
+                checked.append(common.md_text(m.group(1), 200))
         else:
-            parts.append("%s: %s" % (r["engineer"], common.clean_text(body, 400)))
+            parts.append("%s: %s" % (common.md_text(r["engineer"], 40), common.md_text(body, 400)))      # UN-11: these lines reach the PR body: no < or >
     if parts:
         return "\n".join(parts)
     if checked and len(checked) == len([r for r in reports if r.get("sections", {}).get(name, "").strip()]):
@@ -173,7 +225,7 @@ def _deltas(reports: Sequence[Dict[str, Any]], name: str) -> str:
     return ""
 
 
-def _notes(f: Dict[str, Any], rec: Dict[str, Any]) -> str:
+def _notes(f: Dict[str, Any], rec: Dict[str, Any], manifest_line: str = "") -> str:
     L = []  # type: List[str]
     c = f["cost"]
     if c is None or (c["entries"] == 0 and not c["unknown"]):
@@ -187,6 +239,8 @@ def _notes(f: Dict[str, Any], rec: Dict[str, Any]) -> str:
     counters = rec.get("counters", {})
     L.append("Attempt %d; retries used: verify %d, review %d, partial %d." % (rec.get("attempt", 1), counters.get("verify", 0),
                                                                               counters.get("review", 0), counters.get("partial", 0)))
+    if manifest_line:
+        L.append(manifest_line)
     return "\n".join(L)
 
 
@@ -232,6 +286,17 @@ def check_body(text: str, ctx: Any, st: Any, iid: str, lane: Optional[str] = Non
             err("audit.waiver-missing", "the waiver by %s is not listed in the audit block" % common.clean_text(w["approver"], 40))
     if "Cost:" not in pb.sections.get("Notes", ""):
         err("audit.cost-line", "the Notes carry no 'Cost:' line (cost per PR is part of the audit, report section 10.5)")
+    stored = facts["manifest"]
+    named = re.search(r"^Manifest:\s*([0-9a-f]{64})\b", pb.sections.get("Notes", ""), re.M)
+    if stored:
+        res = manifest_result(ctx, stored, named.group(1) if named else None)
+        if res and not res.get("ok"):
+            err("audit.manifest-broken", "the stored reproducibility manifest for this head does not verify (%s)"
+                % common.clean_text("; ".join(res.get("problems") or ["unknown"]), 160))
+        elif not named:
+            out.append(Finding("warn", "audit.manifest-absent", "a reproducibility manifest is stored for this head but the Notes carry no 'Manifest: <hash>' line", iid))
+    elif named:
+        out.append(Finding("warn", "audit.manifest-unknown", "the Notes name a manifest hash this machine has no stored manifest for (written elsewhere?): not checked", iid))
     hg = rec.get("humanGate") or []
     if hg and pb.fields.get("Human-gated paths", "").split(None, 1)[0:1] == ["NONE"]:
         err("audit.human-gate-hidden", "the item is human-gated (%s) but the audit block says NONE" % common.clean_text("; ".join(hg[:2]), 80))

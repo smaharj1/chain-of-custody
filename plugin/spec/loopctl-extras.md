@@ -4,14 +4,16 @@
 
 Nothing here merges anything. `merge_policy` is `human` unless the base sha's config says otherwise, no code path runs `gh pr merge` or merges to the default branch, and `guards/g_git.py` denies `gh pr merge` and every push of `refs/loopctl/*` to every agent.
 
-## Commands (all in `loopctl/extras.py`, classified in `cli.py` and `guards/g_exec.py`)
+## Commands (all in `loopctl/extras.py`, classified in `kitlib/loopctl_table.py`, which `cli.py` and `guards/g_exec.py` share)
+
+The pushing commands are **human only**: they push a ref to a remote, and no agent pushes, the conductor included. The guard denies them to every agent caller; the CLI refuses them under a Claude Code session marker (`CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT`, even when empty) before any config, git or network access. The only pushes that remain are the driver's own: the `Keeper` inside a `loopctl run` that a human started holds the lock, heartbeats and releases it (that process has no Claude Code session). `remote_lock` uses `push --force-with-lease` only on `refs/loopctl/lock/*` (and claims on `refs/loopctl/claim/*`), always the explicit form.
 
 | Command | Class | What it does |
 |---|---|---|
 | `remote-lock status` | READ | the lock on the remote, without its token |
-| `remote-lock acquire \| renew \| release \| steal` | Tier 1 write | compare-and-swap pushes of `refs/loopctl/lock/<plan>` |
+| `remote-lock acquire \| renew \| release \| steal` | **human only** (no agent, the conductor included) | compare-and-swap pushes of `refs/loopctl/lock/<plan>` |
 | `claim list \| show ITEM` | READ | the claims on the plan |
-| `claim take \| release ITEM` | Tier 1 write | create-only / lease-guarded pushes of `refs/loopctl/claim/<plan>/<item>` |
+| `claim take \| release ITEM` | **human only** | create-only / lease-guarded pushes of `refs/loopctl/claim/<plan>/<item>` |
 | `merge-class ITEM` | READ | would this item be eligible for the L5 low-risk lane; exit 0 yes, 1 no |
 | `manifest show \| verify` | READ | a reproducibility manifest, and its check against git |
 | `manifest write [ITEM]` | Tier 1 write | writes `<git-common-dir>/loopctl/manifests/<plan>-<item>-<head>.json` |
@@ -26,7 +28,7 @@ One run per plan across machines. The ref `refs/loopctl/lock/<plan>` points at a
 - **Reading** fetches the ref into `refs/loopctl/cache/...` and judges that, in two git calls (fetch, one batched read). Anything that is not exactly a valid record is `corrupt`: a blob or tag at the ref, a tree with a second file or another name, JSON that is not strict (duplicate keys, NaN), a record for another plan, an unknown field, a heartbeat more than 10 minutes in the future (it would never expire), a ttl outside 60 s to 7 days. **Corrupt counts as held.** `steal --corrupt` replaces it, after a human has looked.
 - **Stale** means the heartbeat is older than the record's ttl (`lock_stale_min`, default 60 minutes, never shorter than 60 s) **and** the owner is gone: a dead pid on this host, or (another host) a human saying `--host-dead`. A lapsed heartbeat whose owner is alive here is **not stale**: a slow gate is not a dead run. A lock from another host is never judged from here. `--after` can only lengthen the wait.
 - **Holders find out.** `renew`, `holds` and `release` compare the token, so an owner whose lock was taken over gets `False`, never an overwrite. Inside a driver run, `Keeper` heartbeats every ttl/4 through the driver's `stop_hooks`: a lost lock stops the run at once (`remote_lock_lost`); an unreachable remote stops it only after half the ttl without an answer (`remote_lock_unreachable`), well before another machine could take the lock.
-- **Wiring.** `startrun.preflight` prints a `remote-lock` row and a `claims` row when `remote_lock` is set (a run that cannot take the lock does not start). `startrun.start` takes the remote lock after the local one for `runner: driver` and gives it back before. The prose conductor (`runner: sequential`) takes and releases it by hand with `remote-lock acquire` and `release`; nothing heartbeats it there, so a long sequential session should `renew` it.
+- **Wiring.** `startrun.preflight` prints a `remote-lock` row and a `claims` row when `remote_lock` is set (a run that cannot take the lock does not start). `startrun.start` takes the remote lock after the local one for `runner: driver` and gives it back before. With `runner: sequential` the prose conductor never runs these: it prints `HUMAN STEP: ... remote-lock acquire` before the first item, a `renew` line at each checkpoint and a `release` line at the end, and waits for the human; nothing heartbeats the lock there, so a long sequential session should `renew` it. If the human declines, the run does not proceed without the lock the config asked for.
 - **Advisory, not a boundary (RC-12).** Rulesets cover branches and tags only. Anyone with `contents: write` can move or delete the ref, and a well-formed forgery cannot be told from a real record. The lock coordinates cooperating machines. Fetching a forged ref downloads whatever it names and the read holds it in memory; a very large forged object is a nuisance for someone who could simply delete the ref anyway, not a bypass.
 - **Fallback** for a host that rejects custom refs: a `factory:running` label and an assignee on the tracking issue (`${CLAUDE_PLUGIN_ROOT}/docs/bootstrap.md`).
 - **Tested against a local bare remote only**, with two clones of it standing for two machines. Never against a real remote.

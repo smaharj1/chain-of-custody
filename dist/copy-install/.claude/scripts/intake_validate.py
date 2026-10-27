@@ -98,9 +98,11 @@ def validate(obj: Any) -> Dict[str, Any]:
     """The cleaned triage object, or Invalid."""
     if not isinstance(obj, dict):
         raise Invalid("the answer is not a JSON object")
-    extra = sorted(str(k) for k in set(obj) - FIELDS)
+    # A rejection reason is posted in a bot comment and logged, so it never echoes a name the stranger chose (UN-6): a count and the
+    # position of the first offender only. Field names shown anywhere else come from the schema's own list.
+    extra = [i for i, k in enumerate(obj, 1) if k not in FIELDS]
     if extra:
-        raise Invalid("unknown field(s): %s" % ", ".join(extra[:5]))
+        raise Invalid("%d field(s) are not in the schema (the first is field %d)" % (len(extra), extra[0]))
     for f in REQUIRED:
         if f not in obj:
             raise Invalid("missing field %s" % f)

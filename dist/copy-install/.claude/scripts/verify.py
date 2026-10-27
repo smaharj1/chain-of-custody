@@ -673,6 +673,10 @@ def run_command_stage(d: Definition, name: str, command: str, env: Dict[str, str
             if n == 0:
                 st["status"], st["reason"] = "fail", "the command exited 0 but collected no tests"
             elif n is None:
+                # Exit 0 with a count this parser cannot read stays a pass with a warning (GT-10, decided: no change). What makes it safe:
+                # `verify_tests` is H6 configuration read at the base sha (the branch cannot weaken it), and G3/G6 accept a criterion only when a
+                # test line naming it was parsed from the output (an unreadable run proves no criterion), so a silent `exit 0` passes the tests
+                # stage but never an acceptance criterion.
                 findings.append({"id": "verify.test-count-unknown", "severity": "warn",
                                  "message": "%s: the test count could not be read from the output; a run that collects nothing would pass" % name})
     else:

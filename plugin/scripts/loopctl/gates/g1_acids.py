@@ -14,7 +14,7 @@ have at least one executed test).
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from .. import common, plan as plan_mod
 from . import GateResult
@@ -26,20 +26,36 @@ REQUIRED_FOR = (("verifying", "reviewing"),)
 EVIDENCE_GATES = ("g3", "g6")
 
 
+def _grep_records(out: str, head: str) -> List[Tuple[str, str]]:
+    """[(path, matched text)] out of `git grep -z -n` output on a revision."""
+    recs = []  # type: List[Tuple[str, str]]
+    pos, prefix = 0, head + ":"
+    while pos < len(out):
+        a = out.find("\0", pos)
+        b = out.find("\0", a + 1) if a >= 0 else -1
+        c = out.find("\n", b + 1) if b >= 0 else -1
+        if a < 0 or b < 0:
+            break
+        if c < 0:
+            c = len(out)
+        revpath = out[pos:a]
+        if revpath.startswith(prefix):
+            recs.append((revpath[len(prefix):], out[b + 1:c]))
+        pos = c + 1
+    return recs
+
+
 def _referenced(ctx: Any, ids: List[str], visible: List[str]) -> Dict[str, List[str]]:
     """{ac_id: [test files at HEAD naming it]}. When the plan pins visible acceptance tests, only those files can trace a criterion: an id
     repeated in a test the engineer wrote proves nothing."""
     head = _lib.head_of(ctx)
     pattern = "|".join("(%s)" % _lib.ere_for(a) for a in ids)
-    out = _lib.git_ok(ctx, ["grep", "-I", "-i", "-n", "-o", "-E", "-e", pattern, head, "--"])
+    # -z: `<sha>:<path> NUL <line> NUL <match> LF`. Without it a ':' in a path shifts the fields and the criterion reads as untested (GT-13).
+    out = _lib.git_ok(ctx, ["grep", "-I", "-i", "-n", "-o", "-z", "-E", "-e", pattern, head, "--"]) or ""
     found = {a: [] for a in ids}  # type: Dict[str, List[str]]
     pats = {a: _lib.ac_pattern(a) for a in ids}
-    for ln in (out or "").splitlines():
-        # <sha>:<path>:<line>:<match>
-        parts = ln.split(":", 3)
-        if len(parts) < 4:
-            continue
-        path, match = parts[1], parts[3]
+    for rec in _grep_records(out, head):
+        path, match = rec
         if not _lib.is_test_path(path) or (visible and not _lib.match_any(visible, path)):
             continue
         for a, rx in pats.items():

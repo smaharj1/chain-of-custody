@@ -41,6 +41,8 @@ Each item gets `.claude/worktrees/<slug>-a<n>` on its own branch `feat/<slug>-a<
 | One item parks or hard-stops | no new item starts; the others finish and finished items are still merged; exit 1 |
 | An item changed files outside its `touches.paths` | that item parks (`footprint_violation`), nothing of it is merged; read the files it names, then fix the plan's footprint (a plan PR) or the code |
 | A rebase conflicts | that item parks (`merge_conflict`); you resolve it |
+| An item branch holds a merge commit | that item parks (`ESCALATION_NEEDED`): the integrator rebases linear history only, so a resolution inside a merge commit is never dropped silently |
+| An item that a human approved merges and the integration branch turns red | the run stops with `integration_red`; the item stays merged (nothing is reverted for you); fix or revert it, then `loopctl approve breaker --by <you>`. Your approval attests the item's diff, not the merged result |
 | The budget (80% of the run, or the day) is reached | the run parks and drains; running children finish; `loopctl approve cost` to go on |
 | An autonomy checkpoint | no new item starts; the others finish and are integrated; then the run pauses (exit 0) |
 | A worker crashes | internal error, exit 2; the others drain and **every worktree is removed** (its work is saved on the item's branch) |
@@ -58,6 +60,8 @@ Each child gets `--max-budget-usd` equal to the remaining budget divided by the 
 ## The WorktreeCreate and WorktreeRemove hooks
 
 Optional and unverified on a live CLI. A `WorktreeCreate` hook **replaces** the platform's own worktree creation, so `${CLAUDE_PLUGIN_ROOT}/scripts/worktree_hook.py create` makes the worktree itself: under `.claude/worktrees/<name>` and nowhere else, on a branch `worktree-<name>` cut off the **local** integration branch, with `.worktreeinclude` applied and a port slot reserved. `remove` takes it away and gives the slot back. A name with a separator, a path outside `.claude/worktrees`, a symbolic link on the way or any input shape the script does not know is refused with exit 2. The hook does not install dependencies or create a database; key those on `KIT_PORT_OFFSET` in your own setup script. The kit does not wire the hooks (the hook manifest has no opt-in entries): merge the settings snippet yourself.
+
+After a rebase every deterministic gate (`g5 g1 g3 g6 g9 g11 docs g10 g4` and `g7`; the reviewers are not run again) is re-run on the rebased code before the item merges, so the evidence is for the code that merges.
 
 ## What nobody has measured
 

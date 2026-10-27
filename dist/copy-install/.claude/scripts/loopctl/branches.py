@@ -75,6 +75,19 @@ def current(repo: str) -> Optional[str]:
     return gitutil.current_branch(repo, isolated=True)
 
 
+def checked_out_elsewhere(repo: str, name: str) -> bool:
+    """Is `name` checked out in a linked worktree other than `repo` (a parallel worker's)? Its owner settles the branch, not a park from outside."""
+    proc = _git(repo, ["worktree", "list", "--porcelain"])
+    here = os.path.realpath(repo)
+    for blk in proc.stdout.split("\n\n"):
+        lines = blk.strip().splitlines()
+        if not lines or not lines[0].startswith("worktree "):
+            continue
+        if ("branch refs/heads/" + name) in lines and os.path.realpath(lines[0][len("worktree "):]) != here:
+            return True
+    return False
+
+
 def create(repo: str, name: str, base_sha: str) -> None:
     """Create the branch at `base_sha` without switching to it."""
     p = parse(name)
@@ -197,10 +210,12 @@ def sweep(ctx: Any, live_branches: Sequence[str]) -> List[Dict[str, Any]]:
     them with `apply_sweep`. Worktrees are reported, not removed."""
     actions = []  # type: List[Dict[str, Any]]
     live = set(live_branches)
+    # defence in depth (D7): a feat/<slug>-a<n> whose slug and attempt a live record still names is never an orphan, whichever prefix the record holds
+    keep = {(p[1], p[2]) for p in (parse(b) for b in live_branches) if p}
     cur = current(ctx.repo)
     ib = ctx.integration_branch()
     for b in list_branches(ctx.repo, ("feat",)):
-        if b["name"] in live or b["name"] == cur:
+        if b["name"] in live or b["name"] == cur or (b["slug"], b["attempt"]) in keep:
             continue
         if ib and gitutil.is_ancestor("refs/heads/" + b["name"], "refs/heads/" + ib, ctx.repo, isolated=True):
             actions.append({"action": "delete-merged", "branch": b["name"]})          # all of it is already on the integration branch

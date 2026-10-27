@@ -80,10 +80,14 @@ TRANSITIONS = {
     "needs_human": ("pending", "blocked", "abandoned"),
     "abandoned": (),
 }
+LEDGER_CODES = ("cost_unknown", "budget_run", "budget_run_80", "budget_item", "budget_day")     # park reasons `approve cost` may lift
 BLOCK_REASONS = ("ESCALATION_NEEDED", "NEEDS_CLARIFICATION", "contract_blocked", "needs_provisioning", "security_blocked",
                  "migration_failed", "budget_halted", "design_cap", "ci_fix_cap", "retries_exhausted", "platform_outage",
                  "cost_unknown", "budget_run", "budget_item", "budget_day", "human_revert", "ac_changed", "plan_changed",
                  "aborted", "stall", "merge_missing", "pr_closed", "breaker_tripped")
+HEAD_REQUIRED = ("reviewing", "pr_open", "awaiting_human", "merged")      # a transition into these judges a head: `--head` is mandatory (defaults to the branch tip)
+APPROVABLE = ("reviewing", "pr_open", "awaiting_human")                     # states in which an unused merge approval may stand (review fixes D2)
+PRE_BUILD = ("g0", "g2")                                                    # gates whose result is about the plan, not the code (as gates/evidence_gate.PRE_BUILD)
 MAX_HISTORY = 40
 MAX_ITEMS = 400
 MAX_APPROVALS = 2000
@@ -102,6 +106,29 @@ def ref_for(plan_name: str) -> str:
     if not common.valid_plan_name(plan_name):
         raise UsageError("invalid plan name %r" % (plan_name,))
     return "refs/loopctl/state/" + plan_name
+
+
+def live_branches(st: "State") -> List[str]:
+    """The branches an item record still names and the sweep must therefore not touch: in flight or resting (blocked, needs_human) items, and a shelved
+    `parkedBranch`. A `pending` item's branch is not live: recovery resets it and the next attempt creates its branch afresh (review fixes D7)."""
+    out = []  # type: List[str]
+    for r in st.items.values():
+        if r["status"] in IN_FLIGHT or r["status"] in RESTING:
+            for k in ("branch", "parkedBranch"):
+                if isinstance(r.get(k), str) and r[k]:
+                    out.append(r[k])
+    return out
+
+
+def void_merge_approvals(doc: Dict[str, Any], iid: str, why: str) -> int:
+    """Mark every unused merge approval of `iid` consumed and say why (D2). Returns how many were voided."""
+    n = 0
+    for ap in doc.get("approvals", []):
+        if ap.get("target") == iid and ap.get("kind") == "merge" and not ap.get("used"):
+            ap["used"] = True
+            ap["voided"] = common.clean_text(why, 60)
+            n += 1
+    return n
 
 
 def new_item_record() -> Dict[str, Any]:
@@ -177,6 +204,8 @@ class State(object):
         else:
             r["blockReason"] = None
         r["status"] = to
+        if frm in APPROVABLE and to != "merged" and to not in APPROVABLE:
+            void_merge_approvals(self.d, iid, "status:%s->%s" % (frm, to))        # an approval is for one stay in the approvable states (D2)
         self.log(iid, frm, to, by, note)
 
     def eligible(self, order: Sequence[str], deps: Dict[str, List[str]]) -> List[str]:
@@ -558,7 +587,7 @@ class Loop(object):
                     elif r["status"] not in TERMINAL and r["status"] != "needs_human":
                         _force_status(st, iid, "needs_human", by, "removed from the plan while in progress", "plan_changed")
             st.header["approvedPlan"] = {"digest": pdigest, "acDigests": digests, "by": by, "at": common.iso(), "note": common.clean_text(note, 200)}
-            _add_approval(st, "plan", name, by, "approve", note, plan_digest=pdigest)
+            _add_approval(st, "plan", name, by, "approve", note, plan_digest=pdigest, kind="plan", used=True)
 
         st, _ = self.store.update(mutate, "approve plan %s by %s" % (name, by), create=create)
         self._event("plan_approved", plan=name, by=by, digest=pdigest[:12])
@@ -648,6 +677,8 @@ class Loop(object):
     # -- advance ------------------------------------------------------------------------------------------------------------
     def advance(self, iid: str, to: str, session_id: Optional[str], by: str = "conductor", note: str = "",
                 merge_commit: Optional[str] = None, head: Optional[str] = None, pr_url: Optional[str] = None) -> Dict[str, Any]:
+        """One forward step. A transition that judges code (into reviewing, pr_open, awaiting_human or merged, or any with a required gate) judges
+        a HEAD: `head` defaults to the tip of the item's branch, and a gate result for another head (or none) is stale (LC-5, GT-4, GT-9)."""
         item = self._need_plan_item(iid)
         if to not in STATUSES:
             raise UsageError("unknown status %r" % common.clean_text(to, 30))
@@ -661,46 +692,34 @@ class Loop(object):
             raise UsageError("--head must be a full object id")
         if pr_url is not None and not re.match(r"^https://[A-Za-z0-9./_-]{1,200}\Z", pr_url):
             raise UsageError("--pr-url must be an https URL")
-        merge_checked = False
-        if to == "merged":
-            self._check_merge_commit(iid, merge_commit)
-            merge_checked = True
+        if to == "merged" and not merge_commit:
+            raise UsageError("advancing to merged needs --merge-commit <sha>")
 
         def mutate(st: State) -> Dict[str, Any]:
             r = st.item(iid)
             frm = r["status"]
-            ap_ = st.header.get("approvedPlan")
-            if ap_ and ap_["acDigests"].get(iid) != plan_mod.ac_digest(item):
-                raise Refused("item %s: its acceptance criteria differ from the approved ones (ACs are frozen at H1); a human re-approves the plan" % iid)
-            if to not in FORWARD.get(frm, ()):
-                raise Refused("item %s: %s -> %s is not a forward step (allowed from %s: %s)"
-                              % (iid, frm, to, frm, ", ".join(FORWARD.get(frm, ())) or "none"))
-            if frm == "design_review" and to == "stubbing" and self.cfg.gate("g2") == "off":
-                raise Refused("gates.g2 is off: go from design_review to building")
-            for g in self.ctx.required_gates_for(frm, to):
-                res = r["gates"].get(g)
-                if not res or res.get("status") != "pass":
-                    raise Refused("item %s: gate %s must pass before %s -> %s (gates.%s is on); run `loopctl gate %s %s`"
-                                  % (iid, g, frm, to, g, g, iid))
-                if head and res.get("head") and res["head"] != head:
-                    raise Refused("item %s: gate %s passed for %s, not for %s: the evidence is stale" % (iid, g, res["head"][:12], head[:12]))
+            eff = self._check_forward(st, iid, r, frm, to, head)
             if to == "merged":
+                self._check_merge_commit(iid, merge_commit, eff)
                 gate = r.get("humanGate") or plan_mod.item_human_gate(item, self.cfg.get_list("always_human_paths"))
                 if frm == "awaiting_human" or gate:
-                    ap = _find_approval(st, iid, r["attempt"])
+                    ap = _find_approval(st, iid, r["attempt"], eff)
                     if ap is None:
-                        raise Refused("item %s needs a human approval before it merges%s: `loopctl approve item %s --by <you>`"
-                                      % (iid, " (" + "; ".join(gate[:2]) + ")" if gate else "", iid))
+                        raise Refused("item %s needs a human approval before it merges%s: `loopctl approve item %s --by <you>` (an approval is for one head; "
+                                      "this one is %s)" % (iid, " (" + "; ".join(gate[:2]) + ")" if gate else "", iid, (eff or "?")[:12]))
                     ap["used"] = True
                 r["mergeCommit"] = merge_commit
                 st.header["breaker"] = 0
                 if st.header.get("runStatus") == "parked":
                     st.header["runStatus"] = "running"
-            if head:
-                r["headSha"] = head
+            if eff and r.get("headSha") and r["headSha"] != eff:
+                void_merge_approvals(st.d, iid, "head:%s->%s" % (str(r["headSha"])[:10], eff[:10]))
+            if eff:
+                r["headSha"] = eff
             if pr_url:
                 r["prUrl"] = pr_url
             st.set_status(iid, to, by, note)
+            r["counters"]["platform"] = 0               # "N platform failures in a row": a forward step ends the row (LC-10)
             return copy.deepcopy(r)
 
         st, r = self.store.update(mutate, "advance %s -> %s" % (iid, to))
@@ -709,7 +728,59 @@ class Loop(object):
         self._event("advance", item=iid, to=to)
         return r
 
-    def _check_merge_commit(self, iid: str, sha: Optional[str]) -> None:
+    def _branch_tip(self, r: Dict[str, Any]) -> Optional[str]:
+        br = r.get("branch")
+        if not br or not isinstance(br, str):
+            return None
+        return gitutil.rev_parse("refs/heads/%s^{commit}" % br, self.ctx.repo, isolated=True)
+
+    def _check_forward(self, st: State, iid: str, r: Dict[str, Any], frm: str, to: str, head: Optional[str]) -> Optional[str]:
+        """Everything that must hold for `frm -> to` except the approval and the merge commit: frozen ACs, a forward edge, the required gates, fresh for
+        the head. Returns the head the step judges (None when it judges none). Raises Refused. Writes nothing."""
+        item = self.plan.items[iid]
+        ap_ = st.header.get("approvedPlan")
+        if ap_ and ap_["acDigests"].get(iid) != plan_mod.ac_digest(item):
+            raise Refused("item %s: its acceptance criteria differ from the approved ones (ACs are frozen at H1); a human re-approves the plan" % iid)
+        if to not in FORWARD.get(frm, ()):
+            raise Refused("item %s: %s -> %s is not a forward step (allowed from %s: %s)"
+                          % (iid, frm, to, frm, ", ".join(FORWARD.get(frm, ())) or "none"))
+        if frm == "design_review" and to == "stubbing" and self.cfg.gate("g2") == "off":
+            raise Refused("gates.g2 is off: go from design_review to building")
+        need = self.ctx.required_gates_for(frm, to)
+        eff = head
+        if eff is None and (need or to in HEAD_REQUIRED):
+            eff = self._branch_tip(r)
+            if eff is None:
+                raise Refused("item %s: %s -> %s judges a head, no --head was given and the tip of the item's branch cannot be resolved" % (iid, frm, to))
+        for g in need:
+            res = r["gates"].get(g)
+            if not res or res.get("status") != "pass":
+                raise Refused("item %s: gate %s must pass before %s -> %s (gates.%s is on); run `loopctl gate %s %s`"
+                              % (iid, g, frm, to, g, g, iid))
+            rh = res.get("head")
+            if g not in PRE_BUILD and eff is not None and rh != eff:
+                raise Refused("item %s: gate %s passed for %s, not for %s: the evidence is stale" % (iid, g, str(rh)[:12] if rh else "no recorded head", eff[:12]))
+        if to == "merged" and eff is None:
+            raise Refused("item %s: the head to merge cannot be resolved" % iid)
+        return eff
+
+    def preflight_merge(self, iid: str, head: str, session_id: Optional[str]) -> None:
+        """Before the driver runs `git merge`: no HALT, this session holds the lock, the item can still step to merged, its gates are fresh for `head`
+        and, where a human must approve, an unused approval for exactly this head exists. Writes nothing; raises Refused (LC-13)."""
+        self._need_plan_item(iid)
+        self._halted()
+        self._check_lock(session_id, need=True)
+        st, _ = self.store.read()
+        if st is None:
+            raise Refused("there is no state")
+        r = st.item(iid)
+        frm = r["status"]
+        eff = self._check_forward(st, iid, r, frm, "merged", head)
+        gate = r.get("humanGate") or plan_mod.item_human_gate(self.plan.items[iid], self.cfg.get_list("always_human_paths"))
+        if (frm == "awaiting_human" or gate) and _find_approval(st, iid, r["attempt"], eff) is None:
+            raise Refused("item %s needs an unused human approval for head %s before it merges" % (iid, (eff or "?")[:12]))
+
+    def _check_merge_commit(self, iid: str, sha: Optional[str], head: Optional[str] = None) -> None:
         if not sha:
             raise UsageError("advancing to merged needs --merge-commit <sha>")
         repo = self.ctx.repo
@@ -719,6 +790,14 @@ class Loop(object):
         if branch:
             if not gitutil.is_ancestor(sha, "refs/heads/" + branch, repo):
                 raise Refused("merge commit %s is not on the integration branch %s" % (sha[:12], branch))
+        if head:
+            # the commit must contain exactly the code that was judged: a merge of that head (local), or a commit that has it in its history
+            if self.cfg.get("delivery") == "local":
+                if gitutil.rev_parse(sha + "^2", repo, isolated=True) != head:
+                    raise Refused("merge commit %s is not a merge of the judged head %s (its second parent differs): the code merged is not the code reviewed"
+                                  % (sha[:12], head[:12]))
+            elif not (head == sha or gitutil.is_ancestor(head, sha, repo, isolated=True)):
+                raise Refused("merge commit %s does not contain the judged head %s" % (sha[:12], head[:12]))
         if self.cfg.get("delivery") == "local":
             msg = lgit.run_git(["log", "-1", "--format=%B", sha], cwd=repo, isolated=True, pin_hooks=True).stdout
             try:
@@ -757,7 +836,7 @@ class Loop(object):
                 raise Refused("item %s is %s: only an item in progress can fail" % (iid, r["status"]))
             d = failure.decide(r, r["status"], self.cfg, fclass, reason, failed_acs, stage, seed="%s:%d" % (iid, r["attempt"]))
             r["counters"].update(d.counters)
-            r["lastFailure"] = {"class": fclass, "reason": reason, "failedAcs": sorted(set(failed_acs)), "stage": stage or r["status"],
+            r["lastFailure"] = {"class": d.fclass, "reason": reason, "failedAcs": sorted(set(failed_acs)), "stage": stage or r["status"],
                                 "at": common.iso(), "detail": common.clean_text(detail, 200), "action": d.action}
             frm = r["status"]
             if d.action == "retry":
@@ -817,18 +896,43 @@ class Loop(object):
             if d.action == "discard":
                 d.git = branches.discard(self.ctx, br, self.ctx.integration_branch())
             else:
-                new = branches.park(self.ctx, br)
+                new = self._shelve(iid, br)
                 d.git = {"branch": br, "blocked": new}
-                if new:
-                    def mark(st: State) -> None:
-                        st.item(iid)["parkedBranch"] = new
-                    self.store.update(mark, "parked branch %s" % iid)
         except (Refused, UsageError) as exc:
             d.git = {"error": str(exc)}
 
+    def _shelve(self, iid: str, br: Optional[str] = None) -> Optional[str]:
+        """Move a resting item's `feat/*` branch aside to `blocked/*` (kept for resume, never auto-deleted) and note it on the record. Idempotent: None
+        when the branch is already gone. Inside the registered loop worktree it also leaves the branch if it is checked out; anywhere else it only
+        renames a branch nobody has checked out (review fixes D7, LC-2). Raises Refused/UsageError; callers that must not fail catch them."""
+        if br is None:
+            st, _ = self.store.read()
+            br = st.items[iid].get("branch") if st is not None and iid in st.items else None
+        if not br or not branches.parse(br):
+            return None
+        if not self.ctx.worktree_is_loop_worktree() and branches.current(self.ctx.repo) == br:
+            return None
+        if branches.checked_out_elsewhere(self.ctx.repo, br):
+            return None                      # a parallel worker's worktree: the scheduler settles that branch when it removes the worktree
+        new = branches.park(self.ctx, br)
+        if new:
+            def mark(st: State) -> None:
+                st.item(iid)["parkedBranch"] = new
+            self.store.update(mark, "parked branch %s" % iid)
+        return new
+
+    def _shelve_quietly(self, iid: str) -> None:
+        try:
+            self._shelve(iid)
+        except (Refused, UsageError, LoopctlError) as exc:
+            self._event("shelve_failed", item=iid, why=common.clean_text(exc, 120))
+
     def park(self, iid: str, code: str, detail: str, session_id: Optional[str], by: str = "conductor",
              kind: str = "needs_human", breaker: bool = False) -> Dict[str, Any]:
-        """A hard stop that is not a failure of the item: budget reached, unknown cost, ESCALATION_NEEDED, security block..."""
+        """A hard stop that is not a failure of the item: budget reached, unknown cost, ESCALATION_NEEDED, security block...
+
+        The lock check is `need=False` on purpose: parking is the safe direction (it only stops work), and a human or a crashed run's cleanup must be
+        able to do it without the session that held the lock (LC-14)."""
         self._need_plan_item(iid)
         if kind not in RESTING:
             raise UsageError("kind must be blocked or needs_human")
@@ -849,6 +953,7 @@ class Loop(object):
 
         st, r = self.store.update(mutate, "park %s %s" % (iid, code))
         self._event("park", item=iid, code=code)
+        self._shelve_quietly(iid)                   # whoever parks, the work moves to blocked/* (the sweep must never see it as an orphan, D7)
         return r
 
     def clarify(self, iid: str, session_id: Optional[str], by: str = "conductor") -> int:
@@ -871,6 +976,8 @@ class Loop(object):
             return n
 
         _, n = self.store.update(mutate, "clarify %s" % iid)
+        if n > 2:
+            self._shelve_quietly(iid)
         return n
 
     # -- gate and review results ------------------------------------------------------------------------------------------------------
@@ -879,7 +986,7 @@ class Loop(object):
         self._need_plan_item(iid)
         if not re.match(r"^[a-z][a-z0-9_]{0,15}\Z", name):
             raise UsageError("bad gate name")
-        self._check_lock(session_id, need=False)
+        self._check_lock(session_id, need=True)           # a gate result is evidence for a merge: only the session that holds the lock records it (LC-14)
         acs = set(plan_mod.ac_ids(self.plan.items[iid]))
 
         def mutate(st: State) -> Dict[str, Any]:
@@ -896,7 +1003,7 @@ class Loop(object):
         for name in names:
             if not re.match(r"^[a-z][a-z0-9_]{0,15}\Z", name):
                 raise UsageError("bad gate name")
-        self._check_lock(session_id, need=False)
+        self._check_lock(session_id, need=True)
         acs = set(plan_mod.ac_ids(self.plan.items[iid]))
 
         def mutate(st: State) -> List[Dict[str, Any]]:
@@ -931,7 +1038,9 @@ class Loop(object):
     # -- approvals (L-10) ---------------------------------------------------------------------------------------------------------------
     def approve(self, scope: str, target: str, by: str, choice: str = "approve", note: str = "") -> Dict[str, Any]:
         """Write an approval record. scope: item | checkpoint | unblock | env | breaker | cost | demotion. A record is made by a named human
-        (`by`); it cannot be backdated and is consumed by the transition it allows."""
+        (`by`; recorded, not authenticated); it cannot be backdated. Each record has a `kind`: only `kind: "merge"` (made by `approve item` while
+        the item is reviewing, pr_open or awaiting_human) can satisfy the merge gate, and it is bound to the item's attempt and `headSha`. Every other
+        kind is written already consumed, except `checkpoint`, which only `Driver.pending_checkpoint` consumes (review fixes D2)."""
         by = common.clean_text(by, 60)
         if not by.strip():
             raise UsageError("--by <name> is required")
@@ -939,12 +1048,21 @@ class Loop(object):
             raise UsageError("unknown approval scope %r" % common.clean_text(scope, 20))
         if choice not in ("approve", "reject", "stop", "reset", "keep", "replan"):
             raise UsageError("unknown choice %r" % common.clean_text(choice, 20))
+        if scope in ("item", "checkpoint") and choice not in ("approve", "reject", "stop"):
+            raise UsageError("%s choices: approve, reject, stop" % scope)
         if scope in ("item", "checkpoint", "unblock"):
             self._need_plan_item(target)
 
         def mutate(st: State) -> Dict[str, Any]:
+            kind, used, head = scope, True, None
             if scope in ("item", "checkpoint", "unblock"):
                 r = st.item(target)
+            if scope == "checkpoint":
+                p = st.header.get("parked")
+                if not (isinstance(p, dict) and p.get("reason") == "checkpoint" and p.get("item") == target):
+                    raise Refused("no checkpoint is outstanding for item %s: a checkpoint approval answers the driver's pause after a merge "
+                                  "(`loopctl status`); an item still in flight is approved or rejected with `approve item`" % target)
+                kind, used = "checkpoint", False
             if scope in ("item", "checkpoint"):
                 if r["status"] not in ("awaiting_human", "reviewing", "pr_open", "needs_human", "merged"):
                     raise Refused("item %s is %s: nothing to approve there" % (target, r["status"]))
@@ -958,13 +1076,25 @@ class Loop(object):
                     r["ac"] = {}
                     r["counters"] = _reset_counters(r["counters"], keep=("platform", "discards"))
                     st.set_status(target, "pending", by, "rejected at checkpoint: " + note)
+                    kind, used = "ack", True
                 elif choice == "stop":
-                    pass
-                elif r["status"] == "needs_human":
-                    st.set_status(target, "pending", by, "human resolved: " + note)
+                    if scope == "item":
+                        kind, used = "ack", True
+                elif scope == "item":                                      # approve
+                    if r["status"] == "needs_human":                       # the un-park: consumed here, it cannot merge anything later
+                        st.set_status(target, "pending", by, "human resolved: " + note)
+                        kind, used = "unpark", True
+                    elif r["status"] in APPROVABLE:
+                        head = r.get("headSha")
+                        if not head:
+                            raise Refused("no head is recorded for item %s; advance it with --head first" % target)
+                        kind, used = "merge", False
+                    else:                                                  # merged: an acknowledgement
+                        kind, used = "ack", True
             elif scope == "unblock":
                 if r["status"] not in RESTING:
                     raise Refused("item %s is %s, not blocked" % (target, r["status"]))
+                kind = "ack"
                 if choice == "reset":
                     r["counters"] = _reset_counters(r["counters"], keep=("platform", "discards"))
                     r["lastFailure"] = None
@@ -980,21 +1110,24 @@ class Loop(object):
                 if st.header.get("runStatus") in ("stopped", "aborted"):
                     st.header["runStatus"] = "idle"
                 st.header["parked"] = None
-            elif scope == "cost":
-                pass
+            elif scope == "cost":                          # acknowledges a spend stop: it lifts a park whose reason is a ledger code, and grants an item nothing (LC-6)
+                p = st.header.get("parked")
+                if isinstance(p, dict) and p.get("reason") in LEDGER_CODES and st.header.get("runStatus") in ("parked", "stopped"):
+                    st.header["parked"] = None
+                    st.header["runStatus"] = "idle"
             elif scope == "demotion":                      # a human reviewed why an unattended run was demoted to L3 and lifts it (report 6.3, Phase 7)
                 if not st.header.get("demotion"):
                     raise Refused("there is no demotion to approve")
                 st.header["demotion"] = None
-            return _add_approval(st, scope, target, by, choice, note, attempt=st.items[target]["attempt"] if target in st.items else None)
+            return _add_approval(st, scope, target, by, choice, note, attempt=st.items[target]["attempt"] if target in st.items else None,
+                                 kind=kind, head=head, used=used)
 
         st, ap = self.store.update(mutate, "approve %s %s (%s) by %s" % (scope, target, choice, by))
         if scope == "cost":
             from . import ledger
             run = self.ctx.rs.read_run() or {}
-            if isinstance(run.get("runId"), str):
-                ledger.Ledger(self.ctx.rs).acknowledge(run["runId"], by, note)
-        self._event("approve", scope=scope, target=target, choice=choice, by=by)
+            ledger.Ledger(self.ctx.rs).acknowledge(run["runId"] if isinstance(run.get("runId"), str) else "none", by, note)    # covers every unknown entry so far
+        self._event("approve", scope=scope, target=target, choice=choice, by=by, kind=ap.get("kind"))
         return ap
 
 
@@ -1010,6 +1143,8 @@ def _force_status(st: State, iid: str, to: str, by: str, note: str, block_reason
     """A status change driven by the plan itself (approve plan): bypasses the edge table because the plan moved, not the item."""
     r = st.items[iid]
     frm = r["status"]
+    if frm in APPROVABLE and to != "merged" and to not in APPROVABLE:
+        void_merge_approvals(st.d, iid, "status:%s->%s" % (frm, to))
     r["status"] = to
     r["blockReason"] = block_reason if to in RESTING else None
     if to in RESTING and not block_reason:
@@ -1018,9 +1153,13 @@ def _force_status(st: State, iid: str, to: str, by: str, note: str, block_reason
 
 
 def _add_approval(st: State, scope: str, target: str, by: str, choice: str, note: str, attempt: Optional[int] = None,
-                  plan_digest: Optional[str] = None) -> Dict[str, Any]:
+                  plan_digest: Optional[str] = None, kind: Optional[str] = None, head: Optional[str] = None, used: bool = False) -> Dict[str, Any]:
     ap = {"id": "ap-%d" % (len(st.d["approvals"]) + 1), "scope": scope, "target": target, "by": by, "choice": choice,
-          "at": common.iso(), "note": common.clean_text(note, 300), "attempt": attempt, "used": False}
+          "at": common.iso(), "note": common.clean_text(note, 300), "attempt": attempt, "used": used}
+    if kind:
+        ap["kind"] = kind
+    if head:
+        ap["headSha"] = head
     if plan_digest:
         ap["planDigest"] = plan_digest
     st.d["approvals"].append(ap)
@@ -1028,9 +1167,12 @@ def _add_approval(st: State, scope: str, target: str, by: str, choice: str, note
     return ap
 
 
-def _find_approval(st: State, iid: str, attempt: int) -> Optional[Dict[str, Any]]:
+def _find_approval(st: State, iid: str, attempt: int, head: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The unused merge approval for exactly this item, attempt and head (D2). A record without `kind` (written before this rule) never matches."""
+    if not head:
+        return None
     for ap in reversed(st.d["approvals"]):
-        if ap.get("target") == iid and ap.get("scope") in ("item", "checkpoint") and ap.get("choice") == "approve" \
-                and not ap.get("used") and ap.get("attempt") == attempt:
+        if ap.get("target") == iid and ap.get("scope") == "item" and ap.get("kind") == "merge" and ap.get("choice") == "approve" \
+                and not ap.get("used") and ap.get("attempt") == attempt and ap.get("headSha") == head:
             return ap
     return None

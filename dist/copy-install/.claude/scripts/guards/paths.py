@@ -22,7 +22,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 __all__ = ["fold", "absolute", "lexical", "physical", "forms", "find_root", "classify", "classify_forms",
            "rel_to_root", "match_rel", "expand_glob", "home_dir", "PROTECTED_DESCRIPTIONS", "ENGINEER_ONLY",
-           "is_report_path", "safe_read", "within"]
+           "is_report_path", "safe_read", "within", "SANDBOX_DENY_WRITE", "SANDBOX_DENY_WRITE_FILES", "sandbox_edit_rule", "agent_authored", "trusted_bases"]
 
 MAX_READ = 512 * 1024
 
@@ -184,6 +184,35 @@ HOME_PROTECTED = [".bashrc", ".bash_profile", ".bash_login", ".profile", ".zshrc
                   ".config/fish/config.fish", ".inputrc", ".bash_logout", "library/launchagents", "library/launchdaemons",
                   ".config/systemd", ".config/autostart"]
 
+# The sandbox `denyWrite` set (review fixes D1): the whole H6 write set above, plus the session registry, as paths relative to the project directory.
+# One source for `templates/security/sandbox.settings.json`, the generated settings templates and the doctor's `sandbox.deny-paths`;
+# tests/guards/test_sandbox_template.py proves every CLAUDE_ANCHORED and ROOT_ANCHORED pattern is covered. NOT listed on purpose:
+# `.claude/context/**` (primers are editable on main, g_file.MAIN_ALLOW), `.claude/pr/`, and the rest of `.git/loopctl/` (run.json, lock, HALT, nonces: the
+# conductor writes them legitimately). The session registry is `<git-common-dir>/loopctl/sessions`; in a linked worktree that directory is outside
+# the project directory and its absolute path must be added too (`wiring.py --sandbox-snippet` prints the line, the doctor row `sandbox.registry-path` checks it).
+SANDBOX_DENY_WRITE = (
+    ".git/hooks", ".git/config", ".git/info", ".git/loopctl/sessions",
+    ".claude/settings.json", ".claude/settings.local.json", ".claude/settings.v2.json", ".claude/settings*.json", ".claude/managed-settings.json",
+    ".claude/hooks", ".claude/scripts", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/rules", ".claude/workflows",
+    ".claude/loop.config.md", ".claude/templates",
+    ".claude-plugin", "plugin",
+    ".mcp.json", ".mcp.*.json",
+    ".github", ".gitlab-ci.yml", ".gitlab", ".circleci", "Jenkinsfile", "azure-pipelines.yml", ".buildkite", "bitbucket-pipelines.yml", ".travis.yml",
+    "CODEOWNERS", "docs/CODEOWNERS",
+)
+# the entries that name a file or a glob (`Edit(<entry>)`); every other entry is a directory (`Edit(<entry>/**)`)
+SANDBOX_DENY_WRITE_FILES = frozenset({
+    ".git/config", ".claude/settings.json", ".claude/settings.local.json", ".claude/settings.v2.json", ".claude/settings*.json",
+    ".claude/managed-settings.json", ".claude/loop.config.md", ".mcp.json", ".mcp.*.json", ".gitlab-ci.yml", "Jenkinsfile", "azure-pipelines.yml",
+    "bitbucket-pipelines.yml", ".travis.yml", "CODEOWNERS", "docs/CODEOWNERS",
+})
+
+
+def sandbox_edit_rule(entry: str) -> str:
+    """The `permissions.deny` rule that repeats a `denyWrite` entry (Claude Code derives sandbox filesystem limits from permission rules too)."""
+    return "Edit(%s)" % entry if entry in SANDBOX_DENY_WRITE_FILES else "Edit(%s/**)" % entry
+
+
 PROTECTED_DESCRIPTIONS = {
     "settings": "Claude Code settings (H6)",
     "hooks": "the hooks directory (H6)",
@@ -313,26 +342,64 @@ def safe_read(path: str, limit: int = MAX_READ) -> Optional[str]:
         return None
 
 
+BASE_REFS = ("origin/HEAD", "main", "master")
+
+
+def _git(root: str, *args: str) -> Optional["subprocess.CompletedProcess"]:
+    import subprocess
+    try:
+        return subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=false"] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+                              shell=False)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def trusted_bases(root: str) -> List[str]:
+    """The commits a script must be unchanged from to count as reviewed: the active run's `baseSha` (run.json) when it is well-formed, and the
+    merge-base of HEAD with the first of origin/HEAD, main, master that exists. A file must be unchanged from every one of them: run.json is writable
+    from the sandbox on purpose, so a forged `baseSha` can only make the check stricter, never launder a script that changed since the merge-base.
+    Empty when neither can be found (callers then fail closed)."""
+    out = []   # type: List[str]
+    try:
+        from kitlib import runstate
+        st = runstate.RunState.for_path(root)
+        rec = st.read_run() if st is not None else None
+    except Exception:
+        rec = None
+    sha = rec.get("baseSha") if isinstance(rec, dict) else None
+    if isinstance(sha, str) and re.match(r"^[0-9a-fA-F]{7,64}$", sha):
+        out.append(sha)
+    for ref in BASE_REFS:
+        mb = _git(root, "merge-base", "HEAD", ref)
+        if mb is not None and mb.returncode == 0 and mb.stdout.strip():
+            out.append(mb.stdout.decode("utf-8", "replace").strip().split()[0])
+            break
+    return out
+
+
 def agent_authored(path: str) -> bool:
-    """True when a script file is not a reviewed, committed one: untracked, modified, or outside any repository.
-    Reviewed scripts (tracked and unchanged) are trusted at the base sha; what the agent wrote or edited is scanned."""
+    """True when a script file is not a reviewed one: untracked, modified, changed since a trusted base, or outside any repository.
+    A tracked, clean file counts as reviewed only when it is also unchanged from the trusted bases (the run's `baseSha` and the merge-base with the
+    protected branch): a conductor commit on a feat/* branch must not launder what an engineer wrote (GD-6). If no base can be determined the file
+    is agent-authored (fail closed)."""
     p = os.path.realpath(path)
     root = find_root(p)
     if root is None:
         return True
-    try:
-        import subprocess
-        proc = subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--", p], stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, timeout=10, shell=False)
-        if proc.returncode != 0:
-            return True
-        if proc.stdout.strip():
-            return True
-        tracked = subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=false", "ls-files", "--error-unmatch", "--", p], stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE, timeout=10, shell=False)
-        return tracked.returncode != 0
-    except (OSError, ValueError):
+    st = _git(root, "status", "--porcelain=v1", "--", p)
+    if st is None or st.returncode != 0 or st.stdout.strip():
         return True
+    tracked = _git(root, "ls-files", "--error-unmatch", "--", p)
+    if tracked is None or tracked.returncode != 0:
+        return True
+    bases = trusted_bases(root)
+    if not bases:
+        return True
+    for base in bases:
+        diff = _git(root, "diff", "--quiet", base, "--", p)
+        if diff is None or diff.returncode != 0:
+            return True
+    return False
 
 
 def archive_members(path: str, limit: int = 3000, max_bytes: int = 64 * 1024 * 1024) -> Optional[List[str]]:

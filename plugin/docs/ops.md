@@ -56,6 +56,14 @@ Lockfiles read for drift and peers: `package-lock.json` and `poetry.lock`. For o
 
 `smoke.yml` runs `verify.py --only smoke` on the default branch (the smoke stage you configured for the delivery lane) and, if the `SMOKE_URL` variable is set, requests that https URL. On failure a second job, which runs no project code, opens one issue titled "Smoke check failing on main" with the link to the run and nothing else, or comments on it if it is open. It does not close the issue and does not start a fix.
 
+## The loop worktree, a stale lock and parked work
+
+- **Run `loopctl run` in a dedicated linked worktree.** A discard runs `git reset --hard` and `git clean -fd` in the directory the run was launched from, on the item's own branch. In your everyday checkout that would delete your uncommitted changes. `loopctl run --dry-run` warns (`worktree.dedicated`) when the run would start in a worktree that is not a linked one; create one with `git worktree add ../<repo>-loop` and run there.
+- **A lock whose process id was reused.** The run lock is judged dead by its process id. If the machine reused that id for something else, the lock never looks stale. After checking `loopctl lock status` and that no run is alive, remove it yourself with `loopctl lock release --force` (a human step). A portable process start time lookup was judged not worth a subprocess per check.
+- **The lock and the run record are advisory.** The heartbeat, a release and a takeover are not atomic with each other; two machines on one repository are what the remote lock (`remote_lock`) is for, and even that is advisory.
+- **Leaked process groups.** A driver that was killed outright (SIGKILL, power) can leave a child's process group running; the next start reaps the children it can prove are its own. A recycled group id is never killed blindly. Check `ps` for a stray `claude` after a crash.
+- **Parked work is kept.** An item parked by anyone (the driver, `loopctl park`, `reconcile`) has its `feat/*` branch moved to `blocked/*`; `loopctl reconcile` never turns the branch of an in-flight or resting item into `dead/*`, and `dead/*` is the only thing pruned.
+
 ## What is not built
 
 These are designs, not code. Each needs something this repository cannot supply: a live GitHub token, a vendor, or an application's UI.

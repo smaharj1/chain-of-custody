@@ -164,7 +164,8 @@ def scan(ctx: Any, st: Any, lp: Any, prs: Optional[List[Dict[str, Any]]] = None,
             rep.find("warn", "reconcile.stale-inflight", "item %s is %s but no run holds the lock: back to pending" % (iid, st.items[iid]["status"]), iid)
             rep.actions.append({"op": "reset-inflight", "item": iid})
     finishing = {a["item"] for a in rep.actions if a["op"] in ("merged-recovered",)}
-    live_branches = [r["branch"] for i, r in st.items.items() if r.get("branch") and r["status"] in state_mod.IN_FLIGHT and i not in finishing]
+    # every branch a record still names stays: in flight, blocked or needs_human (parked work is not an orphan, D7), except items recovered as merged
+    live_branches = state_mod.live_branches(state_mod.State({"items": {i: r for i, r in st.items.items() if i not in finishing}}))
     for a in branches.sweep(ctx, live_branches):
         if a["action"] == "delete-merged":
             rep.find("info", "reconcile.merged-branch", "branch %s is fully merged: deleted (merged branches are deleted after pass)" % a["branch"])
@@ -279,6 +280,9 @@ def apply(loop: Any, rep: Report, by: str = "reconcile") -> Report:
                         r["prUrl"] = a["overlay"]["url"]
         loop.store.update(mutate, "reconcile --apply (%d state change(s))" % len(state_ops))
         rep.applied += ["%s %s" % (a["op"], a.get("item") or a.get("branch", "")) for a in state_ops]
+        for a in state_ops:                                            # an item parked here keeps its work: feat/* moves to blocked/* (D7)
+            if a["op"] in ("pr-closed", "merge-missing", "human-revert"):
+                loop._shelve_quietly(a["item"])
     sweep = [{"action": "rename-dead", "branch": a["branch"], "to": a["to"]} for a in acts if a["op"] == "orphan-branch"]
     sweep += [{"action": "delete-merged", "branch": a["branch"]} for a in acts if a["op"] == "delete-merged"]
     if sweep:

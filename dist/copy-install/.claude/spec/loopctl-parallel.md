@@ -65,7 +65,7 @@ A worker that has the item reviewed and green does not merge. For an item that n
 2. **footprint**: the diff `base..head` (`--no-renames`) must be inside the item's declared globs plus its own `docs/features/<slug>/`. A file outside is a **footprint lie**: park `footprint_violation` (needs a human), never merge;
 3. **rebase** onto the integration tip when the branch does not contain it (in the item's worktree; a conflict is aborted and parks `merge_conflict`);
 4. **migration order**: a migration `up` file the item added must sort after every file in its directory on the integration tip, else `item/migration_order` sends the item back to its engineer to regenerate it (the tooling that numbers migrations is the engineer's);
-5. **re-verify**: after a rebase, `g6`, then any gate the merge transition requires, in the item's worktree. A failure is an ordinary item failure (retry, discard or park by the 4a rules) and the worker is started again in the same worktree;
+5. **re-verify**: after a rebase EVERY deterministic gate Evidence will check runs again in the item's worktree: all of `driver.VERIFY_GATES` (`g5 g1 g3 g6 g9 g11 docs g10 g4`, `off` ones skipped, a blocking `g5` ends the round) and `g7` (a read of the committed review files; the LLM reviews are not re-run, the rebase did not change the item's own diff), then whatever the merge transition still requires. Only LINEAR history is rebased: an item branch holding a merge commit parks (`ESCALATION_NEEDED`) instead of losing the resolution inside it. A failure is an ordinary item failure (retry, discard or park by the 4a rules) and the worker is started again in the same worktree;
 6. the lease check, the `before_merge` test seam, then `Driver.merge_branch` (`--no-ff`, `Loop-Item` and `Loop-Attempt` trailers, the record). The worktree goes, then the branch.
 
 A lease lost **before** the merge changes nothing and leaves the item `reviewing` (`lost`; a fourth loss parks it `lease_lost`). After the merge commit exists the merge is a fact: the record is written whatever a lease says, and `recover()` would find it from the trailer if the record failed. Two integrators cannot both pass git's own index lock in the loop worktree.
@@ -102,7 +102,7 @@ The supervisor is per run (Phase 7): `Supervisor.attach` is the only user of `ob
 
 ## Not built here
 
-The Workflow pipeline host; stack-specific worktree setup (installing dependencies, creating an ephemeral database: the project's own script keys on `KIT_PORT_OFFSET` and `KIT_ITEM`); a re-verify of an approved item after other items merged (it is merged three-way, as the human approved it); parallel items across machines (the remote lock is Phase 11); `/batch` (quick lane only, D-28).
+The Workflow pipeline host; stack-specific worktree setup (installing dependencies, creating an ephemeral database: the project's own script keys on `KIT_PORT_OFFSET` and `KIT_ITEM`); a re-verify of an approved item BEFORE it merges after other items merged (it is merged three-way, as the human approved it; the driver verifies the merged result afterwards and stops the run with `integration_red` if it is red, see `.claude/spec/loopctl-driver.md`); parallel items across machines (the remote lock is Phase 11); `/batch` (quick lane only, D-28).
 
 ## Unverified on a live CLI (probes)
 

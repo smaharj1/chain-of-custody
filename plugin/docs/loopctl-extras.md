@@ -22,6 +22,8 @@ remote_lock: origin          # the name of a git remote, never a URL
 
 and commit it through review (it is a guardrail key). A `runner: driver` run then takes `refs/loopctl/lock/<plan>` on that remote when it starts, heartbeats it while it runs, and gives it back when it ends. A run that cannot take it does not start (`loopctl run --dry-run` shows the `remote-lock` row). Taking it is create-only: if two machines ask at the same moment, git applies one push and refuses the other.
 
+These four are **human-only**: you run them in a plain terminal (or with `!` in the prompt); the guard denies them to every agent, the conductor included, and they refuse inside a Claude Code session. With `runner: sequential` the conductor prints each as a `HUMAN STEP` line and waits. Claims (`claim take|release`) are the same.
+
 By hand, for the prose conductor (`runner: sequential`) or to look:
 
 ```

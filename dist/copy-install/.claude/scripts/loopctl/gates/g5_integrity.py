@@ -21,9 +21,10 @@ Any hit is a finding for a separate review verdict plus a human flag. Owner metr
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import common
 from . import GateResult
@@ -40,7 +41,7 @@ _STDLIB_FALLBACK = {"json", "os", "sys", "re", "io", "abc", "time", "types", "ty
 _STDLIB = set(getattr(sys, "stdlib_module_names", ())) | _STDLIB_FALLBACK
 _SHADOW_DIRS = ("", "src", "lib", "tests", "test")
 _PKG_KEYS = ("scripts", "jest", "vitest", "mocha", "ava", "nyc", "c8", "husky", "simple-git-hooks", "lint-staged", "eslintConfig", "babel", "pytest")
-_TOOL_TABLE_RE = re.compile(r"(?m)^\[tool\.(?:pytest|coverage|ruff|mypy|pylint|flake8|black|isort|tox|nox)[^\]]*\]")
+_TOOLS = ("pytest", "coverage", "ruff", "mypy", "pylint", "flake8", "black", "isort", "tox", "nox")
 
 
 def _pkg_changed(base: Optional[str], head: Optional[str]) -> List[str]:
@@ -55,22 +56,130 @@ def _pkg_changed(base: Optional[str], head: Optional[str]) -> List[str]:
     return [k for k in _PKG_KEYS if a.get(k) != b.get(k)]
 
 
-def _toml_tables(text: Optional[str]) -> Dict[str, str]:
+def _toml_key(src: str, i: int) -> Optional[Tuple[List[str], int]]:
+    """A dotted TOML key starting at `src[i]`: ([parts, quotes and spaces stripped], index after it), or None when it is not one."""
+    parts = []  # type: List[str]
+    n = len(src)
+    while True:
+        while i < n and src[i] in " \t":
+            i += 1
+        if i >= n:
+            return None
+        ch = src[i]
+        if ch in "\"'":
+            j = i + 1
+            while j < n and src[j] != ch:
+                j += 2 if (ch == '"' and src[j] == "\\") else 1
+            if j >= n:
+                return None
+            parts.append(src[i + 1:j])
+            i = j + 1
+        else:
+            m = re.compile(r"[A-Za-z0-9_-]+").match(src, i)
+            if not m:
+                return None
+            parts.append(m.group(0))
+            i = m.end()
+        while i < n and src[i] in " \t":
+            i += 1
+        if i < n and src[i] == ".":
+            i += 1
+            continue
+        return parts, i
+
+
+def _toml_scan(line: str, ml: Optional[str], depth: int) -> Optional[Tuple[Optional[str], int]]:
+    """Advance the multi-line string and bracket state over one physical line. None when the line cannot be read (an unterminated basic
+    or literal string)."""
+    i, n = 0, len(line)
+    while i < n:
+        if ml:
+            j = line.find(ml, i)
+            if j < 0:
+                return ml, depth
+            i, ml = j + 3, None
+            continue
+        ch = line[i]
+        if ch == "#":
+            break
+        if line.startswith('"""', i) or line.startswith("'''", i):
+            ml, i = line[i:i + 3], i + 3
+        elif ch in "\"'":
+            j = i + 1
+            while j < n and line[j] != ch:
+                j += 2 if (ch == '"' and line[j] == "\\") else 1
+            if j >= n:
+                return None
+            i = j + 1
+        else:
+            depth += 1 if ch in "[{" else -1 if ch in "]}" else 0
+            i += 1
+    return ml, depth
+
+
+def _toml_tables(text: Optional[str]) -> Optional[Dict[str, str]]:
+    """The test and lint tool content of a pyproject, keyed by normalised table name (`tool.pytest.ini_options`): header spacing and quoting
+    do not matter, multi-line values are read as one statement, a dotted `tool.` key at the top level or inside `[tool]` lands in its own
+    bucket. None when the file holds something this small reader cannot classify (an unterminated string, unbalanced brackets, a header it
+    cannot parse): the caller then treats the whole file as changed (fail closed)."""
     out = {}  # type: Dict[str, List[str]]
     cur = None  # type: Optional[str]
-    for ln in (text or "").splitlines():
-        if ln.lstrip().startswith("["):
-            cur = ln.strip() if _TOOL_TABLE_RE.match(ln) else None
+    root = True                 # before the first header: a `tool.…` or `tool = {…}` key here is tool configuration
+    capture = None  # type: Optional[List[str]]
+    ml, depth = None, 0   # type: Optional[str], int
+    for raw in (text or "").splitlines():
+        if ml is None and depth == 0:
+            ln = raw.strip()
+            capture = None
+            if not ln or ln.startswith("#"):
+                continue
+            if ln.startswith("["):
+                root = False
+                array = ln.startswith("[[")
+                got = _toml_key(ln, 2 if array else 1)
+                if got is None:
+                    return None
+                parts, i = got
+                close = "]]" if array else "]"
+                rest = ln[i:]
+                if not rest.startswith(close) or (rest[len(close):].strip() and not rest[len(close):].strip().startswith("#")):
+                    return None
+                name = ".".join(parts)
+                relevant = parts[0] == "tool" and (len(parts) == 1 or parts[1] in _TOOLS)
+                cur = ("[[%s]]" % name if array else name) if relevant else None
+                if cur is not None:
+                    out.setdefault(cur, [])
+                continue
             if cur is not None:
-                out[cur] = []
-        elif cur is not None and ln.strip() and not ln.strip().startswith("#"):
-            out[cur].append(ln.strip())
+                capture = out[cur]
+            elif root:
+                got = _toml_key(ln, 0)
+                if got is None:
+                    return None
+                if got[0][0] == "tool":
+                    capture = out.setdefault("<top-level tool keys>", [])
+            if capture is not None:
+                capture.append(ln)
+        elif capture is not None:
+            capture.append(raw.strip())
+        st = _toml_scan(raw, ml, depth)
+        if st is None:
+            return None
+        ml, depth = st
+        if depth < 0:
+            return None
+    if ml is not None or depth != 0:
+        return None
     return {k: "\n".join(v) for k, v in out.items()}
 
 
 def _toml_changed(base: Optional[str], head: Optional[str]) -> bool:
-    """Whether a pyproject's test and lint tool tables differ (a dependency edit alone is not an integrity change)."""
-    return _toml_tables(base) != _toml_tables(head)
+    """Whether a pyproject's test and lint tool tables differ (a dependency edit alone is not an integrity change). A file the reader cannot
+    classify counts as changed whenever it differs at all."""
+    a, b = _toml_tables(base), _toml_tables(head)
+    if a is None or b is None:
+        return (base or "") != (head or "")
+    return a != b
 
 
 def _allowed(ctx: Any, path: str, status: str, allow: List[str], foot: List[str]) -> bool:
@@ -160,6 +269,61 @@ def _glob_check(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], count
         counts["flags"] += 1
 
 
+_DOC_EXT = (".md", ".rst", ".txt", ".adoc")
+_RESULTS_RE = re.compile(r"""["']results["']""")
+_ACID_RE = re.compile(r"""AC-[A-Za-z0-9]+-\d+|["']AC-["']""")
+
+
+def _read_untracked(ctx: Any, path: str) -> Optional[str]:
+    full = os.path.join(ctx.worktree or "", path)
+    try:
+        if not common.safe_rel_path(path) or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > (1 << 20):
+            return None
+        with open(full, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _output_lint(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], counts: Dict[str, int]) -> None:
+    """Production code that prints what a test harness would print (UN-1, GT-2). A product module is not the harness: a JSON object with a
+    `results` key naming an acceptance id, added outside tests and test configuration, is a forged verdict until proven otherwise; so is
+    `os._exit(`, which ends a run before the runner can report a failure. Always on (no opt-in): the reader (_acparse) cannot tell the two
+    apart, so this is where the forgery is caught. A window of four added lines is read together so splitting the literal does not hide it."""
+    head = _lib.head_of(ctx)
+    for status, path, _old in rows:
+        if status == "D" or _lib.is_protected(path) or path.lower().endswith(_DOC_EXT):
+            continue
+        text_head = _lib.blob(ctx, head, path)
+        if text_head is None and status == "A":
+            text_head = _read_untracked(ctx, path)          # a new file nobody committed yet still runs in the worktree
+        if text_head is None or _lib.is_binary(text_head):
+            continue
+        old = set((_lib.blob(ctx, ctx.base_sha, path) or "").splitlines())
+        added = [ln for ln in text_head.splitlines() if ln not in old]
+        if not added:
+            continue
+        if any("os._exit(" in ln for ln in added):
+            findings.append(_lib.finding("g5.hard-exit", "warn", "%s adds os._exit(): it ends the process before a test runner can report a failure" % path, path=path))
+        for i in range(len(added)):
+            win = "\n".join(added[i:i + 4])
+            if _RESULTS_RE.search(win) and _ACID_RE.search(win):
+                findings.append(_lib.finding("g5.harness-shaped-output", "error", "%s adds text shaped like an acceptance harness verdict (a \"results\" object "
+                                             "naming an AC id): production code must not print test results" % path, path=path))
+                counts["flags"] += 1
+                break
+
+
+def _ignored_check(ctx: Any, findings: List[Dict[str, Any]], counts: Dict[str, int]) -> None:
+    for path, why in _lib.ignored_problems(ctx)[:20]:
+        if path.startswith("<more than"):
+            findings.append(_lib.finding("g5.ignored-incomplete", "warn", "%s: %s" % (path, why)))
+            continue
+        findings.append(_lib.finding("g5.ignored-config", "error", "%s: %s. It is in no diff, so no gate has read it. Delete it, or un-ignore "
+                                     "and commit it (clear the flag) so it can be reviewed" % (path, why), path=path))
+        counts["flags"] += 1
+
+
 def _lint(ctx: Any, rows: List[Any], langs: List[str], findings: List[Dict[str, Any]], counts: Dict[str, int]) -> None:
     foot = _lib.footprint(ctx.item)
     head = _lib.head_of(ctx)
@@ -216,6 +380,8 @@ def run(ctx: Any) -> GateResult:
     findings = []  # type: List[Dict[str, Any]]
     counts = {"flags": 0, "expected": 0}
     _glob_check(ctx, rows, findings, counts)
+    _output_lint(ctx, rows, findings, counts)
+    _ignored_check(ctx, findings, counts)
     langs = [str(x) for x in (ctx.cfg.get("g5_ast_lint") or [])]
     if langs:
         if not ctx.evidence_passed:

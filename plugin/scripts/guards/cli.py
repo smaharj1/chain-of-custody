@@ -7,6 +7,7 @@ import sys
 import hashlib
 from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
 
+import humanonly
 from kitlib import jsonio, runstate
 
 from . import engine, g_taint, selftest, telemetry
@@ -34,7 +35,7 @@ def main(argv: Sequence[str], stdin: Optional[TextIO] = None, stdout: Optional[T
     if head == "explain":
         return _explain(args[1:], stdout, stderr, env)
     if head in ("register-session", "unregister-session", "set-halt", "clear-halt"):
-        return _state_cmd(head, args[1:], stdout, stderr)
+        return _state_cmd(head, args[1:], stdout, stderr, env)
     event = head
     entry_id = None
     if "--id" in args:
@@ -200,9 +201,12 @@ def _explain(args: List[str], stdout: TextIO, stderr: TextIO, env: Optional[Mapp
     return 0
 
 
-def _state_cmd(cmd: str, args: List[str], stdout: TextIO, stderr: TextIO) -> int:
-    if os.environ.get("CLAUDECODE"):
-        stderr.write("run.py %s is a human command and refuses to run inside a Claude Code session; use `!` in the prompt or a plain terminal\n" % cmd)
+def _state_cmd(cmd: str, args: List[str], stdout: TextIO, stderr: TextIO, env: Optional[Mapping[str, str]] = None) -> int:
+    # presence of either session marker counts, even empty (GD-8): `CLAUDECODE=` must not pass. This is a tripwire; the guard (guards-cli) and the sandbox
+    # are what stop an agent that unsets both.
+    msg = humanonly.refusal("run.py %s" % cmd, os.environ if env is None else env)
+    if msg:
+        stderr.write(msg + " Use `!` in the prompt or a plain terminal.\n")
         return 2
     opts = {}   # type: Dict[str, str]
     i = 0

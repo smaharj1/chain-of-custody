@@ -15,9 +15,16 @@ __all__ = ["redact", "redact_obj", "find_secrets", "REDACTED_PREFIX"]
 
 REDACTED_PREFIX = "[REDACTED"
 
-_SECRET_KEY = (r"(?:password|passwd|pwd|passphrase|secret|client[_-]?secret|api[_-]?key|apikey|"
-               r"access[_-]?key|private[_-]?key|access[_-]?token|auth[_-]?token|refresh[_-]?token|"
-               r"session[_-]?token|token|credential|credentials)")
+# A secret-looking IDENTIFIER, not a word (UN-2): `\b` around the key name misses every compound name, because `_` is a word character
+# (`DB_PASSWORD=`, `STRIPE_SECRET_KEY=`, `API_SECRET=`, `db_password=`, `apiSecret=`). The name is any run of identifier parts, one of which is
+# a keyword, followed by at most two secret-ish suffix parts. The suffix list is closed on purpose: `token_budget_per_item: 150000` and
+# `input_tokens: 12` are not secrets, and a bare `auth` is not a keyword (`auth: required`); `auth_token` is covered by its `token` part.
+_KEYWORD = (r"(?:(?:password|passwd|passphrase|pwd|credential|api[_-]?key|access[_-]?key|private[_-]?key)s?|secret|token)")
+# a strong word may also be glued to a lowercase prefix (`clientsecret`, `dbpassword`, `secretkey`); the weak ones (`token`, `pwd`) may not (`maxtoken`)
+_STRONG = r"(?:[A-Za-z0-9]*(?:password|passwd|passphrase|secret[_-]?key|secret|apikey|privatekey|accesskey)s?)"
+_CAMEL = r"(?-i:Password|Passwd|Passphrase|Pwd|Credentials?|ApiKey|AccessKey|PrivateKey|Secret|Token)"
+_SUFFIX = r"(?:[_-](?:key|id|value|secret|token|password|passwd|hash|salt|string|data|b64|base64)){0,2}"
+_SECRET_KEY = (r"(?<![A-Za-z0-9])(?:(?:[A-Za-z0-9]+[_-]){0,6}" + _KEYWORD + r"|" + _STRONG + r"|[a-z][a-z0-9]*" + _CAMEL + r")" + _SUFFIX + r"(?![A-Za-z0-9])")
 
 # (kind, compiled regex, group to replace or 0 for the whole match)
 _PATTERNS = [
@@ -34,16 +41,23 @@ _PATTERNS = [
     ("stripe-key", re.compile(r"\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}\b"), 0),
     ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"), 0),
     ("npm-token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b"), 0),
+    ("pypi-token", re.compile(r"\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}"), 0),
+    ("anthropic-key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}"), 0),
+    ("openai-key", re.compile(r"\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"), 0),
+    ("gitlab-token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}"), 0),
+    ("stripe-webhook-secret", re.compile(r"\bwhsec_[A-Za-z0-9]{16,}"), 0),
+    ("azure-account-key", re.compile(r"(?i)\bAccountKey=([A-Za-z0-9+/]{20,}={0,2})"), 1),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"), 0),
     ("url-credentials", re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s/:@]+:([^\s/@]{3,})@"), 1),
     ("basic-auth", re.compile(r"(?i)\bauthorization\s*:\s*(?:basic|digest)\s+(?!\[REDACTED)([A-Za-z0-9+/=._-]{8,})"), 1),
     ("bearer", re.compile(r"(?i)\b(?:bearer|token)\s+(?!\[REDACTED)([A-Za-z0-9._~+/=-]{16,})"), 1),
     ("secret-assignment",
-     re.compile(r"(?i)[\"']?\b" + _SECRET_KEY + r"\b[\"']?\s*[:=]\s*(?!\[REDACTED)(\"[^\"\n]*\"|'[^'\n]*'|[^\s,;\"'}\])]+)"), 1),
+     re.compile(r"(?i)[\"']?" + _SECRET_KEY + r"[\"']?\s*[:=]\s*(?!\[REDACTED)(\"[^\"\n]*\"|'[^'\n]*'|[^\s,;\"'}\])]+)"), 1),
 ]  # type: List[Tuple[str, Any, int]]
 
 _SECRET_KEY_RE = re.compile(
-    r"(?:^|[_-])(?:password|passwd|passphrase|secret|token|api[_-]?key|apikey|authorization|credentials?|private[_-]?key)s?(?:$|[_-])",
+    r"(?:^|[_-])(?:password|passwd|passphrase|secret|token|api[_-]?key|apikey|authorization|credentials?|private[_-]?key)s?(?:$|[_-])|"
+    r"[a-z0-9](?-i:Password|Passwd|Passphrase|Secret|Token|ApiKey|AccessKey|PrivateKey|Credentials?|Authorization)(?-i:$|[A-Z_-])",
     re.I)
 
 

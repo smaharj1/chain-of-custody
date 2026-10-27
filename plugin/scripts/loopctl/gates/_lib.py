@@ -20,7 +20,7 @@ safe_rel_path = common.safe_rel_path
 
 __all__ = ["finding", "g3_spec", "g5_allow", "TEST_GLOBS", "PROTECTED_GLOBS", "is_test_path", "is_protected", "match_any", "diff_status",
            "changed_paths", "blob", "tree_files", "head_of", "ac_pattern", "ac_ids_of", "runstate_of", "run_command", "tail", "worst_class",
-           "command_set", "git_ok", "is_binary", "footprint", "ere_for", "quote", "same_code", "review_globs", "worktree_head_problem", "uncommitted_changes", "command_files", "CONFIG_GLOBS", "SNAPSHOT_GLOBS", "tree_entries"]
+           "command_set", "git_ok", "is_binary", "footprint", "ere_for", "quote", "same_code", "review_globs", "worktree_head_problem", "uncommitted_changes", "ignored_files", "ignored_problems", "command_files", "CONFIG_GLOBS", "SNAPSHOT_GLOBS", "tree_entries"]
 
 
 def finding(fid: str, severity: str, message: str, **extra: Any) -> Dict[str, Any]:
@@ -262,13 +262,94 @@ def worktree_head_problem(ctx: Any) -> Optional[str]:
 
 
 def uncommitted_changes(ctx: Any) -> List[str]:
-    """Tracked files that differ from HEAD in the worktree. A gate that runs code would be judging them, and HEAD does not hold them. Saved
-    reports under the item's reports directory are excepted; untracked files are G5's and G11's business."""
+    """Tracked files that differ from HEAD in the worktree. A gate that runs code would be judging them, and HEAD does not hold them. Only
+    saved reports under the item's reports directory (and `.claude/pr/`) are excepted: the rest of `docs/features/<slug>/` is a file the
+    engineer can edit and the gates read (GT-14). Untracked files are G5's and G11's business."""
     out = git_ok(ctx, ["status", "--porcelain=v1", "-z", "--untracked-files=no"])
     if out is None:
         return ["<git status failed>"]
-    prefixes = ("docs/features/%s/" % ctx.item.get("slug", ""), ".claude/pr/")
+    prefixes = ("docs/features/%s/reports/" % ctx.item.get("slug", ""), ".claude/pr/")
     return [rec[3:] for rec in out.split("\0") if len(rec) > 3 and not rec[3:].startswith(prefixes)]
+
+
+# Directories whose contents are installed dependencies or caches: not scanned for ignored files (documented limit; the CI re-run on a clean
+# checkout is the backstop). The first seven are the ones the decision names; the rest are tool caches that hold executables by design.
+DEPENDENCY_DIRS = ("node_modules", ".venv", "venv", "vendor", "target", "dist", "build", ".tox", ".nox", "site-packages", "__pycache__", ".git",
+                   ".next", ".nuxt", ".svelte-kit", ".angular", ".turbo", ".cache", ".parcel-cache", ".gradle", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+                   ".hypothesis", "htmlcov", "coverage")
+# Gitignored files that change what a test run does without being a test or a CI file (GT-6).
+IGNORED_CONFIG_GLOBS = ["**/conftest.py", "**/*.pth", "**/sitecustomize.py", "**/usercustomize.py", "**/pytest.ini", "**/tox.ini", "**/setup.cfg",
+                        "**/.coveragerc"]
+# Human-local state that is ignored by design in every checkout and is not read by a test run: other worktrees (each holds its own conftest.py
+# and executables) and the harness's local settings. Documented limit, not a hole in the rule: the CI re-run on a clean checkout covers both.
+LOCAL_STATE = (".claude/worktrees/", ".claude/settings.local.json")
+# Local environment files are ignored by convention on every developer machine (`.env`, `.env.local`, `.envrc`): flagging them would block every
+# sequential run in a normal checkout. A COMMITTED `.env*` is still a protected path (G5's glob check); an ignored one is a documented gap.
+LOCAL_ENV = re.compile(r"(?:^|/)\.env(?:rc|\.[^/]*)?$")
+_MAX_IGNORED = 50000
+
+
+def _in_dependency_dir(path: str) -> bool:
+    return any(part in DEPENDENCY_DIRS for part in path.split("/"))
+
+
+def ignored_files(ctx: Any) -> List[str]:
+    """Paths the worktree holds that .gitignore hides from `git status` and every diff the gates read: `git ls-files --others --ignored
+    --exclude-standard -z`. Directories that are ignored as a whole are listed once (`--directory`) and expanded unless they are dependency
+    directories. Capped at 50000 paths; a capped list ends with a `<more than …>` marker that `ignored_problems` reports as a warning (not an error: a huge cache directory must not block every item)."""
+    return list(_memo(ctx, ("ignored",), lambda: _ignored_files(ctx)))
+
+
+def _ignored_files(ctx: Any) -> List[str]:
+    out = git_ok(ctx, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])
+    if out is None:
+        return ["<git ls-files failed>"]
+    paths = []  # type: List[str]
+    for p in out.split("\0"):
+        if not p:
+            continue
+        if p.startswith(LOCAL_STATE):
+            continue
+        if p.endswith("/"):
+            if _in_dependency_dir(p):
+                continue
+            sub = git_ok(ctx, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", p])
+            paths.extend(q for q in (sub or "").split("\0") if q)
+        else:
+            paths.append(p)
+        if len(paths) > _MAX_IGNORED:
+            paths = paths[:_MAX_IGNORED + 1]
+            break
+    return [p for p in paths if not _in_dependency_dir(p) and not p.startswith(LOCAL_STATE)] + (["<more than %d ignored paths>" % _MAX_IGNORED] if len(paths) > _MAX_IGNORED else [])
+
+
+def ignored_problems(ctx: Any) -> List[Tuple[str, str]]:
+    """[(path, why)] for ignored files that would change a test run unseen: test or CI configuration, interpreter hooks (`.pth`,
+    `sitecustomize.py`), or an executable. An ignored file is in no diff, so G5 and G11 would never read it (GT-6). A path that starts with
+    `<more than` marks a capped listing (callers report a warning); `<git ls-files failed>` is an error like any other row."""
+    out = []  # type: List[Tuple[str, str]]
+    # the tracked twin of the same hole: a file marked assume-unchanged or skip-worktree can differ from HEAD with `git status` saying nothing
+    tags = git_ok(ctx, ["ls-files", "-v", "-z"]) or ""
+    for rec in tags.split("\0"):
+        if len(rec) > 2 and rec[0] in "hSs" and os.path.lexists(os.path.join(ctx.worktree, rec[2:])):
+            out.append((rec[2:], "tracked but marked assume-unchanged or skip-worktree, so changes to it are invisible to git status"))
+    for p in ignored_files(ctx):
+        if p.startswith("<"):
+            out.append((p, "the ignored-file listing is incomplete; the CI re-run on a clean checkout is the backstop" if p.startswith("<more than") else
+                        "git could not list the ignored files"))
+        elif LOCAL_ENV.search(p):
+            continue
+        elif match_any(CONFIG_GLOBS, p) or match_any(IGNORED_CONFIG_GLOBS, p):
+            out.append((p, "test or CI configuration that .gitignore hides from every diff"))
+        elif safe_rel_path(p):
+            full = os.path.join(ctx.worktree, p)
+            try:
+                st = os.lstat(full)
+            except OSError:
+                continue
+            if os.path.isfile(full) and not os.path.islink(full) and st.st_mode & 0o111:
+                out.append((p, "an executable file that .gitignore hides from every diff"))
+    return out
 
 
 def review_globs(ctx: Any) -> List[str]:

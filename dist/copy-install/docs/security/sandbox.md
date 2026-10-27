@@ -14,17 +14,29 @@ The OS sandbox is what makes the agent's shell unable to do the things the crede
 | `sandbox.excludedCommands` | empty | in particular, **docker and podman are not excluded**: a container escapes the sandbox |
 | network | allowlist of the registries and hosts the loop needs; deny 169.254.0.0/16 and cloud control-plane endpoints | no metadata credentials, no free egress |
 | `denyRead` | `~/.aws`, `~/.ssh`, `~/.config/gh`, `~/.config/gcloud`, `~/.azure`, `~/.kube`, `~/.docker`, `.netrc`, `.git-credentials`, `.npmrc`, `.env.production*`, `*.pem`, `*.key` (and held-out tests under the git common dir) | credentials and held-out tests |
-| `denyWrite` | `.git/hooks`, `.git/config`, `.git/info`, `.claude/settings.json`, `.claude/hooks`, `.mcp.json` | git and guardrail self-modification |
+| `denyWrite` | the whole H6 write set: `.git/hooks`, `.git/config`, `.git/info`, `.git/loopctl/sessions`; `.claude/settings.json`, `settings.local.json`, `settings.v2.json`, `.claude/hooks`, `scripts`, `agents`, `skills`, `commands`, `rules`, `workflows`, `templates`, `loop.config.md`; `.claude-plugin`, `plugin`; `.mcp.json`; `.github`, other CI definitions; `CODEOWNERS` | git and guardrail self-modification (H6). The list is `SANDBOX_DENY_WRITE` in `guards/paths.py`; `tests/guards/test_sandbox_template.py` fails if an H6 path is missing |
 
 The snippet also repeats the file rules as `Read(...)` / `Edit(...)` deny rules in `permissions.deny`, because Claude Code derives sandbox filesystem limits from permission rules. The report names `denyRead` and `denyWrite` lists, and the exact key names for the network and filesystem blocks are **unverified (V19)** against the Claude Code version you run. The doctor accepts either form (`sandbox.filesystem.denyRead`, `sandbox.denyRead`, or the permission rules). Check the snippet against `claude`'s settings reference before relying on it.
 
-For a linked git worktree the common git directory is outside the worktree path: add its absolute path (`git rev-parse --git-common-dir`) to `denyWrite` for `hooks`, `config` and `info`.
+**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a human edits the kit's own `.claude/scripts/**` (kit development) does not use it, because it would deny exactly those edits.
+
+**Not denied on purpose.** `.claude/context/**` (primers are editable on main), `.claude/pr/`, and `.git/loopctl/run.json`, `lock`, `HALT` and `nonces/`: the conductor legitimately writes the run record and the lock heartbeat and may need `loopctl halt`. Treat those four as writable by the agent; they are not protected by the sandbox, and the guards and the evidence checks do not rely on them for authority.
+
+**The session registry is the one `loopctl` file the sandbox must deny** (D1). `<git-common-dir>/loopctl/sessions/<id>.json` says which session is the conductor, and the conductor is who may run `loopctl begin`, `advance` and the other state writes. A command that can write that directory can register itself as the conductor. The writers of the registry are `loopctl run` and the driver (both human-started, outside the sandbox), `guards/run.py register-session` (a human command), and the SessionStart hook for nonces (hooks are not sandboxed [probe]). So the sandbox may deny the directory without breaking anything. Three layers, in order of strength: the sandbox `denyWrite` above; the Edit/Write guards (`.git/**` is protected); and the typo guard that refuses agent-authored scripts that name the registry or its writers (`kit-internals`). The doctor row `sandbox.registry-path` fails (error at L2 and above, with `runner: driver`, or unattended; a warning otherwise) until the registry path is denied.
+
+For a linked git worktree the common git directory is outside the worktree path (`.git` is a file there), so the relative `.git/...` entries do not reach it. Add the absolute paths for `hooks`, `config`, `info` and `loopctl/sessions`. The command prints the lines for this checkout and writes nothing; paste them into `.claude/settings.local.json`:
+
+```
+python3 .claude/scripts/guards/wiring.py --sandbox-snippet
+```
+
+The `Edit(//abs/path)` spelling of an absolute path in a permission rule is a probe item (V19), like the rest of the key names.
 
 ## "Configured" is not "active" (V19)
 
 Whether `failIfUnavailable` actually stops a command on your macOS, Linux or devcontainer is a probe item. The doctor can check the configuration (`sandbox.enabled`, `sandbox.failIfUnavailable`, `sandbox.allowUnsandboxedCommands`, `sandbox.excludedCommands`, `sandbox.deny-paths`) but not the behaviour. A human confirms it:
 
-1. In a session, ask the agent to read `~/.aws/config` and to write to `.git/hooks/test`. Both must be refused.
+1. In a session, ask the agent to read `~/.aws/config`, to write to `.git/hooks/test` and to create a file under `.git/loopctl/sessions/`. All three must be refused.
 2. Then set `sandbox_verified: "<date>"` in `.claude/loop.config.md`.
 
 Until then the sandbox cap holds the level at **L1**. A devcontainer, container or separate OS user that you attest with `agent_isolation` counts instead.
