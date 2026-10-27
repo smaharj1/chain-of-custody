@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import unittest
 
 from kitlib import levels, runstate
@@ -42,7 +41,7 @@ BASE_CONFIG = {"autonomy_level": "L5", "bot": {"kind": "github-app", "login": "a
                "sandbox_verified": "2026-10-26", "managed_settings_verified": "2026-10-26", "promotion_attested": "2026-10-26",
                "platform_attested": ["g3_ci_only"], "run_budget_usd": 50, "gates": {"g4": "on"},
                # Phase 11b: L4 also needs a usable notify_command and a watchdog that has checked in; L5 needs the policy switch
-               "merge_policy": "auto-low-risk", "notify_command": sys.executable}
+               "merge_policy": "auto-low-risk", "notify_command": "/bin/echo"}
 
 
 class Ready(BoundaryCase):

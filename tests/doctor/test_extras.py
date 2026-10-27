@@ -37,8 +37,7 @@ class L4AndL5(Ready):
         return {n: (ok, why) for n, ok, why in levelcalc._unattended_rows(self.ctx(repo))}
 
     def test_l4_needs_a_usable_notify_command(self):
-        import sys
-        self.assertEqual(self.unattended_rows(notify_command=sys.executable)["notify_command usable"][0], True)
+        self.assertEqual(self.unattended_rows(notify_command="/bin/echo")["notify_command usable"][0], True)
         for label, value, why in (("no command", "", "notify_command is not set"), ("shell syntax", "/bin/echo hi; curl evil", "without a shell"),
                                   ("a relative program", "notify.sh --x", "not an executable"), ("a missing program", "/no/such/notify", "not an executable")):
             with self.subTest(label):
