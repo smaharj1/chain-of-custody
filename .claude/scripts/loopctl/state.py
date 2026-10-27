@@ -131,6 +131,18 @@ def void_merge_approvals(doc: Dict[str, Any], iid: str, why: str) -> int:
     return n
 
 
+def void_checkpoint_approvals(doc: Dict[str, Any], why: str) -> int:
+    """Mark every unused checkpoint answer consumed: a checkpoint pause that is cleared another way (a breaker approval, an abort) must not leave
+    an answer that a later checkpoint for the same item would take as its own (LC-10)."""
+    n = 0
+    for ap in doc.get("approvals", []):
+        if ap.get("kind") == "checkpoint" and not ap.get("used"):
+            ap["used"] = True
+            ap["voided"] = common.clean_text(why, 60)
+            n += 1
+    return n
+
+
 def new_item_record() -> Dict[str, Any]:
     counters = {c: 0 for c in failure.COUNTERS}
     counters["platform"] = 0
@@ -793,9 +805,7 @@ class Loop(object):
         if head:
             # the commit must contain exactly the code that was judged: a merge of that head (local), or a commit that has it in its history
             if self.cfg.get("delivery") == "local":
-                if gitutil.rev_parse(sha + "^2", repo, isolated=True) != head:
-                    raise Refused("merge commit %s is not a merge of the judged head %s (its second parent differs): the code merged is not the code reviewed"
-                                  % (sha[:12], head[:12]))
+                self._check_local_merge_shape(sha, head)
             elif not (head == sha or gitutil.is_ancestor(head, sha, repo, isolated=True)):
                 raise Refused("merge commit %s does not contain the judged head %s" % (sha[:12], head[:12]))
         if self.cfg.get("delivery") == "local":
@@ -808,6 +818,30 @@ class Loop(object):
             ids = tr.get("loop-item") or tr.get("Loop-Item") or []
             if iid not in ids:
                 raise Refused("merge commit %s carries no 'Loop-Item: %s' trailer (required under delivery: local, L-4)" % (sha[:12], iid))
+
+    def _check_local_merge_shape(self, sha: str, head: str) -> None:
+        """Under delivery: local the merge commit is the whole of what lands: exactly two parents, the second the judged head, and a tree equal to the
+        one `git merge-tree --write-tree <first> <second>` computes, so an evil merge (`--no-commit` plus an extra file) or an octopus merge cannot
+        carry code nobody judged (LC-3). Needs git 2.38+ (`merge-tree --write-tree`); without it the merge is refused, never accepted unchecked."""
+        repo = self.ctx.repo
+        proc = lgit.run_git(["rev-list", "--parents", "-n", "1", sha], cwd=repo)
+        fields = proc.stdout.split() if proc.returncode == 0 else []
+        if len(fields) != 3 or fields[0] != sha:
+            raise Refused("merge commit %s must be a two-parent merge of the integration branch and the judged head (it has %d parent(s)): "
+                          "the code merged is not the code reviewed" % (sha[:12], max(len(fields) - 1, 0)))
+        if fields[2] != head:
+            raise Refused("merge commit %s is not a merge of the judged head %s (its second parent differs): the code merged is not the code reviewed"
+                          % (sha[:12], head[:12]))
+        mt = lgit.run_git(["merge-tree", "--write-tree", fields[1], fields[2]], cwd=repo)
+        lines = mt.stdout.splitlines()
+        if mt.returncode == 1:
+            raise Refused("merge commit %s: the judged head does not merge cleanly into its first parent, so the merge tree cannot be checked; "
+                          "a conflict resolved by hand is recorded with `loopctl reconcile`" % sha[:12])
+        if mt.returncode != 0 or not lines or not re.match(r"^[0-9a-f]{40,64}\Z", lines[0]):
+            raise Refused("merge commit %s: cannot verify its tree (`git merge-tree --write-tree` needs git 2.38 or newer)" % sha[:12])
+        if gitutil.rev_parse(sha + "^{tree}", repo, isolated=True) != lines[0]:
+            raise Refused("merge commit %s changes more than the judged head %s (its tree differs from a plain merge of its parents): "
+                          "the code merged is not the code reviewed" % (sha[:12], head[:12]))
 
     def _after_merge(self, st: State, iid: str) -> None:
         from . import locked
@@ -1036,11 +1070,12 @@ class Loop(object):
         return slim
 
     # -- approvals (L-10) ---------------------------------------------------------------------------------------------------------------
-    def approve(self, scope: str, target: str, by: str, choice: str = "approve", note: str = "") -> Dict[str, Any]:
+    def approve(self, scope: str, target: str, by: str, choice: str = "approve", note: str = "", head: Optional[str] = None) -> Dict[str, Any]:
         """Write an approval record. scope: item | checkpoint | unblock | env | breaker | cost | demotion. A record is made by a named human
         (`by`; recorded, not authenticated); it cannot be backdated. Each record has a `kind`: only `kind: "merge"` (made by `approve item` while
         the item is reviewing, pr_open or awaiting_human) can satisfy the merge gate, and it is bound to the item's attempt and `headSha`. Every other
-        kind is written already consumed, except `checkpoint`, which only `Driver.pending_checkpoint` consumes (review fixes D2)."""
+        kind is written already consumed, except `checkpoint`, which only `Driver.pending_checkpoint` consumes (review fixes D2). `head` (optional, a hex
+        prefix of at least 7 characters) asserts the head the person looked at: `approve item` is refused when the recorded head does not start with it (LC-9)."""
         by = common.clean_text(by, 60)
         if not by.strip():
             raise UsageError("--by <name> is required")
@@ -1050,8 +1085,14 @@ class Loop(object):
             raise UsageError("unknown choice %r" % common.clean_text(choice, 20))
         if scope in ("item", "checkpoint") and choice not in ("approve", "reject", "stop"):
             raise UsageError("%s choices: approve, reject, stop" % scope)
+        if head is not None:
+            if scope != "item":
+                raise UsageError("--head applies to `approve item` only")
+            if not re.match(r"^[0-9a-f]{7,64}\Z", head):
+                raise UsageError("--head must be 7 to 64 lowercase hex characters (a prefix of the head you reviewed)")
         if scope in ("item", "checkpoint", "unblock"):
             self._need_plan_item(target)
+        asserted = head                                                    # `mutate` has its own `head`: the one the approval binds to
 
         def mutate(st: State) -> Dict[str, Any]:
             kind, used, head = scope, True, None
@@ -1066,6 +1107,13 @@ class Loop(object):
             if scope in ("item", "checkpoint"):
                 if r["status"] not in ("awaiting_human", "reviewing", "pr_open", "needs_human", "merged"):
                     raise Refused("item %s is %s: nothing to approve there" % (target, r["status"]))
+                if asserted is not None and not str(r.get("headSha") or "").startswith(asserted):
+                    raise Refused("item %s: the recorded head is %s, not %s: the branch moved since you looked; review it again and use the head `loopctl status` shows"
+                                  % (target, str(r.get("headSha") or "none")[:12], asserted[:12]))
+                if r["status"] == "needs_human" and choice in ("reject", "stop"):
+                    # the un-park of a stop is human-only (D11); a relayable reject/stop must never lift it (LC-1)
+                    raise Refused("item %s is needs_human (%s): `approve item --choice %s` does not lift a stop; read why, then a person runs "
+                                  "`loopctl approve unblock %s --by NAME --choice reset|keep|replan`" % (target, r.get("blockReason") or "parked", choice, target))
                 if choice == "reject":
                     if r["status"] == "merged":
                         raise Refused("item %s already merged: a reject needs the revert plan (`loopctl abort`), not an approval" % target)
@@ -1074,11 +1122,12 @@ class Loop(object):
                     r["branch"] = None
                     r["gates"] = {}
                     r["ac"] = {}
-                    r["counters"] = _reset_counters(r["counters"], keep=("platform", "discards"))
+                    r["counters"] = _reset_counters(r["counters"], keep=("discards",))        # a human decision resets platform too (LC-11)
                     st.set_status(target, "pending", by, "rejected at checkpoint: " + note)
                     kind, used = "ack", True
                 elif choice == "stop":
                     if scope == "item":
+                        void_merge_approvals(st.d, target, "stop")                 # "do not merge" withdraws a standing merge approval (LC-2)
                         kind, used = "ack", True
                 elif scope == "item":                                      # approve
                     if r["status"] == "needs_human":                       # the un-park: consumed here, it cannot merge anything later
@@ -1096,7 +1145,7 @@ class Loop(object):
                     raise Refused("item %s is %s, not blocked" % (target, r["status"]))
                 kind = "ack"
                 if choice == "reset":
-                    r["counters"] = _reset_counters(r["counters"], keep=("platform", "discards"))
+                    r["counters"] = _reset_counters(r["counters"], keep=("discards",))        # LC-10: reset on a human unblock (LC-11)
                     r["lastFailure"] = None
                     st.set_status(target, "pending", by, "unblocked: " + note)
                     if st.header.get("runStatus") in ("parked",) and not st.by_status(*RESTING):
@@ -1109,6 +1158,7 @@ class Loop(object):
                 st.header["breaker"] = 0
                 if st.header.get("runStatus") in ("stopped", "aborted"):
                     st.header["runStatus"] = "idle"
+                void_checkpoint_approvals(st.d, "breaker")
                 st.header["parked"] = None
             elif scope == "cost":                          # acknowledges a spend stop: it lifts a park whose reason is a ledger code, and grants an item nothing (LC-6)
                 p = st.header.get("parked")

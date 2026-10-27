@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from kitlib import gitutil, runstate
 
-from . import lgit, common, gates, ledger, lock as lock_mod, plan as plan_mod
+from . import lgit, common, gates, launch, ledger, lock as lock_mod, plan as plan_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, Refused
 
 __all__ = ["preflight", "dry_run", "start", "handoff_text", "load_driver"]
@@ -51,9 +51,24 @@ def _is_linked_worktree(ctx: Any) -> bool:
     return len(parts) == 2 and os.path.realpath(parts[0]) != os.path.realpath(parts[1])
 
 
-def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Dict[str, Any]]:
+def nesting_problem(env: Mapping[str, str]) -> Optional[str]:
+    """Why a driver run cannot start from this process (it is inside a Claude Code session: the driver launches `claude` and no agent may, CS-2),
+    or None. Checked before the lock or the remote lock is taken, so an agent's `loopctl run` pushes nothing (LC-4, D3)."""
+    try:
+        binary = launch.find_binary(env)
+    except launch.LaunchRefused:
+        binary = ""                                  # a missing binary is the driver's own refusal; the marker check does not need it
+    try:
+        launch.check_nesting(env, binary)
+    except launch.LaunchRefused as exc:
+        return str(exc)
+    return None
+
+
+def preflight(ctx: Any, session: Optional[str], nonce: Optional[str], env: Optional[Mapping[str, str]] = None) -> List[Dict[str, Any]]:
     """Every check `run` makes, as [{id, ok, message}]. Never raises; never writes."""
     res = []  # type: List[Dict[str, Any]]
+    env = os.environ if env is None else env
 
     def chk(cid: str, ok: bool, msg: str) -> None:
         res.append({"id": cid, "ok": bool(ok), "message": msg})
@@ -87,6 +102,8 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
     chk("clean-tree", _tree_clean(ctx), "the working tree is clean" if _tree_clean(ctx) else
         "the working tree has uncommitted changes; the loop runs in a dedicated clean clone or worktree (L-1)")
     if ctx.runner == "driver":
+        why = nesting_problem(env)
+        chk("nesting", why is None, "this is a plain terminal, not a Claude Code session" if why is None else common.clean_text(why, 220))
         linked = _is_linked_worktree(ctx)         # a warning, never a refusal (LC-7)
         chk("worktree.dedicated", True, "this is a linked worktree" if linked else
             "WARNING: this is not a linked worktree: a discard runs `git reset --hard` and `git clean -fd` in this directory. Use a dedicated one "
@@ -124,10 +141,10 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
     return res
 
 
-def dry_run(ctx: Any, out: Any, as_json: bool) -> int:
+def dry_run(ctx: Any, out: Any, as_json: bool, env: Optional[Mapping[str, str]] = None) -> int:
     rep = plan_mod.validate(ctx.plan, max_item_loc=ctx.cfg.get_int("max_item_loc"), roster=ctx.roster(),
                             always_human_paths=ctx.cfg.get_list("always_human_paths")) if ctx.plan and not ctx.plan.fatal else None
-    pre = preflight(ctx, None, None)
+    pre = preflight(ctx, None, None, env)
     gate_rows = []
     for g in gates.KNOWN_GATES:
         mod = None
@@ -183,7 +200,12 @@ def handoff_text(ctx: Any, run_id: str, session: str, order: List[str], eligible
 
 def start(ctx: Any, out: Any, session: Optional[str], nonce: Optional[str], as_json: bool, env: Mapping[str, str]) -> int:
     ctx.require_tier2()
-    pre = preflight(ctx, session, nonce)
+    if ctx.runner == "driver":
+        why = nesting_problem(env)
+        if why:                                      # before any lock, remote lock or push (LC-4)
+            out.err("loopctl run: refused: nesting: %s" % common.clean_text(why, 240))
+            return EXIT_REFUSED
+    pre = preflight(ctx, session, nonce, env)
     failed = [p for p in pre if not p["ok"]]
     if failed:
         for p in failed:

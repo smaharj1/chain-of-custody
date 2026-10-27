@@ -65,15 +65,15 @@ TIMING_ENV = "KIT_DRIVER_TEST_TIMING"
 # outcome (Driver.outcome) -> (notification kind, level)
 _WAITING = ("awaiting_human", "checkpoint", "stopped_by_human", "delivery", "claimed")
 _NEXT = {
-    "cost_unknown": "check the cost field, then run loopctl approve cost --by NAME, then loopctl approve unblock ITEM --by NAME",
+    "cost_unknown": "check the cost field, then run loopctl approve cost --by NAME, then loopctl approve unblock ITEM --by NAME --choice reset",
     "integration_red": "the integration branch is red after a merge: fix or revert it, then run loopctl approve breaker --by NAME",
-    "merge_refused": "read why the merge was refused, then run loopctl approve unblock ITEM --by NAME",
+    "merge_refused": "read why the merge was refused, then run loopctl approve unblock ITEM --by NAME --choice reset",
     "budget_run_80": "run loopctl approve cost --by NAME to accept the rest",
     "budget_run": "raise run_budget_usd in a reviewed config change",
     "budget_day": "wait for tomorrow, or raise day_budget_usd in a reviewed config change",
     "budget_item": "raise item_budget_usd in a reviewed config change",
-    "security_blocked": "read the security review, then run loopctl approve unblock ITEM --by NAME",
-    "platform_outage": "check the platform status, then run loopctl approve unblock ITEM --by NAME",
+    "security_blocked": "read the security review, then run loopctl approve unblock ITEM --by NAME --choice reset",
+    "platform_outage": "check the platform status, then run loopctl approve unblock ITEM --by NAME --choice reset",
     "merge_conflict": "resolve the merge by hand, then run loopctl reconcile --apply",
     "head_changed": "review the branch, then run loopctl approve item ITEM --by NAME",
 }
@@ -91,7 +91,7 @@ def demotion_of(st: Any) -> Optional[Dict[str, Any]]:
 
 def next_step(kind: str, code: Optional[str], item: Optional[str]) -> str:
     if kind == "demoted":
-        return "read why, then run loopctl approve demotion --by NAME" + (", and loopctl approve unblock %s --by NAME if it is parked" % item if item else "")
+        return "read why, then run loopctl approve demotion --by NAME" + (", and loopctl approve unblock %s --by NAME --choice reset if it is parked" % item if item else "")
     if code in _NEXT:
         return _NEXT[code].replace("ITEM", item or "ITEM")
     if kind == "done":

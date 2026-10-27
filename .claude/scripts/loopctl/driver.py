@@ -501,11 +501,31 @@ class Driver(object):
         for r in reaped:
             self.say("killed an orphaned child of a dead driver (session %s, item %s)" % (r["sessionId"], r["item"]))
             self.ev("reaped", **r)
+        self.ledger_orphans(reaped)
         self._install_signals()
         self.check_stop()
         self.put_worktree_on_integration()
         self.recover()
         self.check_stop()            # a revert found by recovery demotes an unattended run before it starts anything
+
+    def ledger_orphans(self, reaped: List[Dict[str, Any]]) -> None:
+        """A child left behind by a dead driver spent money nobody recorded (it was killed now, or had finished): write an unknown ledger entry for
+        each, so the next verdict parks the run until a human runs `loopctl approve cost` and the day budget cannot silently undercount (LC-6)."""
+        if not reaped:
+            return
+        led = self.ctx.ledger()
+        for r in reaped:
+            item = r.get("item") if common.valid_item_id(r.get("item")) else "orphan"
+            run_id = r.get("runId") if runstate.valid_id(r.get("runId")) else self.run_id
+            attempt = 1
+            try:
+                st, _ = self.loop.store.read()
+                if st is not None and item in st.items:
+                    attempt = st.items[item]["attempt"]
+            except LoopctlError:
+                pass
+            led.record(run_id, item, attempt, r["sessionId"], cost=None, role=r.get("role"), source="orphan")
+            self.ev("orphan_unpriced", item=item, session=r["sessionId"], killed=bool(r.get("killed")))
 
     def compute_effective_level(self) -> Optional[str]:
         """The doctor's effective level, once per run, for the gates (GateContext.level). Not computed against the test double: the doctor

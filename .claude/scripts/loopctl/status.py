@@ -101,7 +101,7 @@ def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = N
         gate = r.get("humanGate") or []
         add("approve-item", iid, "item %s is waiting for your review%s" % (iid, (" (human gate: " + "; ".join(gate[:2]) + ")") if gate else ""),
             "loopctl approve item %s --by <you>   (or --choice reject --note ...)" % iid, r.get("prUrl"),
-            human="approve item %s --by <you>   (head %s)" % (iid, str(r.get("headSha") or "?")[:12]))
+            human="approve item %s --by <you>%s" % (iid, (" --head %s" % str(r["headSha"])[:12]) if r.get("headSha") else ""))
     for iid in st.by_status("needs_human", "blocked"):
         r = st.items[iid]
         add("unblock", iid, "item %s is %s: %s" % (iid, r["status"], r.get("blockReason")),

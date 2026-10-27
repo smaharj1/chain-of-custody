@@ -69,11 +69,17 @@ class Crash(DriverTestCase):
         # a plain re-run: the lock of a dead driver is taken over (no heartbeat wait), the orphan is killed, the item restarts, the plan completes
         lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A")]}))
         r = lr.run("--json")
-        self.assertEqual(r.rc, 0, r)
+        self.assertEqual(r.rc, 1, r)                                                          # the orphan's spend is unknown, and an unknown parks the run (LC-6) ...
         self.assertTrue(wait_for(lambda: not runstate.pid_alive(child), 5), "the orphaned child was not killed")
         evs = [e["event"] for e in lr.rs.read_events("loopctl")]
         self.assertIn("lock_taken_over", evs)
         self.assertIn("reaped", evs)
+        self.assertIn("orphan_unpriced", evs)
+        unknown = [e for e in lr.context().ledger().entries()[0] if e.get("unknown")]
+        self.assertEqual([(e["item"], e["source"], e["sessionId"] is not None) for e in unknown], [("A", "orphan", True)])
+        self.assertEqual(lr.ctl("approve", "cost", "--by", "Pat", "--note", "the console shows what the orphan cost").rc, 0)      # ... until a human accepts it
+        r = lr.run("--json")
+        self.assertEqual(r.rc, 0, r)
         a = lr.item("A")
         self.assertEqual((a["status"], a["attempt"]), ("merged", 1))
         self.assertEqual(lr.branch_names(), ["dead/slice-a-a1", "main"])                     # the half-done attempt is kept as dead/*, not merged
