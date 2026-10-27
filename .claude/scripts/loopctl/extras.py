@@ -1,11 +1,11 @@
 """The command line of the loopctl extras (Phase 11b): `remote-lock`, `claim`, `merge-class`, `manifest`. `loopctl/cli.py` routes to these.
 
-Classification (the exec guard reads the same table; see `loopctl/cli.py` and `guards/g_exec.py`):
+Classification (one table, `kitlib/loopctl_table.py`, which `loopctl/cli.py` and `guards/g_exec.py` share):
 
     remote-lock status        READ           the lock on the remote, without its token
-    remote-lock acquire|renew|release|steal   TIER 1 WRITE   push to refs/loopctl/lock/<plan> on the remote named by `remote_lock`
+    remote-lock acquire|renew|release|steal   HUMAN ONLY   push to refs/loopctl/lock/<plan> on the remote named by `remote_lock` (no agent pushes, the conductor included)
     claim list|show           READ           the claims on the plan's items
-    claim take|release        TIER 1 WRITE   push to refs/loopctl/claim/<plan>/<item>
+    claim take|release        HUMAN ONLY     push to refs/loopctl/claim/<plan>/<item>
     merge-class               READ           would this item be eligible for the L5 low-risk lane? (nothing here merges)
     manifest show|verify      READ           a reproducibility manifest, or its check against git
     manifest write            TIER 1 WRITE   writes <git-common-dir>/loopctl/manifests/<plan>-<item>-<head>.json
@@ -18,7 +18,8 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from kitlib import gitutil, jsonio
+import humanonly
+from kitlib import gitutil, jsonio, loopctl_table
 
 from . import common
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, Refused, UsageError
@@ -32,6 +33,15 @@ LEVEL_FN = None  # type: Optional[Callable[[Any], Optional[str]]]
 def _cli() -> Any:
     from . import cli
     return cli
+
+
+def _human_only(cmd: str, action: str, env: Mapping[str, str]) -> None:
+    """The pushing actions (`kitlib/loopctl_table.HUMAN_ONLY`) refuse inside a Claude Code session, before any config, git or network access.
+    `CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT` counts even when empty. The Keeper inside a human-started `loopctl run` is not affected."""
+    if action in loopctl_table.HUMAN_ONLY.get(cmd, ()):
+        msg = humanonly.refusal("loopctl %s %s" % (cmd, action), env)
+        if msg:
+            raise Refused(msg)
 
 
 def _need_remote(ctx: Any) -> str:
@@ -66,6 +76,7 @@ def cmd_remote_lock(args: List[str], env: Mapping[str, str], out: Any) -> int:
     ap.add_argument("--corrupt", action="store_true", help="steal: replace a ref that is not a lock record, after you have looked at it")
     ap.add_argument("--after", type=float, default=None, help="steal: minutes without a heartbeat (default: the record's own limit; never shorter)")
     a = ap.parse_args(args)
+    _human_only("remote-lock", a.action, env)
     from . import remote_lock as rl
     ctx = cli._ctx(a, env, plan="base")
     remote = _need_remote(ctx)
@@ -143,6 +154,7 @@ def cmd_claim(args: List[str], env: Mapping[str, str], out: Any) -> int:
     ap.add_argument("--note", default="", help="take: a short note for the next person")
     ap.add_argument("--override", action="store_true", help="take or release a claim that is someone else's and still live (recorded)")
     a = ap.parse_args(args)
+    _human_only("claim", a.action, env)
     from . import claims as claims_mod
     ctx = cli._ctx(a, env, plan="base")
     remote = _need_remote(ctx)

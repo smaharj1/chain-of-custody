@@ -108,6 +108,7 @@ class LoopRepo(object):
         self.home = tempfile.mkdtemp(prefix="loopctl-home-")
         self.env = clean_env(home=self.home)
         self.env.pop("CLAUDECODE", None)
+        self.env.pop("CLAUDE_CODE_ENTRYPOINT", None)        # a test of the human-only commands sets the markers itself
         # The doctor would otherwise run the `claude` on PATH for its version (it only declines inside a Claude Code session). No test
         # may start the real binary, so the version is given explicitly and the binary override points at a path that does not exist.
         self.env["KIT_CLAUDE_VERSION"] = "2.1.302"
