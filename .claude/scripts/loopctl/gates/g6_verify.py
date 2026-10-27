@@ -158,6 +158,7 @@ def _migrations(ctx: Any, findings: List[Dict[str, Any]], classes: List[str]) ->
 
 def run(ctx: Any) -> GateResult:
     import verify
+    from ..parallel import ports as _ports       # Phase 8: a parallel worker verifies on its own slot's ports (KIT_PORT_OFFSET); 0 for a serial run
     ids = _lib.ac_ids_of(ctx.item)
     bad_head = _lib.worktree_head_problem(ctx)
     if bad_head:
@@ -167,7 +168,8 @@ def run(ctx: Any) -> GateResult:
         items_file = os.path.join(tmp, "items.json")
         with open(items_file, "w", encoding="utf-8") as fh:
             json.dump(_items_doc(ctx), fh)
-        res = verify.verify(ctx.worktree, base=ctx.base_sha, item=ctx.item_id, items_file=items_file, attempt=ctx.attempt)
+        shift = _ports.offset_from_env(ctx.env)
+        res = verify.verify(ctx.worktree, base=ctx.base_sha, item=ctx.item_id, items_file=items_file, attempt=ctx.attempt, **({"port_offset": shift} if shift else {}))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     findings = []  # type: List[Dict[str, Any]]

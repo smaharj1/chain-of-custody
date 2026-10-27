@@ -298,6 +298,20 @@ promotion_min_prs: 10            # The promotion bar (report 6.3): consecutive m
 promotion_max_correctness_changes: 1   # Most reviewer-requested changes of class `correctness` across those PRs (default 1).
 promotion_max_reverts: 0         # Most reverted PRs across the window (default 0).
 promotion_max_integrity_flags: 0   # Most test-integrity flags (a weakened or deleted assertion, a reward hack) across the window (default 0).
+
+# --- Parallel items (report 11.5, 10.3, 16.1 row 8; .claude/spec/loopctl-parallel.md) ---
+# OPT-IN and evidence-gated: `parallel_mode: worktree` and `pipeline_host: workflow` refuse until docs/baseline/evidence.json passes.
+# Read from the BASE sha, never from the branch under judgement (CO-11).
+parallel_mode: off               # off | worktree   (report 11.5 item 3, DEC-9). EXPERIMENTAL. `worktree` lets the driver (`runner: driver`) build up to max_parallel items at
+                                 #   once, each in its own git worktree under .claude/worktrees/, then integrate them one at a time (rebase, re-run verify, merge). Items run together
+                                 #   only when their dependencies are merged and their `touches.paths` are disjoint; migrations and dependency changes always run alone (schema mutex).
+                                 #   Refuses to enable until the evidence gate passes. off = one item at a time, as in 4c.
+max_parallel: 2                  # How many items the driver builds at once when parallel_mode is worktree (1 to 4; the default is the report's 2). Every child gets the remaining
+                                 #   budget divided by the children running (DEC-34), so more workers means a smaller allowance per child, not a larger bill.
+pipeline_host: conductor         # conductor | workflow   (report 11.2). Where reviews and critiques fan out. `conductor` = sequential Agent calls from the conductor (the only host
+                                 #   that exists). `workflow` is DESIGN-ONLY (.claude/spec/pipeline-host-workflow.md; probes V3 and V23): the doctor reports it as an error.
+lease_ttl_s: 300                 # Seconds a worker, mutex or integration lease may go without a heartbeat before it can be reclaimed (only when its owner process is also gone).
+                                 #   The driver renews them on every poll, so this only matters after a crash.
 ```
 
 ## Notes

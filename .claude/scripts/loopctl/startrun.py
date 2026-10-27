@@ -95,6 +95,10 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
     if ctx.runner == "driver" and ctx.cfg.get("autonomy") == "unattended":
         from . import unattended                   # Phase 7: an unattended start is decided here, from committed facts, before the lock (no-acknowledge start)
         res += unattended.rows(ctx, state)
+    if ctx.cfg.get("parallel_mode") == "worktree" or ctx.cfg.get("pipeline_host") == "workflow":
+        from . import parallel                       # Phase 8: OPT-IN; a run that does not ask for it never loads the package
+        for p in parallel.rows(ctx):
+            chk(p["id"], p["ok"], p["message"])
     lk = ctx.lock().status()
     mine = bool(lk["held"] and session and (lk.get("record") or {}).get("sessionId") == session)
     dead = bool(ctx.runner == "driver" and lk["held"] and not lk["corrupt"] and lock_mod.owner_dead(lk.get("record") or {}))

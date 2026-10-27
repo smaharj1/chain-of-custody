@@ -979,5 +979,214 @@
 "rule": "guard-halt:halted",
 "why": "only the reads pass while HALT is set",
 "halt": true
+},
+{
+"id": "loopctl-120",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel check --json",
+"expect": "allow",
+"why": "parallel check/status/leases and --dry-run read and write nothing"
+},
+{
+"id": "loopctl-121",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl parallel leases",
+"expect": "allow",
+"why": "parallel check/status/leases and --dry-run read and write nothing"
+},
+{
+"id": "loopctl-122",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --dry-run",
+"expect": "allow",
+"why": "a dry run shows the orphans and removes nothing"
+},
+{
+"id": "loopctl-123",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cascade A --dry-run",
+"expect": "allow",
+"why": "a dry run shows the cascade and changes nothing"
+},
+{
+"id": "loopctl-124",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "--apply removes worktrees and leases a scheduler may own"
+},
+{
+"id": "loopctl-125",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "not a read word: a bare cleanup counts as a write"
+},
+{
+"id": "loopctl-126",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cascade A --apply --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "a rejection reverts merges and resets items"
+},
+{
+"id": "loopctl-127",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl parallel check --json",
+"expect": "allow",
+"why": "parallel check/status/leases and --dry-run read and write nothing"
+},
+{
+"id": "loopctl-128",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl parallel leases",
+"expect": "allow",
+"why": "parallel check/status/leases and --dry-run read and write nothing"
+},
+{
+"id": "loopctl-129",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --dry-run",
+"expect": "allow",
+"why": "a dry run shows the orphans and removes nothing"
+},
+{
+"id": "loopctl-130",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl parallel cascade A --dry-run",
+"expect": "allow",
+"why": "a dry run shows the cascade and changes nothing"
+},
+{
+"id": "loopctl-131",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "--apply removes worktrees and leases a scheduler may own"
+},
+{
+"id": "loopctl-132",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "not a read word: a bare cleanup counts as a write"
+},
+{
+"id": "loopctl-133",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl parallel cascade A --apply --by me",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "a rejection reverts merges and resets items"
+},
+{
+"id": "loopctl-134",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --dry-run --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "a write flag beats a read flag"
+},
+{
+"id": "loopctl-135",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel check --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "a write flag beats a read word"
+},
+{
+"id": "loopctl-136",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel frobnicate",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "an unknown action counts as a write"
+},
+{
+"id": "loopctl-137",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "no action word: not a read"
+},
+{
+"id": "loopctl-138",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl parallel cascade A --dry-run --force",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "--force is a write flag in every spelling"
+},
+{
+"id": "loopctl-139",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl --dry-run parallel cleanup --apply",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "an option before the command is not a clean invocation"
+},
+{
+"id": "loopctl-140",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --apply",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-141",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl parallel check",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-142",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl parallel cleanup --apply",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "only the reads pass while HALT is set",
+"halt": true
+},
+{
+"id": "loopctl-143",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl parallel cascade A --apply --by me",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "only the reads pass while HALT is set",
+"halt": true
 }
 ]

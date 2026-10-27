@@ -8,9 +8,11 @@ in step (a test compares them).
         validate  status  render  doctor  audit  report  help  version
         lock status   evidence --check   cost --projection   reconcile --dry-run   migrate-plan --check|--dry-run
         run --dry-run   abort --dry-run   unattended check|status|promotion|intake (without --write)
+        parallel check|status|leases   (and `parallel cleanup|cascade --dry-run`)
 
     TIER 1 WRITES (work with `loopctl_tier2: false`)
         lock acquire|release|steal   migrate-plan --write   halt   resume   unattended watch|notify-test|intake --write
+        parallel cleanup --apply (cascade --apply also needs Tier 2)
 
     TIER 2 WRITES (refuse unless `loopctl_tier2: true` in the BASE sha's loop.config; OPT-IN, IMP-1)
         approve  begin  advance  fail  clarify  park  gate  spend  run  abort  reconcile --apply
@@ -41,9 +43,10 @@ __all__ = ["main", "READ_COMMANDS", "FLAG_READ", "TIER1_WRITES", "TIER2_WRITES",
 READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version")
 # command -> flags that make an otherwise-writing command read-only (and the flags that always make it a write)
 FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
-             "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake")}
+             "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake"),
+             "parallel": ("check", "status", "leases", "--dry-run")}
 WRITE_FLAGS = ("--apply", "--write", "--force")
-TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended")
+TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended", "parallel")
 TIER2_WRITES = ("approve", "begin", "advance", "fail", "clarify", "park", "gate", "spend", "run", "abort", "reconcile")
 
 
@@ -868,12 +871,155 @@ def cmd_unattended(args: List[str], env: Mapping[str, str], out: Out) -> int:
     return EXIT_OK
 
 
+# ===== parallel items (Phase 8) ===========================================================================================
+
+def _no_live_run(ctx: Any, session: Optional[str]) -> None:
+    """`parallel cleanup --apply` and `parallel cascade --apply` change what a running scheduler owns (worktrees, leases, the state of its items). Refuse
+    while a run holds the lock, unless the holder is a driver that is gone or the caller is the holder's own session."""
+    from . import lock as lock_mod
+    st = ctx.lock().status()
+    if not st["held"]:
+        return
+    rec = st.get("record") or {}
+    if st["corrupt"] or not (lock_mod.owner_dead(rec) or (session is not None and rec.get("sessionId") == session)):
+        raise Refused("a run holds the lock (`loopctl lock status`): a scheduler owns the worktrees, the leases and the items right now. Stop the run first (`loopctl halt`)")
+
+
+def cmd_parallel(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    ap = _parser("parallel", "parallel check|status|leases|cleanup|cascade: parallel items (docs/parallel.md). check, status, leases change nothing; "
+                             "cleanup and cascade do nothing until --apply.")
+    ap.add_argument("action", choices=("check", "status", "leases", "cleanup", "cascade"))
+    ap.add_argument("item", nargs="?", default=None, help="cascade: the item that was rejected")
+    ap.add_argument("--dry-run", action="store_true", help="cleanup, cascade: show what would be done (the default without --apply)")
+    ap.add_argument("--apply", action="store_true", help="cleanup, cascade: do it")
+    ap.add_argument("--by", default=None, help="cascade: the human who rejects (recorded)")
+    ap.add_argument("--reason", default="", help="cascade: why (recorded on the item)")
+    ap.add_argument("--session", default=None)
+    a = ap.parse_args(args)
+    from . import parallel
+    from .parallel import cascade, mutex, worktrees
+    if a.action in ("check", "status", "leases"):
+        ctx = _ctx(a, env, plan="base")
+        store = mutex.LeaseStore(ctx.rs, ttl_s=float(ctx.cfg.get_int("lease_ttl_s") or 300))
+        leases = store.list()
+        wts = [{"path": os.path.relpath(w["path"], ctx.repo), "branch": w["branch"], "prunable": w["prunable"]} for w in worktrees.registered(ctx.repo)
+               if worktrees.inside_root(ctx.repo, w["path"])]
+        for rec in leases:
+            rec["reclaimable"] = store.reclaimable(rec)
+        rows = parallel.rows(ctx)
+        doc = {"schema": "loopctl.parallel.v1", "enabled": parallel.enabled(ctx.cfg), "max_parallel": parallel.max_parallel(ctx.cfg), "rows": rows,
+               "leases": [{k: v for k, v in r.items() if k != "token"} for r in leases], "worktrees": wts,
+               "orphans": [os.path.relpath(p, ctx.repo) for p in worktrees.orphans(ctx.repo, [])] if not leases else []}
+        if a.action == "check" and ctx.plan and not ctx.plan.fatal:
+            doc.update(_parallel_plan(ctx))
+        if a.json:
+            out.json(doc)
+        else:
+            out.text("parallel items: %s (max_parallel %d)" % ("on" if doc["enabled"] else "off", doc["max_parallel"]))
+            for r in rows:
+                out.text("  [%s] %-22s %s" % ("ok" if r["ok"] else "NO", r["id"], common.clean_text(r["message"], 200)))
+            for rec in doc["leases"]:
+                out.text("  lease %-18s owner %s%s" % (rec.get("name"), common.clean_text(rec.get("owner"), 40), "  (reclaimable)" if rec.get("reclaimable") else ""))
+            for w in wts:
+                out.text("  worktree %s on %s" % (w["path"], w["branch"]))
+            if a.action == "check":
+                for g in doc.get("groups", []):
+                    out.text("  can run together: %s" % ", ".join(g))
+                for pr in doc.get("conflicts", []):
+                    out.text("  one at a time: %s and %s: %s" % (pr["a"], pr["b"], common.clean_text(pr["why"], 160)))
+        return EXIT_OK if all(r["ok"] for r in doc["rows"]) else EXIT_FINDINGS
+    if a.action == "cleanup":
+        ctx = _ctx(a, env, plan="none", allow_head_config=False)
+        store = mutex.LeaseStore(ctx.rs, ttl_s=float(ctx.cfg.get_int("lease_ttl_s") or 300))
+        orphan = worktrees.orphans(ctx.repo, [])
+        gone = [r["name"] for r in store.list() if not r.get("corrupt") and store.reclaimable(r)]
+        corrupt = [r["name"] for r in store.list() if r.get("corrupt")]
+        doc = {"schema": "loopctl.parallel.cleanup.v1", "applied": False, "worktrees": [os.path.relpath(p, ctx.repo) for p in orphan], "leases": gone, "corrupt_leases": corrupt}
+        if a.apply and not a.dry_run:
+            _no_live_run(ctx, _session(a, env, required=False))
+            removed = worktrees.cleanup_orphans(ctx.repo, [])
+            reaped = store.reap()
+            for n in corrupt:
+                store.remove(n)
+            doc.update({"applied": True, "worktrees": [os.path.relpath(p, ctx.repo) for p in removed], "leases": reaped})
+        if a.json:
+            out.json(doc)
+        else:
+            out.text("%s %d worktree(s), %d dead lease(s), %d unreadable lease(s)%s" % (
+                "removed" if doc["applied"] else "would remove", len(doc["worktrees"]), len(doc["leases"]), len(corrupt),
+                "" if doc["applied"] else " (nothing changed: add --apply)"))
+            for p in doc["worktrees"]:
+                out.text("  worktree %s" % p)
+            for n in doc["leases"] + corrupt:
+                out.text("  lease %s" % n)
+        return EXIT_OK
+    # cascade
+    if not a.item:
+        raise UsageError("cascade needs the item that was rejected")
+    ctx = _ctx(a, env, plan="base")
+    st, _ = ctx.store().read()
+    if st is None:
+        raise Refused("there is no state yet")
+    cp = cascade.plan_cascade(ctx, st, ctx.plan, a.item)
+    doc = cp.to_dict()
+    if not (a.apply and not a.dry_run):
+        doc["applied"] = False
+        if a.json:
+            out.json(doc)
+        else:
+            out.text("reject cascade for %s (nothing has been changed; add --apply --by NAME)" % a.item)
+            out.text("  %s" % ("PLAN ONLY: %s" % cp.plan_only_reason if cp.plan_only else "reverted on %s in reverse merge order" % cp.integration))
+            for m in cp.merged:
+                out.text("  revert %s %s" % (m["item"], m["commit"][:12]))
+            out.text("  in flight, to be invalidated: %s" % (", ".join(cp.in_flight) or "none"))
+            out.text("  cascades of this item so far: %d (at most %d)" % (cp.loops, cascade.MAX_CASCADES))
+        return EXIT_OK
+    if not a.by:
+        raise UsageError("--by <name> is required: a rejection is recorded")
+    loop = _loop(a, env)
+    _no_live_run(loop.ctx, _session(a, env, required=False))
+    rec = cascade.execute(loop, cp, a.by, a.reason)
+    rec["applied"] = True
+    out.json(rec) if a.json else out.text("rejected %s: %d reverted, %d reset, %d invalidated, %d left for a human%s" % (
+        a.item, len(rec["reverted"]), len(rec["reset"]), len(rec["invalidated"]), len(rec["revertPlan"]), "; plan in " + rec["planFile"] if rec.get("planFile") else ""))
+    return EXIT_FINDINGS if rec.get("refused") else EXIT_OK
+
+
+def _parallel_plan(ctx: Any) -> Dict[str, Any]:
+    """What the plan allows: which items conflict, and, per level of the dependency graph, a set that could run together."""
+    from . import plan as plan_mod
+    from .parallel import footprint
+    rep = plan_mod.validate(ctx.plan, max_item_loc=ctx.cfg.get_int("max_item_loc"), roster=ctx.roster(), always_human_paths=ctx.cfg.get_list("always_human_paths"))
+    items = ctx.plan.items
+    conflicts = []  # type: List[Dict[str, Any]]
+    ids = list(rep.order)
+    for k, x in enumerate(ids):
+        for y in ids[k + 1:]:
+            why = footprint.conflict(items[x], items[y])
+            if why:
+                conflicts.append({"a": x, "b": y, "why": why})
+    pair = {(c["a"], c["b"]) for c in conflicts} | {(c["b"], c["a"]) for c in conflicts}
+    groups = []  # type: List[List[str]]
+    for level in rep.levels:
+        picked = []  # type: List[str]
+        for iid in level:
+            if all((iid, o) not in pair for o in picked):
+                picked.append(iid)
+        if len(picked) > 1:
+            groups.append(picked)
+    from . import parallel
+    limit = parallel.max_parallel(ctx.cfg)
+    return {"conflicts": conflicts, "groups": [g[:limit] for g in groups], "dag_width": rep.width,
+            "items": [{"id": i, "footprint": footprint.declared(items[i]), "lanes": sorted(footprint.lanes(items[i])), "declared": footprint.known(items[i])} for i in ids]}
+
+
+
 COMMANDS = {
     "validate": cmd_validate, "status": cmd_status, "render": cmd_render, "doctor": cmd_doctor, "audit": cmd_audit, "report": cmd_report,
     "help": cmd_help, "version": cmd_version, "evidence": cmd_evidence, "cost": cmd_cost, "migrate-plan": cmd_migrate_plan, "lock": cmd_lock,
     "halt": cmd_halt, "resume": cmd_resume, "approve": cmd_approve, "begin": cmd_begin, "advance": cmd_advance, "fail": cmd_fail,
     "clarify": cmd_clarify, "park": cmd_park, "gate": cmd_gate, "spend": cmd_spend, "reconcile": cmd_reconcile, "abort": cmd_abort, "run": cmd_run,
-    "unattended": cmd_unattended,
+    "unattended": cmd_unattended, "parallel": cmd_parallel,
 }
 
 

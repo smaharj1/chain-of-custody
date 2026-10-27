@@ -56,7 +56,7 @@ from . import branches, common, failure, gates, heartbeat, launch, lgit, plan as
 from . import state as state_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlError, Refused, UsageError
 
-__all__ = ["run", "Driver", "SLEEP", "engineers_for", "classify_child", "parse_verdict", "reason_for", "is_sensitive", "ENGINEER_ORDER"]
+__all__ = ["run", "Driver", "Outcome", "SLEEP", "MAX_ITERATIONS", "PRE_GATES", "VERIFY_GATES", "REVIEW_GATES", "engineers_for", "classify_child", "parse_verdict", "reason_for", "is_sensitive", "ENGINEER_ORDER"]
 
 SCHEMA = "loopctl.driver.v1"
 ENGINEER_ORDER = ("infra-engineer", "database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer")
@@ -224,6 +224,7 @@ def reason_for(gate: str, res: Dict[str, Any]) -> Tuple[str, str]:
 
 class Driver(object):
     compute_level = True        # the doctor's effective level, once per run, for the gates (tests turn it off)
+    only_item = None  # type: Optional[str]     # a parallel worker (Phase 8) owns one item: its "is a child of mine still alive" looks at that item only
 
     def __init__(self, ctx: Any, loop: Any, run_record: Dict[str, Any], as_json: bool, out: Any = None) -> None:
         self.ctx = ctx
@@ -517,6 +518,11 @@ class Driver(object):
         if not lgit.is_clean(self.repo):
             raise Refused("the loop worktree has uncommitted changes (L-1)")
         self.git(["switch", "--quiet", self.ib], check=True)
+
+    def recover_merge(self) -> None:
+        """Find a merge whose record was lost (from its Loop-Item trailer). The serial driver has nothing else in flight, so this is the whole recovery;
+        the parallel scheduler overrides it with only the merge part (other workers are alive)."""
+        self.recover()
 
     def recover(self) -> None:
         """What a previous driver may have left (a crash is the normal way a run ends badly): a merge that never reached the state
@@ -979,10 +985,15 @@ class Driver(object):
         self.merge_item(iid, head)
 
     def merge_item(self, iid: str, head: str) -> None:
-        r = self.rec(iid)
-        br = r["branch"]
         if not self.ensure_required(iid, "merged", head):
             raise _StageDone()
+        self.merge_branch(iid, head)
+
+    def merge_branch(self, iid: str, head: str) -> None:
+        """The merge itself, with the gates already settled: `--no-ff` into the integration branch in the loop worktree, with the Loop-Item trailer,
+        then the record. (The parallel integrator calls this after it has rebased and re-verified in the item's own worktree, Phase 8.)"""
+        r = self.rec(iid)
+        br = r["branch"]
         if gitutil.rev_parse("refs/heads/%s^{commit}" % br, self.repo, isolated=True) != head:
             self.park(iid, "head_changed", "the branch moved after its gates ran: %s is not %s" % (br, head[:12]))
             raise _StageDone()
@@ -1000,7 +1011,7 @@ class Driver(object):
             self.loop.advance(iid, "merged", self.sid, "driver", "merged by the driver", merge_commit=mc, head=head)
         except LoopctlError:
             # the merge is in git but the record failed (a lost race, a park from outside): recover it from the trailer, as a restart would
-            self.recover()
+            self.recover_merge()
             if self.rec(iid)["status"] != "merged":
                 raise
         self.ev("merged", item=iid, commit=mc)
@@ -1235,7 +1246,7 @@ class Driver(object):
         if not v0.ok:
             self.budget_stop(v0, iid)
         try:
-            allowance = led.launch_budget(self.cfg, self.run_id, iid, 1)
+            allowance = self.child_allowance(led, iid)
         except Refused as exc:
             v1 = led.verdict(self.cfg, self.run_id, iid)
             if not v1.ok:
@@ -1265,7 +1276,7 @@ class Driver(object):
                  "report": self.report_path(iid, role) if kind == "engineer" else None, "attempt": attempt}
         spec = launch.ChildSpec(role, sid, prompt_path, self.repo, settings_path, agent, settings["permissions"]["allow"], allowance,
                                 launch.child_env(self.env, list(self.cfg.get_list("verify_env_allow")) + list(item.get("requiresEnv") or []), self.fake), iid, stage, extra)
-        self.child_n += 1
+        self.count_child()
         self.ev("launch", item=iid, role=role, stage=stage, session=sid, budget_usd=allowance)
         self.say("item %s: %s (%s), budget $%.4f" % (iid, role, stage, allowance))
         activity = heartbeat.child_activity(self.rs, sid)
@@ -1276,6 +1287,7 @@ class Driver(object):
         finally:
             self.rs.unregister_session(sid)
             launch.remove_child_record(self.rs, sid)
+            self.child_ended(iid)
         also = [str((res.parsed or {}).get("session_id"))] if res.parsed and isinstance((res.parsed or {}).get("session_id"), str) else []
         if res.canary is False and also:
             res.canary = heartbeat.canary_present(self.rs, sid, also)
@@ -1312,6 +1324,17 @@ class Driver(object):
             self.budget_stop(verdict, iid)
         return outcome
 
+    # -- seams for the parallel scheduler (Phase 8); the serial driver's answers are the ones it always gave ----------------------------
+    def child_allowance(self, led: Any, iid: str) -> float:
+        """The `--max-budget-usd` for the next child: the remaining budget divided by the children running (DEC-34). One at a time, so all of it."""
+        return led.launch_budget(self.cfg, self.run_id, iid, 1)
+
+    def child_ended(self, iid: str) -> None:
+        """A child of `iid` is gone (a reservation made by `child_allowance` can be given back)."""
+
+    def count_child(self) -> None:
+        self.child_n += 1
+
     def live_child(self) -> bool:
         d = os.path.join(self.rs.root, "children")
         try:
@@ -1323,7 +1346,8 @@ class Driver(object):
                 rec = jsonio.read_json(os.path.join(d, n))
             except (OSError, ValueError, RecursionError):
                 continue
-            if isinstance(rec, dict) and rec.get("driverPid") == os.getpid() and runstate.pid_alive(rec.get("pid")):
+            if isinstance(rec, dict) and rec.get("driverPid") == os.getpid() and runstate.pid_alive(rec.get("pid")) \
+                    and (self.only_item is None or rec.get("item") == self.only_item):
                 return True
         return False
 
@@ -1349,4 +1373,7 @@ class Outcome(object):
 
 def run(ctx: Any, loop: Any, run_record: Dict[str, Any], as_json: bool) -> int:
     """The seam `startrun.start` calls (spec: the driver contract). The lock is held; the caller releases it."""
+    if str(ctx.cfg.get("parallel_mode") or "off") == "worktree":             # Phase 8: OPT-IN and evidence-gated (ctx.require_tier2 refused it otherwise)
+        from .parallel import scheduler
+        return scheduler.ParallelDriver(ctx, loop, run_record, as_json).main()
     return Driver(ctx, loop, run_record, as_json).main()
