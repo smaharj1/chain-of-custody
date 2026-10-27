@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import unittest
 
 from kitlib import levels, runstate
@@ -39,12 +40,14 @@ SETTINGS = {"sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsand
 
 BASE_CONFIG = {"autonomy_level": "L5", "bot": {"kind": "github-app", "login": "acme-bot[bot]", "id": "123"},
                "sandbox_verified": "2026-10-26", "managed_settings_verified": "2026-10-26", "promotion_attested": "2026-10-26",
-               "platform_attested": ["g3_ci_only"], "run_budget_usd": 50, "gates": {"g4": "on"}}
+               "platform_attested": ["g3_ci_only"], "run_budget_usd": 50, "gates": {"g4": "on"},
+               # Phase 11b: L4 also needs a usable notify_command and a watchdog that has checked in; L5 needs the policy switch
+               "merge_policy": "auto-low-risk", "notify_command": sys.executable}
 
 
 class Ready(BoundaryCase):
     def ready(self, config_edit=None, files_edit=None, gh_fx=None, evidence=True, loopctl=True, nonce=True, kit_version=KIT_VERSION_V2, claude="2.1.305",
-              origin="https://github.com/acme/widgets.git", reach=False):
+              origin="https://github.com/acme/widgets.git", reach=False, watchdog=True):
         files = {".claude/settings.json": json.dumps(SETTINGS), ".github/CODEOWNERS": filled_codeowners(), ".gitignore": ".env*\n!.env.example\n",
                  ".claude/scripts/loopctl/__main__.py": "" if loopctl else None}
         if not loopctl:
@@ -62,6 +65,11 @@ class Ready(BoundaryCase):
         repo.write(".claude/loop.config.md", config_text(cfg))
         if nonce:
             runstate.RunState.for_path(repo.path).write_nonce("sess-1")
+        if watchdog:
+            from kitlib import jsonio
+            from loopctl import unattended
+            st = runstate.RunState.for_path(repo.path).ensure()
+            jsonio.atomic_write_json(unattended.watch_path(st), {"ts": 1792000000.0 - 60, "lastStatus": "idle", "notified": {}})
         fx = gh_fx if gh_fx is not None else gf.build()
         ctx = self.ctx(repo, ghapi=github.fixture_ghapi(fx), claude_version=claude, reach=(lambda h, p, t=1.0: reach))
         return repo, ctx
@@ -336,7 +344,7 @@ class EvidenceGatedKeys(Ready):
         self.assertClean(run_checks(ctx), "config.evidence-gate")
 
     def test_l3_needs_no_evidence(self):
-        repo, ctx = self.ready(evidence=False, config_edit=lambda c: (c.update(autonomy_level="L3"), c.pop("gates", None)))   # gates.g4: on is evidence-gated (4b)
+        repo, ctx = self.ready(evidence=False, config_edit=lambda c: (c.update(autonomy_level="L3"), c.pop("gates", None), c.pop("merge_policy", None)))   # gates.g4: on and merge_policy: auto-low-risk are evidence-gated
         self.assertClean(run_checks(ctx), "config.evidence-gate")
 
     def test_v1_unattended_autonomy_is_gated_too(self):
