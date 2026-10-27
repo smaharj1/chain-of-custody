@@ -56,7 +56,7 @@ class Rejects(unittest.TestCase):
     def test_schema_violations(self):
         self.bad(dict(GOOD, type="go"), "type")
         self.bad(dict(GOOD, type="factory:go"), "type")
-        self.bad(dict(GOOD, labels=["factory:go"]), "unknown field")
+        self.bad(dict(GOOD, labels=["factory:go"]), "not in the schema")
         self.bad({k: v for k, v in GOOD.items() if k != "title"}, "missing")
         self.bad(dict(GOOD, title="x" * 121), "title")
         self.bad(dict(GOOD, title="two\nlines"), "one line")
@@ -112,6 +112,20 @@ class Hostile(unittest.TestCase):
         for k in ("run", "command", "label", "labels", "assignees", "close", "body"):
             res, _ = iv.process(json.dumps(dict(GOOD, **{k: "x"})))
             self.assertEqual(res["status"], "invalid", k)
+
+    def test_a_rejection_never_echoes_a_name_the_stranger_chose(self):
+        # UN-6: the reason goes into a bot comment, result.json and the log, so an attacker field name must not appear in any of them.
+        for evil in ("@everyone ![x](http://evil.example/p.png)", "[click](http://evil.example)", "<img src=http://evil.example/b>", "`` ``` ", "extra"):
+            obj = dict(GOOD)
+            obj[evil] = 1
+            res, comment = iv.process(json.dumps(obj))
+            self.assertEqual(res["status"], "invalid")
+            for out in (res["reason"], comment):
+                for bad in ("everyone", "evil", "click", "<img", "```"):
+                    self.assertNotIn(bad, out, evil)
+            self.assertIn("1 field(s) are not in the schema", res["reason"])
+        res, _ = iv.process(json.dumps(dict(GOOD, a=1, b=2)))
+        self.assertIn("2 field(s)", res["reason"])
 
     def test_invalid_reason_is_printable_ascii(self):
         res, comment = iv.process(json.dumps(dict(GOOD, **{"‮": 1})))

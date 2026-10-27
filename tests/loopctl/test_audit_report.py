@@ -251,6 +251,76 @@ class Audit(LoopTestCase):
         self.assertEqual(pb.fields.get("Feature"), "slice-a")
         self.assertTrue(pb.has_audit_markers)
 
+    def test_hostile_delta_text_from_a_report_is_escaped_in_the_pr_body(self):
+        # UN-11: Primer Delta / Doc Delta text came from an engineer report (agent-written); it reaches the PR body and must not open HTML or a marker.
+        evil = "<!-- audit:end --><img src=http://evil.example/p.png> <script>x</script>"
+        hostile = (REPORT.replace("## Primer Delta\nNONE\nchecked: layering, error handling", "## Primer Delta\nchanged %s" % evil)
+                   .replace("## Doc Delta\nNONE\nchecked: README, env vars", "## Doc Delta\nupdated %s" % evil))
+        lr = self.lr()
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        lr.repo.git("switch", "-q", "-c", lr.item("A")["branch"], "main")
+        lr.repo.write("docs/features/slice-a/reports/backend.md", hostile)
+        lr.repo.git("add", "-A")
+        lr.repo.git("commit", "-q", "-m", "WIP backend\n\nFeature: slice-a")
+        lr.repo.git("switch", "-q", "main")
+        text = audit.render_body(lr.context(), lr.state(), "A")
+        self.assertEqual(text.count("<!-- audit:end"), 1)
+        self.assertNotIn("<img", text)
+        self.assertNotIn("<script", text)
+        self.assertIn("&lt;img src=http://evil.example/p.png&gt;", text)
+
+    def test_a_checked_line_with_html_is_escaped_too(self):
+        hostile = REPORT.replace("NONE\nchecked: layering, error handling", "NONE\nchecked: <img src=http://evil.example/x>")
+        lr = self.lr()
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        lr.repo.git("switch", "-q", "-c", lr.item("A")["branch"], "main")
+        lr.repo.write("docs/features/slice-a/reports/backend.md", hostile)
+        lr.repo.git("add", "-A")
+        lr.repo.git("commit", "-q", "-m", "WIP backend\n\nFeature: slice-a")
+        lr.repo.git("switch", "-q", "main")
+        text = audit.render_body(lr.context(), lr.state(), "A")
+        self.assertNotIn("<img", text)
+
+    def test_the_notes_carry_a_manifest_line_and_the_check_holds_it_to_the_stored_manifest(self):
+        lr, loop, head = self.built()
+        text = self.body(lr)
+        self.assertIn("Manifest: none written for this head", text)
+        self.assertEqual(self.errors(lr, text), [])                                                # opt-in: no manifest is not an error
+        w = lr.ctl("manifest", "write", "A", "--head", head, "--json")
+        self.assertEqual(w.rc, 0, w)
+        h = w.json["hash"]
+        text = self.body(lr)
+        self.assertIn("Manifest: %s (seal and repo, kit, config, plan, toolchain, lockfiles, verify, evidence re-read from git" % h, text)
+        self.assertEqual(self.errors(lr, text), [])
+        self.assertEqual([f.id for f in audit.check_body(text, lr.context(), lr.state(), "A") if f.severity == "warn" and f.id.startswith("audit.manifest")], [])
+        # the body names a different hash than the one stored: the expected-hash check fails
+        wrong = text.replace(h, "0" * 64)
+        self.assertIn("audit.manifest-broken", self.errors(lr, wrong))
+        # a body that drops the line only warns
+        dropped = "\n".join(ln for ln in text.splitlines() if not ln.startswith("Manifest:"))
+        self.assertEqual(self.errors(lr, dropped), [])
+        self.assertIn("audit.manifest-absent", [f.id for f in audit.check_body(dropped, lr.context(), lr.state(), "A")])
+
+    def test_a_stored_manifest_that_no_longer_holds_is_shown_and_is_an_error(self):
+        lr, loop, head = self.built()
+        w = lr.ctl("manifest", "write", "A", "--head", head, "--json")
+        with open(w.json["path"]) as fh:
+            doc = json.load(fh)
+        doc["kit"]["version"] = "tampered"                                                           # edited without re-sealing
+        with open(w.json["path"], "w") as fh:
+            json.dump(doc, fh)
+        text = self.body(lr)
+        self.assertIn("DOES NOT HOLD", text)
+        self.assertIn("audit.manifest-broken", self.errors(lr, text))
+
+    def test_a_manifest_hash_this_machine_never_stored_is_only_a_warning(self):
+        lr, loop, head = self.built()
+        text = self.body(lr).replace("Manifest: none written", "Manifest: %s (written elsewhere) none written" % ("a" * 64))
+        self.assertEqual(self.errors(lr, text), [])
+        self.assertIn("audit.manifest-unknown", [f.id for f in audit.check_body(text, lr.context(), lr.state(), "A")])
+
     def test_the_cli_render_and_check(self):
         lr, loop, head = self.built()
         r = lr.ctl("audit", "render", "A")

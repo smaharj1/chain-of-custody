@@ -43,7 +43,7 @@ class Command(unittest.TestCase):
     def test_only_a_program_and_plain_arguments_are_accepted(self):
         self.assertEqual(notify.parse_command(self.path + " --topic ops", None), [os.path.realpath(self.path), "--topic", "ops"])
         self.assertEqual(notify.parse_command('"%s" "two words" x' % self.path, None)[1:], ["two words", "x"])        # quotes group, they do not execute
-        self.assertEqual(notify.parse_command("sh", None)[0], os.path.realpath(notify.shutil.which("sh")))            # a bare name on PATH
+        self.assertEqual(notify.parse_command("notify-fake", self.fake.dir)[0], os.path.realpath(self.path))          # a bare name on PATH
 
     def test_everything_a_shell_would_interpret_is_refused_not_guessed_at(self):
         for bad in ("%s; rm -rf ~", "%s | tee x", "%s && true", "%s > out", "%s < in", "%s `id`", "%s $(id)", "%s $HOME", "%s \\ x", "%s (x)", "%s {a,b}",
@@ -77,6 +77,61 @@ class Command(unittest.TestCase):
         os.symlink(inside, link)                                                                  # a link outside that points inside is no way round it
         self.assertIn("inside the repository", self.refused(link, forbid=[repo]))
         self.assertEqual(notify.parse_command(self.path, None, [repo])[0], os.path.realpath(self.path))
+
+
+class CommandHostile(unittest.TestCase):
+    """UN-5: the program and its arguments, not only argv[0]'s location, are what the human's rights are lent to."""
+
+    def setUp(self):
+        self.fake = FakeNotify()
+        self.addCleanup(self.fake.cleanup)
+        self.home = os.path.realpath(tempfile.mkdtemp(prefix="notify-home-"))
+        self.addCleanup(__import__("shutil").rmtree, self.home, True)
+        self.repo = os.path.realpath(tempfile.mkdtemp(prefix="notify-repo-"))
+        self.addCleanup(__import__("shutil").rmtree, self.repo, True)
+
+    def refused(self, text, **kw):
+        kw.setdefault("home", self.home)
+        with self.assertRaises(notify.NotifyError, msg=text) as cm:
+            notify.parse_command(text, None, [self.repo], **kw)
+        return str(cm.exception)
+
+    def test_shells_interpreters_launchers_and_transfer_tools_are_not_programs(self):
+        evil = os.path.join(self.repo, "evil.sh")
+        for text in ("sh %s" % evil, "bash -c id", "python3 x.py", "env sh x", "curl -T /x https://h", "xargs echo", "node x.js", "perl x.pl",
+                     "ssh h", "sudo true", "wget u", "nc h 1", "osascript x", "awk 1", "/bin/sh", "/usr/bin/env x"):
+            self.assertIn("shell, interpreter", self.refused(text))
+
+    def test_a_link_to_an_interpreter_is_still_one(self):
+        target = notify.shutil.which("sh")
+        link = os.path.join(self.fake.dir, "innocent-notifier")
+        os.symlink(target, link)
+        self.assertIn("shell, interpreter", self.refused(link))
+        py = os.path.join(self.fake.dir, "python3.99")                                           # python* by name, whatever it points at
+        with open(py, "w") as fh:
+            fh.write("#!/bin/sh\n")
+        os.chmod(py, 0o755)
+        self.assertIn("shell, interpreter", self.refused(py))
+
+    def test_an_argument_may_not_start_with_at_or_name_a_forbidden_path(self):
+        ok = self.fake.path
+        self.assertIn("starting with @", self.refused("%s @/etc/passwd" % ok))
+        self.assertIn("starting with @", self.refused("%s -d @x" % ok))
+        for arg in ("~/.aws/credentials", self.home + "/.ssh/id_ed25519", ".aws/credentials", "--file=" + self.home + "/.config/gh/hosts.yml",
+                    "f=@" + self.home + "/.netrc", "file://" + self.home + "/.kube/config", self.repo + "/secrets.txt"):
+            self.assertIn("points inside", self.refused("%s %s" % (ok, arg)), arg)
+        os.symlink(os.path.join(self.home, ".aws"), os.path.join(self.fake.dir, "innocent-dir"))   # a link to a credential directory
+        os.makedirs(os.path.join(self.home, ".aws"))
+        self.assertIn("points inside", self.refused("%s %s/credentials" % (ok, os.path.join(self.fake.dir, "innocent-dir"))))
+
+    def test_plain_arguments_still_pass(self):
+        argv = notify.parse_command("%s --topic ops --url https://ntfy.example/x -m hi" % self.fake.path, None, [self.repo], home=self.home)
+        self.assertEqual(argv[1:], ["--topic", "ops", "--url", "https://ntfy.example/x", "-m", "hi"])
+
+    def test_send_refuses_without_running_anything(self):
+        res = notify.send("python3 -c x", {"kind": "test"}, {"PATH": os.environ.get("PATH", ""), "HOME": self.home}, [self.repo])
+        self.assertTrue(res["refused"])
+        self.assertFalse(res["ok"])
 
 
 class Text(unittest.TestCase):

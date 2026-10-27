@@ -10,6 +10,10 @@ WHAT KEEPS IT SAFE (a message can be built from text a stranger wrote, so the ch
   * `notify_command` is split into an argument vector once (shlex, no shell). Shell syntax in it (`; | & < > $ ` \\ ( ) { } * ? !`) is
     REFUSED rather than guessed at; the program must be an absolute path or a bare name on PATH; and it must not live inside the
     repository or the git directory, because an agent can edit files there and this runs with the human's rights.
+  * The program may not be a shell, an interpreter, `env`/`xargs`-style launcher or a general transfer tool (sh, python*, node, perl, curl,
+    wget, ssh, sudo ...), because those turn a plain argument into "run this file" or "send that file"; no argument may start with `@`
+    or name a path inside the repository, the worktree or a credential directory (`~/.aws`, `~/.ssh`, `~/.config/gh` ...). Put the
+    behaviour in a small program of yours and name that program.
   * The message is never on the command line. It goes to the program on stdin as one JSON document and in `KIT_NOTIFY_*` variables.
     Every field is closed vocabulary or plain text restricted to letters, digits, space and `. , : _ ( ) / # @ % + = -`; everything
     else becomes a space. Item titles, report text, issue text and child output are never included: only item ids that pass the id
@@ -62,6 +66,15 @@ BASE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "LC
 _HARD_CREDENTIALS = re.compile(r"^(AWS_|GH_|GITHUB_|GITLAB_|BITBUCKET_|GOOGLE_|GCLOUD_|CLOUDSDK_|AZURE_|ARM_|KUBE|DOCKER_|TF_VAR_|NPM_|NODE_AUTH|SSH_|GIT_|"
                                r"ANTHROPIC_|CLAUDE|OPENAI_)", re.I)
 _SHELL_SYNTAX = re.compile(r"[;&|<>`$\\(){}*?!]")
+# A program with one of these names (or a link to one) runs or sends whatever its arguments say (UN-5): refused as `notify_command`.
+_DENY_PROGRAMS = frozenset((
+    "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "ash", "busybox", "env", "xargs", "node", "nodejs", "deno", "bun", "perl", "ruby",
+    "php", "lua", "awk", "gawk", "mawk", "sed", "tclsh", "expect", "curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "scp", "sftp", "rsync",
+    "ftp", "telnet", "osascript", "sudo", "doas", "su", "powershell", "pwsh", "nohup", "nice", "timeout", "setsid", "stdbuf", "command", "exec",
+    "find", "xterm", "open"))
+_DENY_PREFIXES = ("python", "pypy")
+# Directories under the human's home a notify program may never be pointed at (UN-5).
+_CREDENTIAL_DIRS = (".aws", ".ssh", ".config/gh", ".config/gcloud", ".azure", ".kube", ".docker", ".netrc", ".git-credentials", ".gnupg")
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}\Z")
 _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}\Z")
 _ITEM_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,23}\Z")
@@ -121,10 +134,49 @@ def _inside(path: str, root: str) -> bool:
     return p == r or p.startswith(r.rstrip(os.sep) + os.sep)
 
 
-def parse_command(text: Any, path_env: Optional[str] = None, forbid: Sequence[str] = ()) -> List[str]:
+def _denied_program(path: str) -> bool:
+    base = os.path.basename(path).lower()
+    return base in _DENY_PROGRAMS or base.startswith(_DENY_PREFIXES)
+
+
+def _arg_candidates(arg: str) -> List[str]:
+    """The strings in one argument that could be a path: the whole argument and each piece after `=`, `:` or `,` (`--file=PATH`, `f=@PATH`,
+    `file:///PATH`), with a leading `@` or `<` dropped."""
+    out = [arg]
+    for piece in re.split(r"[=:,]", arg)[1:]:
+        out.append(piece)
+    res = []  # type: List[str]
+    for c in out:
+        c = c.lstrip("@<")
+        if c.startswith("//"):
+            c = "/" + c.lstrip("/")
+        if c:
+            res.append(c)
+    return res
+
+
+def _check_args(args: Sequence[str], forbid: Sequence[str], home: str) -> None:
+    roots = [r for r in forbid if r]
+    for sub in _CREDENTIAL_DIRS:
+        roots.append(os.path.join(home, sub))
+    for arg in args:
+        if arg.startswith("@"):
+            raise NotifyError("notify_command: an argument starting with @ (%s) can make a program read a file; name the file in your own script" % clean(arg, 60))
+        for cand in _arg_candidates(arg):
+            path = home + cand[1:] if cand == "~" or cand.startswith("~/") else cand
+            if not os.path.isabs(path):
+                path = os.path.join(home, path)                                              # the program runs with HOME as its directory
+            for root in roots:
+                if _inside(path, root):
+                    raise NotifyError("notify_command: the argument %s points inside the repository or a credential directory; "
+                                      "arguments may not name those places" % clean(arg, 80))
+
+
+def parse_command(text: Any, path_env: Optional[str] = None, forbid: Sequence[str] = (), home: Optional[str] = None) -> List[str]:
     """The argument vector for `notify_command`, with the program resolved to a real path. Raises NotifyError (nothing runs) when the
-    string is empty, still a placeholder, uses shell syntax, names a relative or missing program, or a program inside `forbid`
-    (the repository and the git directory)."""
+    string is empty, still a placeholder, uses shell syntax, names a relative or missing program, a program inside `forbid`
+    (the repository and the git directory), a shell / interpreter / launcher / transfer tool as the program, or an argument that starts
+    with `@` or names a path inside `forbid` or a credential directory under `home` (default: the user's home)."""
     if not isinstance(text, str) or not text.strip() or text.strip() == "<command>":
         raise NotifyError("notify_command is not set")
     s = text.strip()
@@ -141,6 +193,10 @@ def parse_command(text: Any, path_env: Optional[str] = None, forbid: Sequence[st
     if not argv or len(argv) > MAX_ARGV or any(len(a) > MAX_ARG for a in argv):
         raise NotifyError("notify_command has no program, or too many or too long arguments")
     prog = argv[0]
+    deny_msg = ("notify_command: %s is a shell, interpreter, launcher or transfer tool, which would run or send whatever its arguments "
+                "name. Write a small program of your own and name that")
+    if _denied_program(prog):
+        raise NotifyError(deny_msg % clean(os.path.basename(prog), 60))
     if "/" in prog:
         if not os.path.isabs(prog):
             raise NotifyError("notify_command names its program by a relative path; use an absolute path or a name on PATH")
@@ -150,10 +206,13 @@ def parse_command(text: Any, path_env: Optional[str] = None, forbid: Sequence[st
     if not found:
         raise NotifyError("notify_command: %s is not an executable file" % clean(prog, 80))
     real = os.path.realpath(found)
+    if _denied_program(found) or _denied_program(real):
+        raise NotifyError(deny_msg % clean(os.path.basename(real), 60))
     for root in forbid:
         if root and _inside(real, root):
             raise NotifyError("notify_command runs %s, which is inside the repository or its git directory: an agent can edit that file, and this "
                               "runs with your rights. Install the program outside the repository" % clean(real, 100))
+    _check_args(argv[1:], forbid, os.path.realpath(home) if home else os.path.realpath(os.path.expanduser("~")))
     return [real] + argv[1:]
 
 
@@ -182,7 +241,7 @@ def send(command: Any, message: Mapping[str, Any], env: Mapping[str, str], forbi
          allow: Sequence[str] = (), popen: Callable[..., Any] = subprocess.Popen) -> Dict[str, Any]:
     """Run the configured program once with `message`. Never raises. {ok, rc, why}: `why` is empty on success, else a short cleaned reason."""
     try:
-        argv = parse_command(command, env.get("PATH"), forbid)
+        argv = parse_command(command, env.get("PATH"), forbid, env.get("HOME"))
     except NotifyError as exc:
         return {"ok": False, "rc": None, "why": clean(str(exc), 200), "refused": True}
     cenv = build_env(env, allow, message)

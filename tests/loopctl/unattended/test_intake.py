@@ -143,6 +143,11 @@ class Stage2(unittest.TestCase):
             self.assertNotIn(words, outside)                                                      # nothing the stranger wrote is in a field an engineer is instructed by
         self.assertLess(len(json.dumps(d["ext"])), 8 * 1024)                                      # the plan's cap on `ext`
 
+    def test_the_drafts_risk_class_never_follows_the_strangers_severity(self):
+        for sev in ("low", "unknown", "medium", "high", "critical"):
+            clean, _ = intake.check(json.dumps(dict(POISON, severity=sev)))
+            self.assertEqual(intake.draft_item(intake.make_record(clean, "issue#12"))["riskClass"], "medium", sev)
+
     def test_the_cli_checks_without_writing_and_quarantines_only_on_write(self):
         lr = LoopRepo()
         self.addCleanup(lr.cleanup)
