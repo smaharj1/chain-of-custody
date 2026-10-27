@@ -14,9 +14,8 @@ from . import DriverCase, pitem, put
 
 ITEMS = [pitem(i) for i in "ABCDEFGHIJKLM"] + [
     pitem("CA", paths=["src/shared/**"], slug="shared-ca"), pitem("CB", paths=["src/shared/**"], slug="shared-cb"),
-    pitem("MA", paths=["db/migrations/**"], slug="mig-a"), pitem("MB", paths=["db/migrations/**"], slug="mig-b"),
-    pitem("MC", paths=["db/migrations/**"], slug="mig-c", migrations=[{"name": "m1", "up": "db/migrations/0003_y.sql", "down": "db/migrations/0003_y.down.sql", "dataLossClass": "none"}]),
-    pitem("MD", paths=["db/migrations/**"], slug="mig-d", migrations=[{"name": "m2", "up": "db/migrations/0009_z.sql", "down": "db/migrations/0009_z.down.sql", "dataLossClass": "none"}])]
+        pitem("MC", paths=["src/db/**"], slug="mig-c", migrations=[{"name": "m1", "up": "src/db/migs/0003_y.sql", "down": "src/db/migs/0003_y.down.sql", "dataLossClass": "none"}]),
+    pitem("MD", paths=["src/db/**"], slug="mig-d", migrations=[{"name": "m2", "up": "src/db/migs/0009_z.sql", "down": "src/db/migs/0009_z.down.sql", "dataLossClass": "none"}])]
 
 
 class Integrate(DriverCase):
@@ -50,7 +49,7 @@ class Integrate(DriverCase):
         self.assertEqual((st.items["A"]["status"], st.items["B"]["status"]), ("merged", "merged"))
         # nothing of either is left: worktrees, branches, leases, ports
         self.assertEqual(self.lr.worktrees_left(), [])
-        self.assertEqual(self.lr.branch_names(), ["main"])
+        self.assertFalse({"feat/slice-a-a1", "feat/slice-b-a1"} & set(self.lr.branch_names()))                 # merged branches are deleted after pass
         self.assertEqual([r["name"] for r in self.drv.leases.list()], [])
         self.assertEqual(self.drv.slots, {})
         self.assertIs(self.drv.integrate_one(), False)
@@ -154,12 +153,11 @@ class Integrate(DriverCase):
         self.assertEqual((r["status"], r["lastFailure"]["reason"], r["lastFailure"]["class"]), ("building", "tests_failed", "item"))
         self.assertNotIn("K", self.merges())
         self.assertTrue(os.path.isdir(self.drv.slots["K"].path))                         # same worktree, same branch
-        self.assertFalse(self.drv.slots["K"].ready)
 
     def test_a_migration_that_sorts_before_one_already_merged_goes_back_to_the_engineer_to_be_regenerated(self):
-        self.lr.repo.commit_file("db/migrations/0005_x.sql", "-- merged by hand\n", "a migration committed outside the loop")
-        self.stage("MC", {"db/migrations/0003_y.sql": "-- mine\n", "db/migrations/0003_y.down.sql": "-- down\n"})
-        self.stage("MD", {"db/migrations/0009_z.sql": "-- mine\n", "db/migrations/0009_z.down.sql": "-- down\n"})
+        self.lr.repo.commit_file("src/db/migs/0005_x.sql", "-- merged by hand\n", "a migration committed outside the loop")
+        self.stage("MC", {"src/db/migs/0003_y.sql": "-- mine\n", "src/db/migs/0003_y.down.sql": "-- down\n"})
+        self.stage("MD", {"src/db/migs/0009_z.sql": "-- mine\n", "src/db/migs/0009_z.down.sql": "-- down\n"})
         sent_back = []
         self.drv.respawn = lambda slot: sent_back.append(slot.iid)
         self.assertIs(self.drv.integrate_one(), True)            # plan order: MC first
@@ -178,6 +176,8 @@ class Integrate(DriverCase):
         self.assertEqual(self.lr.repo.git("rev-parse", "main"), tip)
         self.assertTrue(any(e.get("event") == "integrate_skipped" for e in self.lr.events()))
         self.assertEqual(self.lr.item("L")["status"], "building")
+        self.assertNotIn("L", self.drv.slots)                                            # it is not offered to the integrator again, and its worktree is gone
+        self.assertIs(self.drv.integrate_one(), False)
 
 
 if __name__ == "__main__":

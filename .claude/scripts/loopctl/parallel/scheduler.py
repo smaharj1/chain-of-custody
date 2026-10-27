@@ -42,7 +42,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from kitlib import gitutil, runstate
 
-from .. import branches, common, failure, lgit, plan as plan_mod, state as state_mod
+from .. import branches, common, failure, lgit, plan as plan_mod, reconcile, state as state_mod
 from ..common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlError, Refused
 from .. import driver as driver_mod
 from ..driver import MAX_ITERATIONS, Driver, _StageDone, _Stop
@@ -190,6 +190,7 @@ class ParallelDriver(Driver):
         self.leases = mutex.LeaseStore(self.rs, ttl_s=float(self.cfg.get_int("lease_ttl_s") or 300))
         self.ports = ports.PortAllocator(self.leases, [int(p) for p in self.cfg.get_list("verify_ports") if isinstance(p, int) and not isinstance(p, bool)])
         self.slots = {}  # type: Dict[str, Slot]
+        self.pending_spawn = []  # type: List[Slot]
         self.wake = threading.Condition()
         self.rlock = threading.RLock()
         self.reserved = {}  # type: Dict[str, float]
@@ -245,6 +246,11 @@ class ParallelDriver(Driver):
             self.say("recovery: removed the worktree %s a previous run left (its work is on the item's branch)" % os.path.basename(p))
             self.ev("worktree_removed", worktree=os.path.basename(p), why="orphan")
         Driver.recover(self)
+
+    def recover_merge(self) -> None:
+        """Only the merge part of recovery: other workers are alive, so nothing in flight is reset and no worktree or lease is touched."""
+        rep = reconcile.scan(self.ctx, self.state(), self.plan)
+        reconcile.apply(self.loop, rep, by="driver")
 
     # -- money (DEC-34) -------------------------------------------------------------------------------------------------------------------
     def allowance_for(self, worker: Worker, led: Any, iid: str) -> float:
@@ -371,6 +377,9 @@ class ParallelDriver(Driver):
                 started += 1
             else:
                 skipped.append(iid)
+        for slot in self.pending_spawn:
+            self.spawn(slot)
+        self.pending_spawn = []
         return started
 
     def start_item(self, iid: str) -> bool:
@@ -428,7 +437,7 @@ class ParallelDriver(Driver):
         self.ev("begin", item=iid, attempt=rec["attempt"], branch=branch)
         self.ev("admit", item=iid, worktree=os.path.basename(path), slot=block.slot, offset=block.offset, workers=len(self.slots))
         self.say("item %s: attempt %d on %s in %s (port slot %d, %d at once)" % (iid, rec["attempt"], branch, os.path.relpath(path, self.repo), block.slot, len(self.slots)))
-        self.spawn(slot)
+        self.pending_spawn.append(slot)                # started by `admit` once every item of this round has its slot: the allowance divides by all of them
         return True
 
     # -- ending a slot -------------------------------------------------------------------------------------------------------------------------

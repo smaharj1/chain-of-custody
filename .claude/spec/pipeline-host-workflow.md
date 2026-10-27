@@ -35,7 +35,7 @@ The reviewers are read-only, so running them at the same time is safe (D-26): th
 ## What changes when it is built
 
 - `parallel.pipeline-host` stops being an error for `workflow`, and the preflight row accepts it only with a saved Workflow file at the base sha.
-- The doctor checks the saved Workflow file: path under `.claude/workflows/`, listed in CODEOWNERS, no `Bash` in its tool list, the reviewer roles named exactly.
+- The doctor checks the saved Workflow file: a path inside the project's saved-workflow directory, listed in CODEOWNERS, no `Bash` in its tool list, the reviewer roles named exactly.
 - `tests/loopctl/parallel/` gains the fan-out case against the fake `claude`. Until then `tests/loopctl/parallel/test_config.py` pins that the value is refused.
 
 ## Why not now

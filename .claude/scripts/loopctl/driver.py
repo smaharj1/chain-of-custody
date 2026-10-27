@@ -519,6 +519,11 @@ class Driver(object):
             raise Refused("the loop worktree has uncommitted changes (L-1)")
         self.git(["switch", "--quiet", self.ib], check=True)
 
+    def recover_merge(self) -> None:
+        """Find a merge whose record was lost (from its Loop-Item trailer). The serial driver has nothing else in flight, so this is the whole recovery;
+        the parallel scheduler overrides it with only the merge part (other workers are alive)."""
+        self.recover()
+
     def recover(self) -> None:
         """What a previous driver may have left (a crash is the normal way a run ends badly): a merge that never reached the state
         (recovered from its Loop-Item trailer), items in flight (discarded back to pending: V1 restarts an item from stage 1, L-3),
@@ -1006,7 +1011,7 @@ class Driver(object):
             self.loop.advance(iid, "merged", self.sid, "driver", "merged by the driver", merge_commit=mc, head=head)
         except LoopctlError:
             # the merge is in git but the record failed (a lost race, a park from outside): recover it from the trailer, as a restart would
-            self.recover()
+            self.recover_merge()
             if self.rec(iid)["status"] != "merged":
                 raise
         self.ev("merged", item=iid, commit=mc)

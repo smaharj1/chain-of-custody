@@ -236,8 +236,8 @@ def execute(loop: Any, cp: CascadePlan, by: str, reason: str, runner: Optional[C
                 reset_item(st, iid, by, "invalidated: it depends on %s, which was rejected" % cp.root)
                 record["invalidated"].append(iid)
         root = st.items[cp.root]
-        if root["status"] in state_mod.RESTING:
-            reset_item(st, cp.root, by, "rejected by %s" % by)
+        if root["status"] in state_mod.RESTING and cp.root not in plan_only_ids:
+            reset_item(st, cp.root, by, "rejected by %s" % by)         # it was parked before: the rejection starts it over
         if reason:
             root["rework"].append({"at": common.iso(), "by": by, "note": common.clean_text(reason, 300)})
             del root["rework"][:-20]

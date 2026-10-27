@@ -97,6 +97,8 @@ def _integrate(drv: Any, slot: Any, lease: Any) -> str:
     r = drv.rec(iid)
     if r["status"] != "reviewing":
         drv.ev("integrate_skipped", item=iid, status=r["status"])
+        slot.ready = False                                       # the state moved under it (a human rejected it, say): the slot follows the state
+        drv.settle_by_state(slot, "integrator")
         return "retry"
     drv.ev("integrate_start", item=iid)
     base = drv.item_base.get(iid) or ""

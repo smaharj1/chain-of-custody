@@ -897,7 +897,7 @@ def cmd_parallel(args: List[str], env: Mapping[str, str], out: Out) -> int:
     ap.add_argument("--session", default=None)
     a = ap.parse_args(args)
     from . import parallel
-    from .parallel import cascade, footprint, mutex, worktrees
+    from .parallel import cascade, mutex, worktrees
     if a.action in ("check", "status", "leases"):
         ctx = _ctx(a, env, plan="base")
         store = mutex.LeaseStore(ctx.rs, ttl_s=float(ctx.cfg.get_int("lease_ttl_s") or 300))
@@ -1007,14 +1007,11 @@ def _parallel_plan(ctx: Any) -> Dict[str, Any]:
                 picked.append(iid)
         if len(picked) > 1:
             groups.append(picked)
-    limit = max(1, parallel_cap(ctx))
+    from . import parallel
+    limit = parallel.max_parallel(ctx.cfg)
     return {"conflicts": conflicts, "groups": [g[:limit] for g in groups], "dag_width": rep.width,
             "items": [{"id": i, "footprint": footprint.declared(items[i]), "lanes": sorted(footprint.lanes(items[i])), "declared": footprint.known(items[i])} for i in ids]}
 
-
-def parallel_cap(ctx: Any) -> int:
-    from . import parallel
-    return parallel.max_parallel(ctx.cfg)
 
 
 COMMANDS = {
