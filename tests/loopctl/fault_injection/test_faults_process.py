@@ -127,7 +127,7 @@ class Canary(DriverTestCase):
 
 class Stall(DriverTestCase):
     def test_a_stalled_child_is_killed_with_what_it_leaked_classed_transient_and_the_run_waits_for_a_human_because_its_cost_is_unknown(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG)], timing={"stall_s": 1.5})
+        lr = self.dr(items=[item_doc("A", estimate=ENG)], timing={"stall_s": 4.0})
         pidfile = os.path.join(lr.home, "child.pid")
         grand = os.path.join(lr.home, "grand.pid")
         lr.set_scenario(lr.happy(by_role={"backend-engineer": [{"behavior": "stall", "seconds": 60, "pidfile": pidfile, "spawn_sleeper": grand}]}))

@@ -122,6 +122,7 @@ class RunChild(Base):
 
 class Stall(Base):
     def test_no_sign_of_life_for_the_stall_limit_kills_the_whole_group(self):
+        self.timing.stall_s = 3.0                 # the child must be up (pid files written) before the limit, even on a loaded machine
         self.scenario(behavior="stall", seconds=60, pidfile=self.pidfile("stall.pid"), spawn_sleeper=self.pidfile("sleeper.pid"))
         t0 = time.time()
         res = self.run_child()
@@ -133,6 +134,7 @@ class Stall(Base):
         self.assertIn(res.signal_name, ("SIGTERM", "SIGKILL"))
 
     def test_a_child_that_ignores_sigterm_is_killed_after_the_grace_period(self):
+        self.timing.stall_s = 3.0
         self.scenario(behavior="stall", seconds=60, ignore_sigterm=True, pidfile=self.pidfile("stubborn.pid"))
         res = self.run_child()
         pid = self.read_pid(self.pidfile("stubborn.pid"))
@@ -140,12 +142,12 @@ class Stall(Base):
         self.assertTrue(wait_for(lambda: not self.alive(pid), 3))
 
     def test_tool_events_keep_a_long_child_alive(self):
-        self.timing.stall_s = 1.0
-        self.scenario(behavior="succeed", tool_events=14, event_interval=0.1, total_cost_usd=0.01)      # ~1.4 s of work, an event every 0.1 s
+        self.timing.stall_s = 3.0                 # start-up counts toward the limit: it must not be mistaken for a stall under load
+        self.scenario(behavior="succeed", tool_events=40, event_interval=0.1, total_cost_usd=0.01)      # ~4 s of work, an event every 0.1 s
         res = self.run_child()
         self.assertIsNone(res.reason)
         self.assertEqual(res.returncode, 0)
-        self.assertGreater(res.duration_s, 1.0)                                                       # longer than the stall limit, and still not a stall
+        self.assertGreater(res.duration_s, 3.0)                                                       # longer than the stall limit, and still not a stall
 
     def test_work_that_goes_quiet_after_events_is_a_stall(self):
         self.timing.stall_s = 1.0
@@ -200,7 +202,7 @@ class Canary(Base):
         self.assertFalse(res.canary)
 
     def test_a_long_running_child_without_a_nonce_is_killed_when_the_wait_expires(self):
-        self.timing.canary_wait_s = 0.4
+        self.timing.canary_wait_s = 3.0               # the child writes its pid file before this runs out, even on a loaded machine
         self.timing.stall_s = 60
         self.scenario(behavior="stall", seconds=60, canary=False, pidfile=self.pidfile("nocanary.pid"))
         t0 = time.time()

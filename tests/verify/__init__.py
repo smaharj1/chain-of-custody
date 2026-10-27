@@ -39,6 +39,10 @@ FAILING_TEST = PASSING_TEST.replace("assertTrue(True)", "assertTrue(False)")
 class VerifyCase(BaseTestCase):
     """A repo with `main` (config + a passing test) and the working tree on `feat/x`."""
 
+    def setUp(self) -> None:
+        super().setUp()
+        self.fast_git()
+
     def make_repo(self, config: Optional[Mapping[str, Any]] = None, files: Optional[Dict[str, str]] = None,
                   branch: bool = True) -> TempRepo:
         cfg = {"verify_tests": UNITTEST}

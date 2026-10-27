@@ -2,6 +2,8 @@
 
     gitrepo   TempRepo (temp git repo factory), make_bare_remote, make_repo_with_remote
     gitfast   read-only git questions answered from the repo's files instead of a process (BaseTestCase.fast_git())
+    inproc    run a kit script in this process like `python3 script.py ARGS` (inproc.run_script)
+    cached_repo  build a fixture repo once per process, hand every test a copy (BaseTestCase.cached_repo)
     fakehome  FakeHome: a temp HOME that can plant fake credentials; clean_env()
     bins      install_fake_claude / install_fake_gh (scriptable executables for PATH or KIT_CLAUDE_BIN)
     procs     ProcessTracker: start processes in their own session, kill the group in tearDown

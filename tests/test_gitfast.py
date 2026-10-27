@@ -222,7 +222,7 @@ class Gitfast(unittest.TestCase):
         fx, env = self.fx, dict(git_test_env())
         answered = 0
         for args in fx.cases():
-            if args == ["cat-file", "--batch"]:
+            if args[0] in ("cat-file", "ls-tree", "show"):          # object questions: the loose layout and the gc layout cover them
                 continue
             want = real_git(args, dst)
             try:
@@ -231,13 +231,15 @@ class Gitfast(unittest.TestCase):
                 continue
             answered += 1
             self.assertEqual(got, want, "packed refs: git " + " ".join(args))
-        self.assertGreater(answered, 105)
+        self.assertGreater(answered, 60)
 
     def test_objects_in_a_pack_are_left_to_git(self):
         dst = self.copy_fixture()
         subprocess.run(["git", "gc", "-q", "--prune=now"], cwd=dst, env=git_test_env(), check=True)
         env = dict(git_test_env())
         for args in self.fx.cases():
+            if args[0] not in ("cat-file", "ls-tree", "show", "merge-base"):      # object questions only: refs do not change under gc
+                continue
             inputs = self.fx.batch_inputs() if args == ["cat-file", "--batch"] else [None]
             for inp in inputs:
                 try:
