@@ -33,7 +33,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from kitlib import gitutil
 
-from . import lgit, branches, common, state as state_mod
+from . import lgit, branches, common, plan as plan_mod, state as state_mod
 from .common import Finding
 
 __all__ = ["Report", "scan", "apply", "normalize_prs", "live_prs_argv"]
@@ -151,6 +151,12 @@ def scan(ctx: Any, st: Any, lp: Any, prs: Optional[List[Dict[str, Any]]] = None,
                     continue
                 slug = items[iid]["slug"]
                 if re.search(r"\bfeat/%s-a\d+\b" % re.escape(slug), mcm["subject"]) and len(mcm["parents"]) == 2:
+                    why = _not_recoverable(ctx, st, items, iid, mcm)
+                    if why:
+                        rep.find("warn", "reconcile.recover-unapproved", "item %s: %s on %s is not recovered as merged: %s; a person decides "
+                                 "(`loopctl approve item %s --by NAME` for the head they reviewed, then merge again, or revert)"
+                                 % (iid, mcm["sha"][:12], ib, why, iid), iid)
+                        continue
                     rep.find("warn", "reconcile.recover-merged", "item %s is %s in the state but %s on %s carries 'Loop-Item: %s' for its branch: recovered as merged"
                              % (iid, st.items[iid]["status"], mcm["sha"][:12], ib, iid), iid)
                     rep.actions.append({"op": "merged-recovered", "item": iid, "commit": mcm["sha"]})
@@ -216,6 +222,25 @@ def scan(ctx: Any, st: Any, lp: Any, prs: Optional[List[Dict[str, Any]]] = None,
             rep.find("warn", "reconcile.bypass", "ruleset bypass by %s on %s at %s" % (e["actor"], e["ref"], e["at"]))
             rep.actions.append({"op": "bypass", "entry": e})
     return rep
+
+
+def _not_recoverable(ctx: Any, st: Any, items: Dict[str, Any], iid: str, mcm: Dict[str, Any]) -> Optional[str]:
+    """Why crash recovery must not mark this merge commit's item merged, or None. A head that was judged (the item reached reviewing or later) must
+    be the merge's second parent; an item that needs a human's approval (a human gate, or it was awaiting one) needs a merge approval for this item,
+    attempt and that head in the state (LC-13). A merge a person resolved by hand keeps its second parent, so the documented remedy still works."""
+    r = st.items[iid]
+    head = mcm["parents"][1]
+    judged = r.get("headSha")
+    if judged and r["status"] in state_mod.APPROVABLE and judged != head:
+        return "its second parent %s is not the head %s that was judged" % (head[:12], judged[:12])
+    gate = r.get("humanGate") or plan_mod.item_human_gate(items[iid], ctx.cfg.get_list("always_human_paths"))
+    if not (gate or r["status"] == "awaiting_human"):
+        return None
+    if any(ap.get("target") == iid and ap.get("scope") == "item" and ap.get("kind") == "merge" and ap.get("choice") == "approve"
+               and ap.get("attempt") == r["attempt"] and ap.get("headSha") == head and not ap.get("voided")
+               for ap in st.d.get("approvals", [])):
+        return None
+    return "it needs a human approval and none is recorded for head %s" % head[:12]
 
 
 def _item_for_pr(st: Any, items: Dict[str, Any], pr: Dict[str, Any]) -> Optional[str]:

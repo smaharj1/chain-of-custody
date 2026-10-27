@@ -535,7 +535,7 @@ def reap_orphans(rs: Any, my_pid: Optional[int] = None, grace_s: float = 2.0) ->
             killed = True
         rs.unregister_session(rec["sessionId"])
         remove_child_record(rs, rec["sessionId"])
-        out.append({"sessionId": rec["sessionId"], "item": rec.get("item"), "role": rec.get("role"), "killed": killed})
+        out.append({"sessionId": rec["sessionId"], "item": rec.get("item"), "role": rec.get("role"), "killed": killed, "runId": rec.get("runId")})
     return out
 
 

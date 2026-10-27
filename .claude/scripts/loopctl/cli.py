@@ -36,7 +36,7 @@ import sys
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, TextIO
 
 import humanonly
-from kitlib import loopctl_table, runstate
+from kitlib import gitutil, loopctl_table, runstate
 
 from . import VERSION, common
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlError, Refused, UsageError
@@ -488,6 +488,7 @@ def _approve_parser() -> _Parser:
     ap.add_argument("--by", required=True, help="the human who approves (recorded; not authenticated)")
     ap.add_argument("--choice", default="approve")
     ap.add_argument("--note", default="")
+    ap.add_argument("--head", default=None, help="item: the head (a hex prefix, 7+ characters) you reviewed; refused when the branch has moved")
     ap.add_argument("--seed-v1", default=None, metavar="build-plan.json", help="plan: take item statuses from a v1 plan")
     return ap
 
@@ -512,7 +513,7 @@ def cmd_approve(args: List[str], env: Mapping[str, str], out: Out) -> int:
         return EXIT_OK
     if a.scope in ("item", "checkpoint", "unblock") and not a.target:
         raise UsageError("approve %s needs an item id" % a.scope)
-    ap_rec = loop.approve(a.scope, a.target or a.scope, a.by, a.choice, a.note)
+    ap_rec = loop.approve(a.scope, a.target or a.scope, a.by, a.choice, a.note, head=a.head)
     out.json(ap_rec) if a.json else out.text("recorded %s %s (%s) by %s" % (a.scope, a.target or "", a.choice, common.clean_text(a.by, 40)))
     return EXIT_OK
 
@@ -607,7 +608,14 @@ def cmd_gate(args: List[str], env: Mapping[str, str], out: Out) -> int:
     if st is None or a.item not in st.items:
         raise Refused("item %s has no state" % common.clean_text(a.item, 30))
     wt = os.path.realpath(a.worktree) if a.worktree else None
-    gctx = loop.ctx.gate_context(a.item, a.head, wt, st.items[a.item])
+    # a gate judges the tree that is checked out, so the head it records is that tree's HEAD, never a string the caller names (LC-8)
+    real = gitutil.rev_parse("HEAD^{commit}", wt or loop.ctx.repo, isolated=True)
+    if not real:
+        raise Refused("cannot resolve HEAD of %s: no gate can be recorded for it" % common.clean_text(wt or loop.ctx.repo, 80))
+    if a.head is not None and not (len(a.head) >= 7 and real.startswith(a.head.lower())):
+        raise Refused("--head %s is not the HEAD of %s (%s): a gate judges the checked-out tree; check that head out (or pass --worktree for it), "
+                      "or leave --head off" % (common.clean_text(a.head, 40), "the --worktree" if wt else "this checkout", real[:12]))
+    gctx = loop.ctx.gate_context(a.item, real, wt, st.items[a.item])
     res = gates.run_gate(a.name, gctx)
     loop.record_gate(a.item, a.name, res, _session(a, env, required=False))
     out.json(res) if a.json else out.text("gate %s on %s: %s (mode %s%s)" % (a.name, a.item, res["status"], res["mode"], ", BLOCKING" if res["blocking"] else ""))
@@ -765,7 +773,7 @@ def cmd_run(args: List[str], env: Mapping[str, str], out: Out) -> int:
     from . import startrun as runner_mod
     ctx = _ctx(a, env)
     if a.dry_run:
-        return runner_mod.dry_run(ctx, out, a.json)
+        return runner_mod.dry_run(ctx, out, a.json, env)
     return runner_mod.start(ctx, out, _session(a, env, required=False), a.nonce, a.json, env)
 
 
