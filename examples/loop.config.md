@@ -92,6 +92,11 @@ secrets_scan_cmd: gitleaks detect --no-banner --log-opts="$LOOPCTL_BASE..$LOOPCT
 # Unattended mode is `autonomy: unattended` + `autonomy_level: L4` (both refuse until the evidence gate passes). These keys say how a run that nobody
 # watches reaches a person, and the promotion bar. Read from the BASE sha, never from the branch under judgement (CO-11).
 notify_command: ""               # e.g. /usr/local/bin/notify-me   (a script of yours; the kit passes the message on stdin)
+
+# --- Parallel items ---
+# OPT-IN and evidence-gated: `parallel_mode: worktree` and `pipeline_host: workflow` refuse until docs/baseline/evidence.json passes.
+# Read from the BASE sha, never from the branch under judgement (CO-11).
+parallel_mode: off               # keep one item at a time until the evidence gate has passed
 ```
 
 ## Notes

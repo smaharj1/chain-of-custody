@@ -33,7 +33,7 @@ from kitlib import gitutil, jsonio
 from . import lgit, branches, common, plan as plan_mod, state as state_mod
 from .common import Refused, UsageError
 
-__all__ = ["plan_abort", "execute", "AbortPlan", "revert_plan_text"]
+__all__ = ["plan_abort", "execute", "AbortPlan", "revert_plan_text", "run_down"]
 
 _ENV_ALLOW = ("PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "TZ", "VIRTUAL_ENV", "PYENV_ROOT", "NVM_DIR")
 
@@ -128,6 +128,19 @@ def _db_env() -> Dict[str, str]:
     return env
 
 
+def run_down(ctx: Any, item_id: str, migration: Dict[str, Any], runner: Callable[..., Any] = subprocess.run) -> bool:
+    """Run the configured `db_migrate_down` for one migration (the caller has checked that it is executable: not `lossy`, local delivery, not
+    published). The command is split once, never through a shell, with a scrubbed environment; the migration is named in `LOOPCTL_*` variables.
+    The reject cascade (parallel/cascade.py) uses the same function. True if it exited 0."""
+    cmd = shlex.split(str(ctx.cfg.get("db_migrate_down")))
+    env = dict(_db_env(), LOOPCTL_ITEM=item_id, LOOPCTL_MIGRATION=str(migration["name"]), LOOPCTL_MIGRATION_DOWN=str(migration["down"]))
+    try:
+        proc = runner(cmd, cwd=ctx.repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=600)
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def revert_plan_text(ctx: Any, ap: AbortPlan, plan_only: Sequence[Dict[str, Any]], manual: Sequence[str], run_id: str) -> str:
     L = ["# Revert plan (written by `loopctl abort`; NOT executed)", "",
          "Run id: %s. Rolled back to: %s on %s." % (run_id, (ap.rollback_to or "-")[:12], ap.integration),
@@ -184,13 +197,7 @@ def execute(loop: Any, ap: AbortPlan, by: str, reason: str, session_id: Optional
         ok = True
         for m in it["migrations"]:                                                                  # down first: the files still exist
             if m["executable"]:
-                cmd = shlex.split(str(ctx.cfg.get("db_migrate_down")))
-                env = dict(_db_env(), LOOPCTL_ITEM=it["item"], LOOPCTL_MIGRATION=str(m["name"]), LOOPCTL_MIGRATION_DOWN=str(m["down"]))
-                try:
-                    proc = runner(cmd, cwd=ctx.repo, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, timeout=600)
-                    good = proc.returncode == 0
-                except (OSError, subprocess.TimeoutExpired):
-                    good = False
+                good = run_down(ctx, it["item"], m, runner)
                 record["downMigrations"].append({"item": it["item"], "migration": m["name"], "ok": good})
                 if not good:
                     ok = False

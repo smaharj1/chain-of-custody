@@ -592,7 +592,9 @@ class Loop(object):
             raise Refused("item %s: its acceptance criteria differ from the approved ones (ACs are frozen at H1)" % iid)
 
     # -- begin ------------------------------------------------------------------------------------------------------------
-    def begin(self, iid: str, session_id: str, by: str = "conductor", branch: Optional[str] = None) -> Dict[str, Any]:
+    def begin(self, iid: str, session_id: str, by: str = "conductor", branch: Optional[str] = None, max_active: int = 1) -> Dict[str, Any]:
+        """pending -> designing. `max_active` is how many items may be in progress at once: 1 for the serial loop, `max_parallel` for the parallel
+        scheduler (Phase 8), which has already checked footprints and mutexes. It can only be raised by a caller that holds the run lock."""
         item = self._need_plan_item(iid)
         self._halted()
         self._check_lock(session_id, need=True)
@@ -609,8 +611,8 @@ class Loop(object):
                 raise Refused("item %s is %s, not pending" % (iid, r["status"]))
             self._check_approved(st, iid)
             busy = [i for i in st.by_status(*ACTIVE) if i != iid]
-            if busy:
-                raise Refused("item %s is still in progress; the loop runs one item at a time" % busy[0])
+            if len(busy) >= max(1, int(max_active)):
+                raise Refused("item %s is still in progress; the loop runs %s at a time" % (busy[0], "one item" if max_active <= 1 else "%d items" % max_active))
             for d in deps.get(iid, []):
                 if st.items.get(d, {}).get("status") != "merged":
                     raise Refused("item %s depends on %s, which is %s" % (iid, d, st.items.get(d, {}).get("status", "missing")))
@@ -640,6 +642,7 @@ class Loop(object):
             pass
         rec = self.ctx.rs.read_run() or {}
         rec["currentItem"] = iid
+        rec["currentItems"] = st.by_status(*ACTIVE)             # Phase 8: more than one item can be in progress (`currentItem` is the newest, for old readers)
         self.ctx.rs.write_run(rec)
 
     # -- advance ------------------------------------------------------------------------------------------------------------

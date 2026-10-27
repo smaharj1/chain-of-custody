@@ -407,9 +407,13 @@ class Supervisor(object):
 
     def write_progress(self, state: str, outcome: Optional[str] = None, code: Optional[int] = None, unsent: Optional[Dict[str, Any]] = None) -> None:
         self.last_write = time.time()
+        try:                                       # Phase 8: a parallel driver names every item in progress (`item` stays the newest, for old readers)
+            items = [i for i in getattr(self.drv, "current_items", lambda: [])() if common.valid_item_id(i)]
+        except Exception:  # noqa: BLE001 - the progress file is a courtesy; it must never stop a run
+            items = []
         doc = {"schema": SCHEMA, "runId": self.run_id, "pid": os.getpid(), "host": socket.gethostname(), "state": state, "outcome": outcome, "exit": code,
                "startedAt": self.drv.run_rec.get("startedAt"), "lastBeat": self.last_beat, "lastBeatAt": common.iso(self.last_beat), "item": self.item,
-               "event": self.last_event, "stallRunS": self.stall_s, "unsent": unsent}
+               "items": items, "event": self.last_event, "stallRunS": self.stall_s, "unsent": unsent}
         try:
             jsonio.ensure_dir(self.rs.root)
             jsonio.atomic_write_json(progress_path(self.rs), doc, 0o600)

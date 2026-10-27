@@ -233,8 +233,10 @@ def _read_items_spec(repo: str, base_sha: Optional[str], items_file: str, item: 
 
 def load_definition(repo: str, base: Optional[str] = None, item: Optional[str] = None, items_file: Optional[str] = None,
                     routes: Sequence[str] = (), allow_head_config: bool = False,
-                    extra_env: Optional[Dict[str, str]] = None) -> Definition:
-    """Resolve the verify definition at the base sha. Raises DefinitionError."""
+                    extra_env: Optional[Dict[str, str]] = None, port_offset: int = 0) -> Definition:
+    """Resolve the verify definition at the base sha. Raises DefinitionError.
+
+    `port_offset` (Phase 8, parallel items) shifts every declared verify port, so two workers verifying side by side use different ports."""
     top = gitutil.toplevel(repo)
     if not top:
         raise DefinitionError("%s is not inside a git repository" % repo)
@@ -284,6 +286,10 @@ def load_definition(repo: str, base: Optional[str] = None, item: Optional[str] =
     if not all(isinstance(p, int) and not isinstance(p, bool) and 0 < p < 65536 for p in ports):
         raise DefinitionError("verify_ports must be a list of port numbers")
     d.ports = [int(p) for p in ports]
+    if port_offset:
+        if not isinstance(port_offset, int) or isinstance(port_offset, bool) or not 0 < port_offset <= 60000 or not all(p + port_offset < 65536 for p in d.ports):
+            raise DefinitionError("port_offset %r moves a verify port out of 1..65535" % (port_offset,))
+        d.ports = [p + port_offset for p in d.ports]
     d.ready_path = cfg.get_str("verify_ready_path")
     if not _ROUTE_RE.match(d.ready_path):
         raise DefinitionError("verify_ready_path %r is not a path" % d.ready_path)

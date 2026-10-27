@@ -22,6 +22,7 @@ from . import common
 __all__ = ["refresh", "add_gate_globs", "read", "clear_gate"]
 
 PLAN_GLOBS = ["plan/**"]
+_RUNNING = ("designing", "design_review", "stubbing", "building", "verifying", "reviewing")       # state.ACTIVE (not imported: state imports this module)
 MAX_GLOBS = 400
 
 
@@ -52,15 +53,23 @@ def _overlap(a: str, b: str) -> bool:
 
 
 def refresh(ctx: Any, st: Any, lp: Any, active: Optional[str]) -> None:
-    """Recompute the plan and footprint sources, keeping every gate's globs."""
+    """Recompute the plan and footprint sources, keeping every gate's globs.
+
+    Phase 8: several items can be in progress. The items in progress are `active` and every item the state says is being worked on; the
+    footprints locked are those of the items that are NOT in progress, minus any that overlap an item in progress. (The guard reads one file for
+    every session, so an engineer of one active item is not kept out of another active item's lane by this file; each worker has its own
+    worktree, and the integrator refuses an item whose diff leaves its declared footprint, `parallel/footprint.py`.)"""
     cur = read(ctx.rs)["sources"]
     sources = {k: v for k, v in cur.items() if k not in ("plan", "footprints")}
     sources["plan"] = list(PLAN_GLOBS)
     foot = []  # type: List[str]
+    running = {i for i, r in st.items.items() if r.get("status") in _RUNNING and i in lp.items}
     if active and active in lp.items:
-        mine = [g for g in _footprint(lp.items[active])]
+        running.add(active)
+    if running:
+        mine = [g for i in sorted(running) for g in _footprint(lp.items[i])]
         for iid, it in lp.items.items():
-            if iid == active or st.items.get(iid, {}).get("status") in ("merged", "abandoned"):
+            if iid in running or st.items.get(iid, {}).get("status") in ("merged", "abandoned"):
                 continue
             for g in _footprint(it):
                 if not any(_overlap(g, m) for m in mine):
