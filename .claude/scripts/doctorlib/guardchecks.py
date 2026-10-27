@@ -7,6 +7,8 @@
     guards.selftest      the SessionStart self-test ran and passed; a failed self-test caps the level at L0 (§7.1)
     guards.deny-drift    the effective deny rules cover the suggested deny block (§7.2: "the doctor diffs the effective settings
                          against the suggested deny block and sandbox profile, and reports any drift")
+    guards.v1-residue    no v1 shell hook (guard-git.sh, guard-main-edit.sh) is wired or shipped once v2 is: WARN until the release stage
+                         activates the v2 wiring, ERROR when v2 is active (or the install is a 2.x one) and a v1 hook remains (D10, GD-7)
 
 Registered by importing this module (doctor.py does). It adds one cap, `guards`, to the effective-level computation:
 L0 when the self-test failed, L1 while the wiring is not proven, otherwise no cap. It reads only files; it never runs a guard.
@@ -207,6 +209,45 @@ def check_deny_drift(ctx: Context) -> List[Result]:
                    (len(missing), len(baseline), ", ".join(missing[:3])),
                    "merge .claude/templates/settings/deny-baseline.json into your settings (the guards still deny these; the deny block is the second layer, and works in bypass mode)",
                    severity=WARN)]
+
+
+V1_HOOK_FILES = ("guard-git.sh", "guard-main-edit.sh")
+
+
+def _kit_major(ctx: Context) -> Optional[int]:
+    try:
+        with open(ctx.repo_path(".claude", "KIT_VERSION"), "r", encoding="utf-8") as fh:
+            first = fh.readline().strip()
+    except OSError:
+        return None
+    import re
+    m = re.match(r"^(\d+)\.", first)
+    return int(m.group(1)) if m else None
+
+
+@check("guards.v1-residue", "settings", "no v1 shell hook is wired or shipped next to the v2 guards")
+def check_v1_residue(ctx: Context) -> List[Result]:
+    """The v1 hooks (`guard-git.sh`, `guard-main-edit.sh`) are weak: `sh -c`, `eval`, `env`, an absolute path, an alias or `xargs` get past them and a missing
+    python3 means allow. The v2 wiring closes all of that, and the release stage deletes them in the same commit that merges the v2 hooks block. This row
+    is the regression guard so that activation cannot be half-done (D10)."""
+    wired = sorted({f for _, _, c, _, _ in _handlers(ctx.fact("settings")["files"]) for f in V1_HOOK_FILES if f in c})
+    on_disk = [f for f in V1_HOOK_FILES if os.path.isfile(ctx.repo_path(".claude", "hooks", f))]
+    if not wired and not on_disk:
+        return [passed("guards.v1-residue", "no v1 shell hook is wired or present")]
+    state, _ = wiring_state(ctx)
+    major = _kit_major(ctx)
+    what = []   # type: List[str]
+    if wired:
+        what.append("settings still wire %s" % ", ".join(wired))
+    if on_disk:
+        what.append("%s still exist%s under .claude/hooks/" % (", ".join(on_disk), "s" if len(on_disk) == 1 else ""))
+    msg = "; ".join(what)
+    fix = ("remove the v1 hook entries from .claude/settings.json and delete .claude/hooks/guard-git.sh and guard-main-edit.sh in the same reviewed commit "
+           "that merges the v2 hooks block (python3 .claude/scripts/guards/wiring.py --print)")
+    if state in ("active", "partial") or (major is not None and major >= 2):
+        why = "the v2 guards are %s" % ("wired" if state in ("active", "partial") else "the release this install is on")
+        return [failed("guards.v1-residue", "%s: %s. Both layers would run, and the weaker one is a bypass list (sh -c, eval, env, absolute path, alias, xargs)" % (why, msg), fix)]
+    return [failed("guards.v1-residue", "%s (guard activation is the release stage, IMP-13)" % msg, fix, severity=WARN)]
 
 
 # -- the cap ---------------------------------------------------------------------------------------------------------------

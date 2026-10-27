@@ -141,6 +141,7 @@ class DryRun(BaseTestCase):
         d = self.tmpdir()
         gh = install_fake_gh(d, [])
         env = clean_env(extra={"PATH": d + os.pathsep + os.environ.get("PATH", "")})
+        env.pop("CLAUDE_CODE_ENTRYPOINT", None)          # a developer runs the suite inside Claude Code; the wrapper refuses on either marker
         p = subprocess.run(["sh", APPLY_SH, "--repo", "acme/widgets", "--variant", "team"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
         self.assertEqual(p.returncode, 0, p.stderr.decode())
         self.assertIn("DRY RUN", p.stdout.decode())
@@ -243,3 +244,151 @@ class Verify(BaseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# -- the sandbox must deny the H6 write set and the session registry (review fixes D1, GD-2, GD-3) --------------------------------------------------------
+
+from tests import REPO_ROOT  # noqa: E402
+from doctorlib import guardchecks  # noqa: E402,F401  (registers guards.v1-residue)
+from tests.doctor.helpers import BoundaryCase  # noqa: E402
+
+
+def _template() -> dict:
+    return load_json(os.path.join(REPO_ROOT, ".claude", "templates", "security", "sandbox.settings.json"))
+
+
+def _settings_with_write(entries):
+    t = _template()
+    t["sandbox"]["filesystem"]["denyWrite"] = list(entries)
+    return t
+
+
+class SandboxRegistryPath(BoundaryCase):
+    """`sandbox.deny-paths` wants the whole H6 write set; `sandbox.registry-path` wants the session registry, by absolute path in a linked worktree."""
+    GROUPS = {"sandbox"}
+
+    def row(self, repo, settings, rid, **kw):
+        repo.write(".claude/settings.json", json.dumps(settings))
+        repo.git("add", "-A")
+        return self.by_id(self.results(self.ctx(repo, **kw)), rid)[0]
+
+    def test_the_shipped_template_passes_both_rows(self):
+        repo = self.kit_repo()
+        for rid in ("sandbox.deny-paths", "sandbox.registry-path"):
+            r = self.row(repo, _template(), rid)
+            self.assertEqual(r.status, "pass", r.message)
+
+    def test_a_missing_h6_entry_is_an_error_and_named(self):
+        from guards import paths
+        repo = self.kit_repo()
+        for missing in (".claude/scripts", ".claude/settings.local.json", ".github", ".claude/loop.config.md", "CODEOWNERS"):
+            with self.subTest(missing=missing):
+                entries = [e for e in paths.SANDBOX_DENY_WRITE if e != missing]
+                r = self.row(repo, _settings_with_write(entries), "sandbox.deny-paths")
+                self.assertEqual((r.status, r.severity), ("fail", "error"))
+                self.assertIn(missing, r.message)
+
+    def test_other_spellings_of_an_entry_count(self):
+        from guards import paths
+        repo = self.kit_repo()
+        spelled = ["./" + e if k % 3 == 0 else (os.path.join(repo.path, e) if k % 3 == 1 else e + "/**") for k, e in enumerate(paths.SANDBOX_DENY_WRITE)]
+        r = self.row(repo, _settings_with_write(spelled), "sandbox.deny-paths")
+        self.assertEqual(r.status, "pass", r.message)
+
+    def test_registry_in_a_plain_checkout_is_a_warning_at_l1_and_an_error_when_the_run_depends_on_it(self):
+        from guards import paths
+        base = _settings_with_write([e for e in paths.SANDBOX_DENY_WRITE if e != ".git/loopctl/sessions"])
+        for cfg, severity in (({}, "warn"), ({"autonomy_level": "L1"}, "warn"), ({"runner": "driver"}, "error"), ({"autonomy_level": "L2"}, "error"),
+                              ({"autonomy_level": "L3"}, "error"), ({"autonomy": "unattended", "autonomy_level": "L4"}, "error")):
+            with self.subTest(cfg=cfg):
+                repo = self.kit_repo(config=cfg)
+                r = self.row(repo, base, "sandbox.registry-path")
+                self.assertEqual((r.status, r.severity), ("fail", severity), r.message)
+                self.assertIn(".git/loopctl/sessions", r.remediation)
+                self.assertIn("--sandbox-snippet", r.remediation)
+
+    def test_linked_worktree_needs_the_absolute_path(self):
+        from guards import paths
+        main = self.kit_repo(config={"runner": "driver"}, commit=True)
+        wt = main.add_worktree("wt", "feat/wt")
+        self.assertTrue(os.path.isfile(os.path.join(wt, ".git")), "a linked worktree has a .git file")
+        common = main.common_dir()
+        rel_only = _template()
+        ctx_for = lambda: self.ctx(type("R", (), {"path": wt})())      # the doctor only needs the path of the repo it is pointed at
+        # relative entry only: not enough, because the git directory is outside the project directory
+        with open(os.path.join(wt, ".claude", "settings.json"), "w") as fh:
+            json.dump(rel_only, fh)
+        r = self.by_id(self.results(ctx_for()), "sandbox.registry-path")[0]
+        self.assertEqual((r.status, r.severity), ("fail", "error"), r.message)
+        self.assertIn(os.path.join(common, "loopctl", "sessions"), r.remediation)
+        # the absolute path (either spelling of the directory) satisfies it
+        for spelling in (os.path.join(common, "loopctl", "sessions"), os.path.join(common, "loopctl", "sessions") + "/"):
+            abs_ok = _template()
+            abs_ok["sandbox"]["filesystem"]["denyWrite"].append(spelling)
+            with open(os.path.join(wt, ".claude", "settings.json"), "w") as fh:
+                json.dump(abs_ok, fh)
+            r = self.by_id(self.results(ctx_for()), "sandbox.registry-path")[0]
+            self.assertEqual(r.status, "pass", r.message)
+
+    def test_not_a_git_repository_is_skipped(self):
+        repo = self.kit_repo()
+        import shutil
+        shutil.rmtree(os.path.join(repo.path, ".git"))
+        r = self.by_id(self.results(self.ctx(repo)), "sandbox.registry-path")[0]
+        self.assertEqual(r.status, "skipped")
+
+
+class V1Residue(BoundaryCase):
+    """`guards.v1-residue` (D10, GD-7): the v1 shell hooks must not survive the activation of the v2 wiring."""
+    GROUPS = {"settings"}
+    V1_LIVE = {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git.sh"}]},
+                                        {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-main-edit.sh"}]}]}}
+
+    def repo(self, live=None, v1_files=False, version="1.2.0 (2026-07-30)\n"):
+        from guards import wiring
+        with open(os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "hooks.manifest.json")) as fh:
+            manifest_text = fh.read()
+        files = {".claude/scripts/guards/hooks.manifest.json": manifest_text}
+        if live is not None:
+            files[".claude/settings.json"] = json.dumps(live)
+        if v1_files:
+            files[".claude/hooks/guard-git.sh"] = "#!/bin/sh\n"
+            files[".claude/hooks/guard-main-edit.sh"] = "#!/bin/sh\n"
+        return self.kit_repo(files=files, kit_version=version), wiring.build_settings(json.loads(manifest_text))
+
+    def row(self, repo):
+        return self.by_id(self.results(self.ctx(repo)), "guards.v1-residue")[0]
+
+    def test_clean_install_passes(self):
+        repo, v2 = self.repo(live=None)
+        self.assertEqual(self.row(repo).status, "pass")
+        repo, v2 = self.repo(live=v2)
+        self.assertEqual(self.row(repo).status, "pass")
+
+    def test_before_activation_it_is_a_warning_that_names_the_release_stage(self):
+        repo, _ = self.repo(live=self.V1_LIVE, v1_files=True)
+        r = self.row(repo)
+        self.assertEqual((r.status, r.severity), ("fail", "warn"))
+        self.assertIn("release stage", r.message)
+        self.assertIn("guard-git.sh", r.message)
+
+    def test_v2_active_with_a_v1_hook_still_wired_is_an_error(self):
+        _, v2 = self.repo()
+        live = json.loads(json.dumps(v2))
+        live["hooks"]["PreToolUse"].append(self.V1_LIVE["hooks"]["PreToolUse"][0])
+        repo, _ = self.repo(live=live)
+        r = self.row(repo)
+        self.assertEqual((r.status, r.severity), ("fail", "error"))
+        self.assertIn("guard-git.sh", r.message)
+
+    def test_v2_active_with_the_v1_files_left_behind_is_an_error(self):
+        _, v2 = self.repo()
+        repo, _ = self.repo(live=v2, v1_files=True)
+        r = self.row(repo)
+        self.assertEqual((r.status, r.severity), ("fail", "error"))
+        self.assertIn("still exist", r.message)
+
+    def test_a_2x_install_must_not_ship_the_v1_hooks_even_when_the_wiring_is_not_merged(self):
+        repo, _ = self.repo(live={"permissions": {"allow": []}}, v1_files=True, version="2.0.0 (2026-11-01)\n")
+        r = self.row(repo)
+        self.assertEqual((r.status, r.severity), ("fail", "error"))
