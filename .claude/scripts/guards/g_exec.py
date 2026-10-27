@@ -64,12 +64,14 @@ KIT_INTERNALS_RE = re.compile(r"(\b(from|import)\s+(kitlib|guards|doctorlib)\b|\
                               r"acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|RunState\b|loopctl/(sessions|run\.json|HALT|lock|nonces|taint|events))", re.I)
 # What an agent-authored SCRIPT FILE may not name (D1 item 6). Narrower than KIT_INTERNALS_RE: the kit's own tests legitimately `import kitlib`, so a file
 # is judged by the writers of run state only. A typo guard like the rest of this module; the sandbox denyWrite on the registry is the real stop.
-STATE_WRITE_RE = re.compile(r"(register_session|unregister_session|clear_halt|set_halt|acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|"
-                            r"loopctl/(sessions|run\.json|HALT|lock|nonces))", re.I)
+STATE_WRITE_RE = re.compile(r"(register_session|unregister_session|clear_halt|set_halt|acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|sessions_dir|"
+                            r"loopctl[\W_]{1,8}(sessions|run\.json|HALT|lock|nonces))", re.I)
 # Code that imports loopctl itself and calls into it: the guard cannot classify a call that never goes through the command line (D11 item 7)
 LOOPCTL_IMPORT_RE = re.compile(r"(\b(from|import)\s+loopctl\b|(import_module|__import__)\s*\(\s*['\"]loopctl|require\(['\"][^'\"]*loopctl)", re.I)
 LOOPCTL_CALL_RE = re.compile(r"\b(main|Loop|Driver|State|approve|approve_plan|approve_item|cmd_approve|cmd_resume|set_status|advance)\b")
 MAX_IMPORT_SCAN = 10
+# a loopctl command line inside code (`os.system("loopctl approve plan")`, `['python3', '.claude/scripts/loopctl', 'approve', ...]`)
+LOOPCTL_LINE_RE = re.compile(r"(?:^|[\s'\"`(\[,;|&=])(?:[^\s'\"`()\[\],;|&=]*/)?loopctl(?:\.py|/__main__\.py)?/?(?=[\s'\"`,)\]]|$)([^;&|`\n]*)")
 OBFUSCATION_RE = re.compile(r"(\b(exec|eval|compile)\s*\(|\bFunction\s*\(|new\s+Function|__import__|\bvm\.run)", re.I)
 DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from|zlib|decompress|rot13|codecs\.decode|\bchr\b|String\.fromCharCode|"
                        r"\\x[0-9a-f]{2}|bytes\.fromhex|marshal|pickle)", re.I)
@@ -480,11 +482,24 @@ def _loopctl_rest(inv: Inv) -> Optional[Tuple[List[str], List[bool]]]:
         return list(args), list(dyn)
     if nm.startswith("py-module:") and nm.split(":")[1].startswith("loopctl"):
         return list(args), list(dyn)
+    if "/" in inv.raw and "\x00" not in inv.raw and _is_loopctl_path(inv.raw, inv):      # run by a path, or through a symlink to it
+        return list(args), list(dyn)
     if re.match(r"^(python[0-9.]*|pypy[0-9.]*)$", nm):
         for k, a in enumerate(args):
-            if re.search(r"(^|/)loopctl(\.py|/__main__\.py)?/?$", a) and not a.startswith("-"):
+            if a.startswith("-"):
+                continue
+            if re.search(r"(^|/)loopctl(\.py|/__main__\.py)?/?$", a) or ("/" in a and "\x00" not in a and _is_loopctl_path(a, inv)):
                 return list(args[k + 1:]), list(dyn[k + 1:])
     return None
+
+
+def _is_loopctl_path(script: str, inv: Inv) -> bool:
+    """True when `script` is, or is a symlink to, the `loopctl` package or its `loopctl.py`/`__main__.py`."""
+    try:
+        real = os.path.realpath(paths.lexical(script, inv.cwd, os.environ.get("HOME", "")))
+    except (OSError, ValueError):
+        return False
+    return bool(re.search(r"(^|/)loopctl(\.py|/__main__\.py)?/?$", real))
 
 
 # subcommands whose class depends on a word the guard must be able to read: a run-time-computed word there is treated as a human step
@@ -571,6 +586,9 @@ def _inline(ctx: Ctx, ic) -> Optional[Decision]:
     if LOOPCTL_IMPORT_RE.search(norm) and LOOPCTL_CALL_RE.search(norm):
         return deny(G, "kit-internals", "%s %s code imports loopctl and calls into it: the guard classifies loopctl by its command line (who may approve, resume, "
                     "push), and a call that never goes through the command line cannot be classified" % ("a script file's" if ic.from_file else "inline", low_lang))
+    d = _loopctl_in_code(ctx, scan, low_lang)
+    if d:
+        return d
     if SDK_ANTHROPIC_INLINE_RE.search(norm):
         return deny(G, "sdk-inline", "inline %s code imports the Anthropic SDK; an SDK script is a way to start a session with no hooks (CS-2). Run a reviewed script file "
                     "instead" % low_lang)
@@ -592,6 +610,20 @@ def _inline(ctx: Ctx, ic) -> Optional[Decision]:
     if ctx.is_subagent and not ic.from_file and not _trivial(ic):
         return deny(G, "inline-interpreter", "inline %s code (-c / -e) is refused for engineers and critics: an interpreter walks around every verb guard (CS-6). Write "
                     "a script file and run it, or use the project's own commands" % low_lang)
+    return None
+
+
+def _loopctl_in_code(ctx: Ctx, scan: str, lang: str) -> Optional[Decision]:
+    """A loopctl command line that code (inline or a script file the agent wrote) would run. Best effort, like the rest of this module: the command
+    is read from the text, and a human-class or write-class line is judged exactly like the same words typed on a command line."""
+    for m in LOOPCTL_LINE_RE.finditer(scan):
+        toks = re.findall(r"[^\s'\",()\[\];|&]+", m.group(1))[:24]
+        cls, sub, action = loopctl_table.classify(toks)
+        if cls == "human":
+            return deny(G, "loopctl-human-only", "%s code runs `loopctl %s%s`, a human step: it grants an approval, lifts a stop or pushes to a remote. Run it yourself in a "
+                        "plain terminal, or with `!` in the prompt" % (lang, sub, " " + action if action else ""))
+        if cls == "write" and ctx.kind != "conductor":
+            return deny(G, "loopctl-write", "%s code runs `loopctl %s`, which changes the run state; only the registered conductor session may (RC-13)" % (lang, sub or "(odd invocation)"))
     return None
 
 

@@ -181,5 +181,7 @@
 {"id": "exec-214", "caller": "engineer", "cmd": "python3 scripts/tracked_uses_kitlib.py", "repo": "feat", "expect": "allow", "why": "reviewed script"},
 {"id": "exec-215", "caller": "engineer", "cmd": "python3 scripts/untracked_calls_loopctl.py", "repo": "feat", "expect": "deny", "rule": "guard-exec:kit-internals", "why": "D11 item 7: a script that imports loopctl and calls main()"},
 {"id": "exec-216", "caller": "conductor", "cmd": "python3 scripts/untracked_calls_loopctl.py", "repo": "feat", "expect": "deny", "rule": "guard-exec:kit-internals", "why": "D11 item 7"},
-{"id": "exec-217", "caller": "engineer", "cmd": "python3 -c \"import importlib; importlib.import_module('kitlib.runstate').RunState('.git')\"", "repo": "feat", "expect": "deny", "rule": "guard-exec:kit-internals", "why": "inline: import_module of the kit's internals"}
+{"id": "exec-217", "caller": "engineer", "cmd": "python3 -c \"import importlib; importlib.import_module('kitlib.runstate').RunState('.git')\"", "repo": "feat", "expect": "deny", "rule": "guard-exec:kit-internals", "why": "inline: import_module of the kit's internals"},
+{"id": "exec-218", "caller": "engineer", "cmd": "cat > reg.py <<'EOF'\nimport os\nx = os.path.join('.git', 'loopctl', 'sessions', 's.json')\nprint(x)\nEOF\npython3 reg.py", "repo": "feat", "expect": "deny", "rule": "guard-exec:kit-internals", "why": "D1: the registry path assembled from pieces"},
+{"id": "exec-219", "caller": "engineer", "cmd": "cat > reg.py <<'EOF'\nfrom kitlib.runstate import RunState\nprint(RunState('.git').sessions_dir)\nEOF\npython3 reg.py", "repo": "feat", "expect": "deny", "rule": "guard-exec:kit-internals", "why": "D1: sessions_dir"}
 ]

@@ -295,6 +295,14 @@ class SandboxRegistryPath(BoundaryCase):
         r = self.row(repo, _settings_with_write(spelled), "sandbox.deny-paths")
         self.assertEqual(r.status, "pass", r.message)
 
+    def test_a_denied_parent_directory_covers_its_children(self):
+        from guards import paths
+        repo = self.kit_repo()
+        entries = [".claude", ".git"] + [e for e in paths.SANDBOX_DENY_WRITE if not e.startswith((".claude/", ".git/"))]
+        for rid in ("sandbox.deny-paths", "sandbox.registry-path"):
+            r = self.row(repo, _settings_with_write(entries), rid)
+            self.assertEqual(r.status, "pass", r.message)
+
     def test_registry_in_a_plain_checkout_is_a_warning_at_l1_and_an_error_when_the_run_depends_on_it(self):
         from guards import paths
         base = _settings_with_write([e for e in paths.SANDBOX_DENY_WRITE if e != ".git/loopctl/sessions"])

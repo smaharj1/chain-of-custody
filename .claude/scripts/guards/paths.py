@@ -22,7 +22,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 __all__ = ["fold", "absolute", "lexical", "physical", "forms", "find_root", "classify", "classify_forms",
            "rel_to_root", "match_rel", "expand_glob", "home_dir", "PROTECTED_DESCRIPTIONS", "ENGINEER_ONLY",
-           "is_report_path", "safe_read", "within", "SANDBOX_DENY_WRITE", "SANDBOX_DENY_WRITE_FILES", "sandbox_edit_rule", "agent_authored", "trusted_base"]
+           "is_report_path", "safe_read", "within", "SANDBOX_DENY_WRITE", "SANDBOX_DENY_WRITE_FILES", "sandbox_edit_rule", "agent_authored", "trusted_bases"]
 
 MAX_READ = 512 * 1024
 
@@ -354,9 +354,12 @@ def _git(root: str, *args: str) -> Optional["subprocess.CompletedProcess"]:
         return None
 
 
-def trusted_base(root: str) -> Optional[str]:
-    """The commit a script must be unchanged from to count as reviewed: the active run's `baseSha` (run.json), else the merge-base of HEAD
-    with the first of origin/HEAD, main, master that exists. None when neither can be found (callers then fail closed)."""
+def trusted_bases(root: str) -> List[str]:
+    """The commits a script must be unchanged from to count as reviewed: the active run's `baseSha` (run.json) when it is well-formed, and the
+    merge-base of HEAD with the first of origin/HEAD, main, master that exists. A file must be unchanged from every one of them: run.json is writable
+    from the sandbox on purpose, so a forged `baseSha` can only make the check stricter, never launder a script that changed since the merge-base.
+    Empty when neither can be found (callers then fail closed)."""
+    out = []   # type: List[str]
     try:
         from kitlib import runstate
         st = runstate.RunState.for_path(root)
@@ -365,19 +368,20 @@ def trusted_base(root: str) -> Optional[str]:
         rec = None
     sha = rec.get("baseSha") if isinstance(rec, dict) else None
     if isinstance(sha, str) and re.match(r"^[0-9a-fA-F]{7,64}$", sha):
-        return sha
+        out.append(sha)
     for ref in BASE_REFS:
         mb = _git(root, "merge-base", "HEAD", ref)
         if mb is not None and mb.returncode == 0 and mb.stdout.strip():
-            return mb.stdout.decode("utf-8", "replace").strip().split()[0]
-    return None
+            out.append(mb.stdout.decode("utf-8", "replace").strip().split()[0])
+            break
+    return out
 
 
 def agent_authored(path: str) -> bool:
-    """True when a script file is not a reviewed one: untracked, modified, changed since the trusted base, or outside any repository.
-    A tracked, clean file counts as reviewed only when it is also unchanged from the trusted base (the run's `baseSha`, else the merge-base
-    with the protected branch): a conductor commit on a feat/* branch must not launder what an engineer wrote (GD-6). If no base can
-    be determined the file is agent-authored (fail closed)."""
+    """True when a script file is not a reviewed one: untracked, modified, changed since a trusted base, or outside any repository.
+    A tracked, clean file counts as reviewed only when it is also unchanged from the trusted bases (the run's `baseSha` and the merge-base with the
+    protected branch): a conductor commit on a feat/* branch must not launder what an engineer wrote (GD-6). If no base can be determined the file
+    is agent-authored (fail closed)."""
     p = os.path.realpath(path)
     root = find_root(p)
     if root is None:
@@ -388,11 +392,14 @@ def agent_authored(path: str) -> bool:
     tracked = _git(root, "ls-files", "--error-unmatch", "--", p)
     if tracked is None or tracked.returncode != 0:
         return True
-    base = trusted_base(root)
-    if base is None:
+    bases = trusted_bases(root)
+    if not bases:
         return True
-    diff = _git(root, "diff", "--quiet", base, "--", p)
-    return diff is None or diff.returncode != 0
+    for base in bases:
+        diff = _git(root, "diff", "--quiet", base, "--", p)
+        if diff is None or diff.returncode != 0:
+            return True
+    return False
 
 
 def archive_members(path: str, limit: int = 3000, max_bytes: int = 64 * 1024 * 1024) -> Optional[List[str]]:

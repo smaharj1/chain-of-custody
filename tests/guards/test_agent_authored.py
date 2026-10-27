@@ -44,18 +44,25 @@ class AgentAuthoredTests(unittest.TestCase):
         self.repo.commit_file("scripts/reviewed.py", "print('edited')\n", "edit")
         self.assertTrue(self.aa("scripts/reviewed.py"))
 
-    def test_the_run_base_sha_wins_over_the_merge_base(self):
+    def test_a_run_base_sha_adds_a_check_and_cannot_remove_one(self):
         base = self.repo.head()
         self.repo.git("checkout", "-q", "-b", "feat/x")
-        self.repo.commit_file("scripts/mid.py", "print('mid')\n", "committed before the run")
-        self.assertTrue(self.aa("scripts/mid.py"))
+        self.repo.commit_file("scripts/mid.py", "print('mid')\n", "committed on the branch")
         rs = runstate.RunState(self.repo.common_dir()).ensure()
+        # run.json is writable from the sandbox: a forged baseSha at HEAD must not launder the script (it is still changed since the merge-base)
         rs.write_run({"runId": "r1", "baseSha": self.repo.head()})
-        self.assertFalse(self.aa("scripts/mid.py"), "unchanged since the run's base sha")
-        self.repo.commit_file("scripts/later.py", "print('later')\n", "committed during the run")
-        self.assertTrue(self.aa("scripts/later.py"))
+        self.assertTrue(self.aa("scripts/mid.py"))
+        # a real base: a script committed during the run is agent-authored; one unchanged since the base is reviewed
         rs.write_run({"runId": "r1", "baseSha": base})
         self.assertTrue(self.aa("scripts/mid.py"))
+        self.assertFalse(self.aa("scripts/reviewed.py"))
+        # main moves on after the run began (a human merged a reviewed change): the run base still flags it
+        self.repo.git("checkout", "-q", "main")
+        self.repo.commit_file("scripts/later_on_main.py", "print('later')\n", "human merge on main")
+        rs.write_run({"runId": "r1", "baseSha": base})
+        self.assertTrue(self.aa("scripts/later_on_main.py"), "changed since the run's base")
+        rs.write_run({"runId": "r1", "baseSha": self.repo.head()})
+        self.assertFalse(self.aa("scripts/later_on_main.py"))
 
     def test_no_determinable_base_fails_closed(self):
         self.repo.git("branch", "-q", "-m", "main", "trunk")      # no main, master or origin/HEAD

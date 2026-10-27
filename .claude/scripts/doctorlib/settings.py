@@ -415,6 +415,12 @@ def _norm_deny(entry: str, repo: str, home: str) -> str:
     return e
 
 
+def _has_entry(want: str, have: "set") -> bool:
+    """`want` is denied if it is in `have` or lies below a denied directory (`.claude` covers `.claude/scripts`)."""
+    parts = want.split("/")
+    return any("/".join(parts[:k]) in have for k in range(1, len(parts) + 1))
+
+
 @check("sandbox.deny-paths", "sandbox", emits=("sandbox.registry-path",))
 def check_sandbox_paths(ctx: Context) -> List[Result]:
     st = ctx.fact("settings")
@@ -427,7 +433,7 @@ def check_sandbox_paths(ctx: Context) -> List[Result]:
         miss_w = [n for n in need_write if not any(("/" + n) in x or x.endswith(n) or ("/" + n + "/") in x for x in wr)]
     else:
         have = {_norm_deny(x, ctx.repo, ctx.home) for x in wr}
-        miss_w = [e for e in h6 if e != ".git/loopctl/sessions" and e not in have]     # the registry is the next row's
+        miss_w = [e for e in h6 if e != ".git/loopctl/sessions" and not _has_entry(e, have)]     # the registry is the next row's
     if not rd and not wr:
         out = [unknown("sandbox.deny-paths", "no sandbox denyRead/denyWrite lists found",
                        "merge .claude/templates/security/sandbox.settings.json; the key names follow report §7.2 and must be checked against your Claude Code version (V19)")]
@@ -458,7 +464,7 @@ def _registry_row(ctx: Context, wr: List[str]) -> List[Result]:
     for x in wr:
         have.add(_norm_deny(x, ctx.repo, ctx.home))
         have.add(os.path.realpath(_norm_deny(x, ctx.repo, ctx.home)) if os.path.isabs(_norm_deny(x, ctx.repo, ctx.home)) else _norm_deny(x, ctx.repo, ctx.home))
-    ok = (want_rel in have or want_abs in have) if inside else (want_abs in have)
+    ok = (_has_entry(want_rel, have) or _has_entry(want_abs, have)) if inside else _has_entry(want_abs, have)
     if ok:
         return [passed("sandbox.registry-path", "the sandbox denies writes to the session registry (%s)" % (want_rel if inside else want_abs))]
     strict = False
