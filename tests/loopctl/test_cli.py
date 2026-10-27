@@ -34,7 +34,7 @@ class SourceRules(unittest.TestCase):
                 self.assertNotIn(banned, src, "%s uses %s" % (rel, banned))
 
     def test_subprocess_is_only_used_where_it_is_expected_and_always_with_a_list(self):
-        allowed = {"cli.py", "context.py", "abort.py"}
+        allowed = {"cli.py", "context.py", "abort.py", os.path.join("gates", "g0_env.py"), os.path.join("gates", "_toolchain.py")}   # 4b: the doctor, `<tool> --version`
         for rel, src in sources():
             tree = ast.parse(src)
             for node in ast.walk(tree):
@@ -54,7 +54,7 @@ class SourceRules(unittest.TestCase):
 
     def test_python39_syntax_and_no_third_party_imports(self):
         stdlib = {"__future__", "argparse", "ast", "calendar", "collections", "copy", "decimal", "glob", "hashlib", "hmac", "importlib", "json", "math",
-                  "os", "pkgutil", "re", "secrets", "shlex", "socket", "stat", "subprocess", "sys", "threading", "time", "types", "typing"}
+                  "os", "pkgutil", "re", "secrets", "shlex", "shutil", "socket", "stat", "subprocess", "sys", "tempfile", "threading", "time", "types", "typing", "xml"}
         for rel, src in sources():
             tree = ast.parse(src, feature_version=(3, 9))
             for node in ast.walk(tree):

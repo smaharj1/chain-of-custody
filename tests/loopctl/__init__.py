@@ -58,7 +58,13 @@ class LoopRepo(object):
     """A temp repo on `main` with loop.config and a committed plan. `ctl()` runs loopctl in-process."""
 
     def __init__(self, items: Optional[List[Dict[str, Any]]] = None, tier2: bool = True, extra_cfg: str = "", plan_name: str = "demo",
-                 milestones: Optional[List[str]] = None, commit: bool = True) -> None:
+                 milestones: Optional[List[str]] = None, commit: bool = True, real_gates: bool = False) -> None:
+        # Phase 4a's tests judge the runner and the state machine with fake gates, so the gate modules Phase 4b installs are hidden from
+        # discovery (`gates.REQUIRED_FOR` would otherwise bind every `advance`). tests/loopctl/gates/ passes real_gates=True.
+        from loopctl import gates as _gates
+        self._real_gates = real_gates
+        if not real_gates:
+            _gates._discovered = {}
         self.repo = TempRepo()
         self.path = self.repo.path
         self.home = tempfile.mkdtemp(prefix="loopctl-home-")
@@ -207,6 +213,9 @@ class LoopRepo(object):
         return self.repo.head()
 
     def cleanup(self) -> None:
+        if not getattr(self, "_real_gates", True):
+            from loopctl import gates as _gates
+            _gates._discovered = None
         self.repo.cleanup()
         shutil.rmtree(self.home, ignore_errors=True)
 

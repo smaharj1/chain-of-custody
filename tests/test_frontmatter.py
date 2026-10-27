@@ -22,6 +22,7 @@ AGENTS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "agents", "*.md")))
 COMMANDS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "commands", "*.md")))
 
 ENGINEERS = {"database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer", "infra-engineer"}
+AUTHORS = {"acceptance-author"}     # Phase 4b: writes the tests the engineers are graded by; engineer-class tools, never the implementation
 CRITICS = {"design-critic", "code-reviewer", "security-reviewer"}
 HIGH_EFFORT = CRITICS | {"database-engineer", "backend-engineer"}
 DENY = {"Agent", "Skill", "Workflow", "mcp__*"}
@@ -58,9 +59,9 @@ def csv(value):
 
 
 class AgentFrontmatter(unittest.TestCase):
-    def test_all_eight_agents_present(self):
+    def test_all_nine_agents_present(self):
         names = {os.path.basename(p)[:-3] for p in AGENTS}
-        self.assertEqual(names, ENGINEERS | CRITICS)
+        self.assertEqual(names, ENGINEERS | CRITICS | AUTHORS)
 
     def test_required_keys_and_name_matches_file(self):
         for path in AGENTS:
@@ -129,7 +130,7 @@ class AgentFrontmatter(unittest.TestCase):
                 self.assertNotRegex(desc, r"(?i)\bcheap\b")
                 self.assertNotIn("Skill instead", desc)
         # engineers say how they are dispatched, so they are not picked for ad-hoc delegation
-        for name in ENGINEERS:
+        for name in ENGINEERS | AUTHORS:
             desc = split_frontmatter(os.path.join(REPO_ROOT, ".claude", "agents", name + ".md"))[0]["description"]
             self.assertIn("brief path", desc, name)
 
