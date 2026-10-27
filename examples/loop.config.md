@@ -76,6 +76,17 @@ always_human_paths: [src/auth/**, src/payments/**]   # project paths a human alw
 runner: sequential               # the Orchestrator runs the loop in my session
 loopctl_tier2: false             # leave off until you want loopctl to own the item state
 run_budget_usd: 0                # 0 = not set; the driver refuses to start until you set a ceiling
+
+# --- Gates ---
+# Per-gate toggles are `gates.<name>: on | report | off` (see the gates family above). These keys configure what the gates run.
+# All are read from the BASE sha, never from the branch under judgement (CO-11).
+g5_ast_lint: [python]            # add the lint for Python sources
+heldout_cmd: python3 "$LOOPCTL_HELDOUT_DIR/run.py" --json   # black-box checks kept outside the checkout
+mutation_cmd: python3 tools/mutate.py   # your wrapper around the mutation tool
+env_check_cmd: python3 scripts/check_env.py   # e.g. open and close a connection to the ephemeral database
+migrate_check_cmd: python3 scripts/migrate_check.py   # creates a throwaway database, runs up, down, up
+license_allowlist: [MIT, Apache-2.0, BSD-3-Clause]   # permissive licences only
+secrets_scan_cmd: gitleaks detect --no-banner --log-opts="$LOOPCTL_BASE..$LOOPCTL_HEAD"   # gitleaks over the item's commits
 ```
 
 ## Notes

@@ -246,6 +246,36 @@ state_remote: ""                 # Name of the git remote that also holds refs/l
 db_migrate_down: ""              # Command that runs ONE down-migration against the local or ephemeral database (report section 19.7 L-25). It gets
                                  #   LOOPCTL_ITEM, LOOPCTL_MIGRATION and LOOPCTL_MIGRATION_DOWN in its environment, never on its command line.
                                  #   Empty = `loopctl abort` writes the down-migrations into the human revert plan instead of running them.
+
+# --- Gates (report section 9; python3 .claude/scripts/loopctl gate <name> <item>) ---
+# Per-gate toggles are `gates.<name>: on | report | off` (see the gates family above). These keys configure what the gates run.
+# All are read from the BASE sha, never from the branch under judgement (CO-11).
+gates:
+  g4: off                        # on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G4 mutation testing: the changed lines are mutated and the acceptance tests
+                                 #   must kill at least mutation_min percent. Tool-agnostic: you supply mutation_cmd. Refuses `on` and `report` until the evidence
+                                 #   gate has passed (docs/baseline/evidence.json, `python3 .claude/scripts/loopctl evidence --check`). Other gates default to on.
+g5_ast_lint: []                  # OPT-IN, EXPERIMENTAL (IMP-1). Languages the G5 test-integrity AST lint runs for: python (stdlib ast, trustworthy), javascript
+                                 #   (regex heuristic, report-only, low confidence). Empty = only the G5 path-glob check runs. Needs the evidence gate.
+heldout_cmd: ""                  # G3 held-out acceptance tests, runner: driver only. Run in the item's worktree with LOOPCTL_HELDOUT_DIR (the item's directory under
+                                 #   <git-common-dir>/loopctl/heldout/), LOOPCTL_ITEM and LOOPCTL_BASE in the environment. It must print per-criterion results (a JSON
+                                 #   object {"results": {"AC-F1-1": "pass"}}, or one verbose test line per criterion naming its AC id). Empty = no held-out run.
+mutation_cmd: ""                 # G4 only. Runs your mutation tool (Stryker, mutmut, cargo-mutants, ...; none is bundled). Environment: LOOPCTL_MUTATION_SCOPE =
+                                 #   path of a JSON file listing the changed lines to mutate and the acceptance test globs. It must print one JSON object on stdout:
+                                 #   {"schema": "mutation.v1", "killed": N, "survived": N, "timeout": N}. Empty with gates.g4 on = the gate errors.
+mutation_min: 60                 # G4 only. Minimum mutation score in percent: killed / (killed + survived + timeout).
+mutation_timeout_s: 1800         # G4 only. Seconds before the mutation command's process group is killed.
+env_check_cmd: ""                # G0 only. Optional project command that proves the item's environment works (database reachable, services up). Exit 0 = fine.
+                                 #   Runs once per item in the worktree. Failure is classed `env` (the item is parked, not retried).
+migrate_check_cmd: ""            # G6 only, items that carry migrations. Runs once per migration against an EPHEMERAL database of the production dialect (db_local):
+                                 #   apply up, down, up again, exit 0. Environment: LOOPCTL_ITEM, LOOPCTL_MIGRATION, LOOPCTL_MIGRATION_UP, LOOPCTL_MIGRATION_DOWN
+                                 #   (empty for a lossy migration with no down: never run one), LOOPCTL_MIGRATION_CLASS. It prints `dialect: <engine>` and G6 refuses a
+                                 #   mismatch with db_local. Empty with a migration in the item = G6 errors (no prod-dialect database, RC-21).
+dep_check_cmd: ""                # G9 only. Optional registry lookup for each NEW top-level dependency (the kit never reaches the network itself). Environment:
+                                 #   LOOPCTL_DEP_ECOSYSTEM (npm|pypi|go|cargo), LOOPCTL_DEP_NAME. Print {"exists": bool, "age_days": N, "downloads": N, "license": "MIT"}.
+                                 #   Exit non-zero or no output = unknown, which is listed for the human, never treated as safe.
+license_allowlist: []            # G9 only. SPDX ids a new dependency's licence must be in (reported by dep_check_cmd). Empty = licences are listed, not enforced.
+secrets_scan_cmd: ""             # G11 only. Optional external scanner (gitleaks, trufflehog) run in the worktree on top of the built-in pattern scan. Environment:
+                                 #   LOOPCTL_BASE and LOOPCTL_HEAD. Exit 0 = clean, anything else = findings. The built-in scan always runs.
 ```
 
 ## Notes
