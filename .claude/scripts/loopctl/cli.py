@@ -7,10 +7,10 @@ in step (a test compares them).
     READ (no state, lock or file is written)
         validate  status  render  doctor  audit  report  help  version
         lock status   evidence --check   cost --projection   reconcile --dry-run   migrate-plan --check|--dry-run
-        run --dry-run   abort --dry-run
+        run --dry-run   abort --dry-run   unattended check|status|promotion|intake (without --write)
 
     TIER 1 WRITES (work with `loopctl_tier2: false`)
-        lock acquire|release|steal   migrate-plan --write   halt   resume
+        lock acquire|release|steal   migrate-plan --write   halt   resume   unattended watch|notify-test|intake --write
 
     TIER 2 WRITES (refuse unless `loopctl_tier2: true` in the BASE sha's loop.config; OPT-IN, IMP-1)
         approve  begin  advance  fail  clarify  park  gate  spend  run  abort  reconcile --apply
@@ -41,9 +41,9 @@ __all__ = ["main", "READ_COMMANDS", "FLAG_READ", "TIER1_WRITES", "TIER2_WRITES",
 READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version")
 # command -> flags that make an otherwise-writing command read-only (and the flags that always make it a write)
 FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
-             "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",)}
+             "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake")}
 WRITE_FLAGS = ("--apply", "--write", "--force")
-TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume")
+TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended")
 TIER2_WRITES = ("approve", "begin", "advance", "fail", "clarify", "park", "gate", "spend", "run", "abort", "reconcile")
 
 
@@ -468,8 +468,8 @@ def _loop(a: argparse.Namespace, env: Mapping[str, str], plan: str = "base") -> 
 
 
 def cmd_approve(args: List[str], env: Mapping[str, str], out: Out) -> int:
-    ap = _parser("approve", "approve plan|item|checkpoint|unblock|env|breaker|cost [TARGET] --by NAME")
-    ap.add_argument("scope", choices=("plan", "item", "checkpoint", "unblock", "env", "breaker", "cost"))
+    ap = _parser("approve", "approve plan|item|checkpoint|unblock|env|breaker|cost|demotion [TARGET] --by NAME")
+    ap.add_argument("scope", choices=("plan", "item", "checkpoint", "unblock", "env", "breaker", "cost", "demotion"))
     ap.add_argument("target", nargs="?", default=None)
     ap.add_argument("--by", required=True, help="the human who approves (recorded)")
     ap.add_argument("--choice", default="approve")
@@ -748,11 +748,132 @@ def cmd_run(args: List[str], env: Mapping[str, str], out: Out) -> int:
     return runner_mod.start(ctx, out, _session(a, env, required=False), a.nonce, a.json, env)
 
 
+# ===== unattended (Phase 7) ===============================================================================================
+
+def _inside_repo(ctx: Any, path: str, flag: str) -> None:
+    """A file named on the command line must be inside the repository: these commands are open to every caller, and an error message about an
+    arbitrary file would otherwise say something about it."""
+    real = os.path.realpath(path)
+    root = os.path.realpath(ctx.repo)
+    if not (real == root or real.startswith(root.rstrip(os.sep) + os.sep)) or os.path.islink(path):
+        raise UsageError("%s must be a regular file inside the repository" % flag)
+
+
+def cmd_unattended(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    ap = _parser("unattended", "unattended check|status|promotion|intake|watch|notify-test: the L4 operations (docs/unattended.md). "
+                               "check, status, promotion and intake (without --write) change nothing.")
+    ap.add_argument("action", choices=("check", "status", "promotion", "intake", "watch", "notify-test"))
+    ap.add_argument("--quiet", action="store_true", help="check: print nothing, exit 0 when a run could start and make progress")
+    ap.add_argument("--facts", default=None, help="promotion: a promotion.facts.v1 file made from GitHub or CI")
+    ap.add_argument("--in", dest="infile", default=None, help="intake: the stage-1 triage answer (a file)")
+    ap.add_argument("--source", default=None, help="intake: where the text came from, e.g. issue#12")
+    ap.add_argument("--write", action="store_true", help="intake: quarantine the record and print the draft plan item")
+    a = ap.parse_args(args)
+    from . import unattended, promotion, intake
+    from doctorlib import safeio
+    if a.action in ("watch", "notify-test"):
+        import notify as notify_mod
+        ctx = _ctx(a, env, plan="none", allow_head_config=False)
+        if not ctx.cfg_trusted:
+            raise Refused("notify_command is read from the loop.config committed at the base sha; there is none (%s)" % ctx.cfg_note)
+        if a.action == "watch":
+            res = unattended.watch_once(ctx)
+            out.json(res) if a.json else out.text("watch: %s (%s)%s" % (res["status"], common.clean_text(res["message"], 160), "; notified" if res.get("notified") else ""))
+            return EXIT_OK if res["status"] in ("idle", "ok", "halted") else EXIT_FINDINGS
+        st = notify_mod.settings_from_config(ctx.cfg)
+        msg = notify_mod.compose("test", "info", detail="this is a test of notify_command", next_step="nothing; it worked")
+        res = notify_mod.send(st["command"], msg, ctx.env, notify_mod.forbidden_roots(ctx.repo, ctx.rs.common_dir), st["timeout_s"], st["allow"])
+        out.json(res) if a.json else out.text("notify-test: %s" % ("sent" if res["ok"] else "FAILED: " + common.clean_text(res["why"], 200)))
+        return EXIT_OK if res["ok"] else (EXIT_REFUSED if res.get("refused") else EXIT_FINDINGS)
+    if a.action == "promotion":
+        if not a.facts:
+            raise UsageError("promotion needs --facts <file> (a promotion.facts.v1 document made from GitHub or CI)")
+        ctx = _ctx(a, env, plan="none")
+        _inside_repo(ctx, _rel(a, a.facts), "--facts")
+        raw, problem = safeio.read_text_status(_rel(a, a.facts), 2 * 1024 * 1024)
+        if raw is None or os.path.islink(_rel(a, a.facts)):
+            raise UsageError("--facts: %s" % (problem or "a symbolic link"))
+        try:
+            facts = promotion.parse_facts(raw)
+        except ValueError as exc:
+            raise UsageError("--facts: %s" % common.clean_text(exc, 160))
+        res = promotion.evaluate(facts, promotion.bar_from_config(ctx.cfg), ctx.evidence_passed())
+        res["schema"] = "loopctl.promotion.v1"
+        res["note"] = "advice only: promotion is a reviewed commit of `autonomy: unattended` and `autonomy_level: L4` (H6); nothing was changed"
+        if a.json:
+            out.json(res)
+        else:
+            out.text("promotion to L4: %s" % ("ELIGIBLE" if res["eligible"] else "not yet"))
+            for r in res["reasons"]:
+                out.text("  - %s" % common.clean_text(r, 200))
+            out.text("  window: %s" % ", ".join("%s=%s" % kv for kv in sorted(res["stats"].items())))
+            out.text("  " + res["note"])
+        return EXIT_OK if res["eligible"] else EXIT_FINDINGS
+    if a.action == "intake":
+        if not a.infile or not a.source:
+            raise UsageError("intake needs --in <triage answer> and --source <ref, e.g. issue#12>")
+        ctx = _ctx(a, env, plan="none")
+        p = _rel(a, a.infile)
+        _inside_repo(ctx, p, "--in")
+        raw, problem = safeio.read_text_status(p, intake.iv.DEFAULT_MAX_BYTES + 1)
+        if raw is None or os.path.islink(p):
+            raise UsageError("--in: %s" % (problem or "a symbolic link"))
+        clean, why = intake.check(raw)
+        if clean is None:
+            out.json({"schema": "loopctl.intake.check.v1", "ok": False, "reason": why}) if a.json else out.err("intake: invalid: %s" % why)
+            return EXIT_FINDINGS
+        rec = intake.make_record(clean, a.source)
+        path = intake.quarantine(ctx.rs, rec) if a.write else None
+        doc = {"schema": "loopctl.intake.check.v1", "ok": True, "id": rec["id"], "record": path, "draft": intake.draft_item(rec) if a.write else None,
+               "note": "UNTRUSTED. Not in the plan. A human writes the plan item from the draft and approves the plan (H1, H7)."}
+        if a.json:
+            out.json(doc)
+        else:
+            out.text("intake %s: valid%s" % (rec["id"], "; quarantined at %s" % path if path else " (nothing written: add --write)"))
+            if a.write:
+                out.text(json.dumps(doc["draft"], indent=2))
+            out.text(doc["note"])
+        return EXIT_OK
+    ctx = _ctx(a, env, plan="base")
+    state = None
+    if ctx.plan and not ctx.plan.fatal:
+        try:
+            state, _ = ctx.store().read()
+        except LoopctlError:
+            state = None
+    rs = unattended.rows(ctx, state)
+    ok = unattended.ready(rs)
+    if a.action == "check":
+        if a.quiet:
+            return EXIT_OK if ok else EXIT_FINDINGS
+        out.json({"schema": "loopctl.unattended.check.v1", "ready": ok, "rows": rs}) if a.json else out.text(
+            "\n".join(["unattended: %s" % ("a run could start now" if ok else "NOT ready")] + ["  [%s] %-22s %s" % ("ok" if r["ok"] else "NO", r["id"], common.clean_text(r["message"], 200)) for r in rs]))
+        return EXIT_OK if ok else EXIT_FINDINGS
+    import socket
+    import time
+    prog = unattended.read_progress(ctx.rs)
+    verdict = unattended.assess(prog, time.time(), socket.gethostname(), runstate.pid_alive, float(ctx.cfg.get_int("stall_run_min") or 30) * 60.0, ctx.rs.is_halted())
+    notes = [e for e in ctx.rs.read_events("notify")][-5:]
+    doc = {"schema": "loopctl.unattended.status.v1", "wanted": unattended.wanted(ctx.cfg), "ready": ok, "rows": rs, "demotion": unattended.demotion_of(state),
+           "run": prog, "watchdog": verdict, "watch": unattended.read_watch(ctx.rs), "last_notifications": notes}
+    if a.json:
+        out.json(doc)
+    else:
+        out.text("unattended: %s; %s" % ("wanted by the config" if doc["wanted"] else "not enabled (autonomy is not unattended)", "ready" if ok else "not ready"))
+        for r in rs:
+            out.text("  [%s] %-22s %s" % ("ok" if r["ok"] else "NO", r["id"], common.clean_text(r["message"], 200)))
+        out.text("  run: %s" % common.clean_text(verdict["message"], 200))
+        for e in notes:
+            out.text("  notified: %s %s %s" % (e.get("kind"), "ok" if e.get("ok") else "FAILED (%s)" % common.clean_text(e.get("why"), 80), e.get("ts", "")))
+    return EXIT_OK
+
+
 COMMANDS = {
     "validate": cmd_validate, "status": cmd_status, "render": cmd_render, "doctor": cmd_doctor, "audit": cmd_audit, "report": cmd_report,
     "help": cmd_help, "version": cmd_version, "evidence": cmd_evidence, "cost": cmd_cost, "migrate-plan": cmd_migrate_plan, "lock": cmd_lock,
     "halt": cmd_halt, "resume": cmd_resume, "approve": cmd_approve, "begin": cmd_begin, "advance": cmd_advance, "fail": cmd_fail,
     "clarify": cmd_clarify, "park": cmd_park, "gate": cmd_gate, "spend": cmd_spend, "reconcile": cmd_reconcile, "abort": cmd_abort, "run": cmd_run,
+    "unattended": cmd_unattended,
 }
 
 

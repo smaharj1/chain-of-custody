@@ -69,7 +69,7 @@ class SourceRules(unittest.TestCase):
                 else:
                     continue
                 for n in names:
-                    self.assertTrue(n in stdlib or n in ("kitlib", "loopctl", "pr_prepare", "verify", "doctor", "doctorlib", "guards", "session_start"), "%s imports %s" % (rel, n))
+                    self.assertTrue(n in stdlib or n in ("kitlib", "loopctl", "pr_prepare", "verify", "doctor", "doctorlib", "guards", "session_start", "notify", "intake_validate"), "%s imports %s" % (rel, n))
 
     def test_every_git_call_goes_through_kitlib_gitutil(self):
         for rel, src in sources():

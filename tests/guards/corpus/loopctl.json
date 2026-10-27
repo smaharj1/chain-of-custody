@@ -814,5 +814,170 @@
 "rule": "guard-halt:halted",
 "why": "HALT is released by a human, not by a halted session",
 "halt": true
+},
+{
+"id": "loopctl-101",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended check --quiet",
+"expect": "allow",
+"why": "unattended check/status/promotion/intake (without --write) read and write nothing"
+},
+{
+"id": "loopctl-102",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl unattended status --json",
+"expect": "allow",
+"why": "unattended check/status/promotion/intake (without --write) read and write nothing"
+},
+{
+"id": "loopctl-103",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl unattended check --quiet",
+"expect": "allow",
+"why": "unattended check/status/promotion/intake (without --write) read and write nothing"
+},
+{
+"id": "loopctl-104",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl unattended status --json",
+"expect": "allow",
+"why": "unattended check/status/promotion/intake (without --write) read and write nothing"
+},
+{
+"id": "loopctl-105",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended promotion --facts facts.json",
+"expect": "allow",
+"why": "promotion only reads a facts file and prints advice"
+},
+{
+"id": "loopctl-106",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended intake --in triage.json --source issue#12",
+"expect": "allow",
+"why": "intake without --write validates and prints; it writes nothing"
+},
+{
+"id": "loopctl-107",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended watch",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "watch runs the human's notify_command and writes its own record"
+},
+{
+"id": "loopctl-108",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended notify-test",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "notify-test runs the human's notify_command"
+},
+{
+"id": "loopctl-109",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended intake --in t.json --source issue#12 --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "--write quarantines a record"
+},
+{
+"id": "loopctl-110",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl unattended watch",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "watch runs the human's notify_command and writes its own record"
+},
+{
+"id": "loopctl-111",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl unattended notify-test",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "notify-test runs the human's notify_command"
+},
+{
+"id": "loopctl-112",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl unattended intake --in t.json --source issue#12 --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "--write quarantines a record"
+},
+{
+"id": "loopctl-113",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "no action word: not a read"
+},
+{
+"id": "loopctl-114",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended check --write",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "a write flag beats a read word"
+},
+{
+"id": "loopctl-115",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl unattended frobnicate",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "an unknown action counts as a write"
+},
+{
+"id": "loopctl-116",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl approve demotion --by Pat",
+"expect": "deny",
+"rule": "guard-exec:loopctl-write",
+"why": "lifting a demotion is a human decision recorded by the conductor, never an engineer's"
+},
+{
+"id": "loopctl-117",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl unattended watch",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-118",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl unattended check",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-119",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl unattended watch",
+"expect": "deny",
+"rule": "guard-halt:halted",
+"why": "only the reads pass while HALT is set",
+"halt": true
 }
 ]

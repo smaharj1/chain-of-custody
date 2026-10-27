@@ -92,6 +92,9 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
         chk("budget", isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0,
             "run_budget_usd is %s" % budget if budget else "run_budget_usd is not set: the driver refuses to start without a ceiling")
         chk("driver", load_driver() is not None, "the driver module is installed" if load_driver() else "driver not installed")
+    if ctx.runner == "driver" and ctx.cfg.get("autonomy") == "unattended":
+        from . import unattended                   # Phase 7: an unattended start is decided here, from committed facts, before the lock (no-acknowledge start)
+        res += unattended.rows(ctx, state)
     lk = ctx.lock().status()
     mine = bool(lk["held"] and session and (lk.get("record") or {}).get("sessionId") == session)
     dead = bool(ctx.runner == "driver" and lk["held"] and not lk["corrupt"] and lock_mod.owner_dead(lk.get("record") or {}))

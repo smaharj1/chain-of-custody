@@ -927,12 +927,12 @@ class Loop(object):
 
     # -- approvals (L-10) ---------------------------------------------------------------------------------------------------------------
     def approve(self, scope: str, target: str, by: str, choice: str = "approve", note: str = "") -> Dict[str, Any]:
-        """Write an approval record. scope: item | checkpoint | unblock | env | breaker | cost. A record is made by a named human
+        """Write an approval record. scope: item | checkpoint | unblock | env | breaker | cost | demotion. A record is made by a named human
         (`by`); it cannot be backdated and is consumed by the transition it allows."""
         by = common.clean_text(by, 60)
         if not by.strip():
             raise UsageError("--by <name> is required")
-        if scope not in ("item", "checkpoint", "unblock", "env", "breaker", "cost"):
+        if scope not in ("item", "checkpoint", "unblock", "env", "breaker", "cost", "demotion"):
             raise UsageError("unknown approval scope %r" % common.clean_text(scope, 20))
         if choice not in ("approve", "reject", "stop", "reset", "keep", "replan"):
             raise UsageError("unknown choice %r" % common.clean_text(choice, 20))
@@ -979,6 +979,10 @@ class Loop(object):
                 st.header["parked"] = None
             elif scope == "cost":
                 pass
+            elif scope == "demotion":                      # a human reviewed why an unattended run was demoted to L3 and lifts it (report 6.3, Phase 7)
+                if not st.header.get("demotion"):
+                    raise Refused("there is no demotion to approve")
+                st.header["demotion"] = None
             return _add_approval(st, scope, target, by, choice, note, attempt=st.items[target]["attempt"] if target in st.items else None)
 
         st, ap = self.store.update(mutate, "approve %s %s (%s) by %s" % (scope, target, choice, by))

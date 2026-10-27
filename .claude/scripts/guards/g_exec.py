@@ -66,7 +66,7 @@ DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from
 # Kept in step with `loopctl/cli.py` (READ_COMMANDS, FLAG_READ, WRITE_FLAGS); tests/loopctl/test_guard_alignment.py compares them.
 LOOPCTL_READ = {"validate", "status", "render", "doctor", "audit", "report", "help", "--help", "-h", "version", "--version"}
 LOOPCTL_FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
-                     "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",)}
+                     "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake")}
 # a flag that makes a command a write even when a read flag is also present (`migrate-plan --check --write`)
 LOOPCTL_WRITE_FLAGS = ("--apply", "--write", "--force")
 

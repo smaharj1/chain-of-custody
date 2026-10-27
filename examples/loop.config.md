@@ -87,6 +87,11 @@ env_check_cmd: python3 scripts/check_env.py   # e.g. open and close a connection
 migrate_check_cmd: python3 scripts/migrate_check.py   # creates a throwaway database, runs up, down, up
 license_allowlist: [MIT, Apache-2.0, BSD-3-Clause]   # permissive licences only
 secrets_scan_cmd: gitleaks detect --no-banner --log-opts="$LOOPCTL_BASE..$LOOPCTL_HEAD"   # gitleaks over the item's commits
+
+# --- Unattended ---
+# Unattended mode is `autonomy: unattended` + `autonomy_level: L4` (both refuse until the evidence gate passes). These keys say how a run that nobody
+# watches reaches a person, and the promotion bar. Read from the BASE sha, never from the branch under judgement (CO-11).
+notify_command: ""               # e.g. /usr/local/bin/notify-me   (a script of yours; the kit passes the message on stdin)
 ```
 
 ## Notes
