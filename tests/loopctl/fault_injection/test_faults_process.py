@@ -17,7 +17,7 @@ from ...helpers.procs import wait_for
 from kitlib import runstate
 from loopctl import driver, launch
 
-from . import DriverTestCase, item_doc
+from . import DriverTestCase, item_doc, read_text
 
 ENG = {"loc": 100, "engineers": ["backend-engineer"]}
 
@@ -30,6 +30,7 @@ class Refusals(DriverTestCase):
         return lr
 
     def refused(self, lr, env=None, needle=""):
+        """`loopctl run` with the environment changed: refused (exit 3), nothing launched, no state touched, no lock left."""
         r = lr.run(env=env)
         self.assertEqual(r.rc, 3, r)
         self.assertIn(needle, r.out + r.err)
@@ -39,18 +40,20 @@ class Refusals(DriverTestCase):
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")
         return r
 
+    def setup_refuses(self, lr, env, needle):
+        """The same check without the CLI around it (a tenth of the cost): `Driver.setup` raises before it changes anything."""
+        drv = lr.driver_at("A", begin=False)
+        drv.env = dict(lr.env, **env)
+        with self.assertRaises(launch.LaunchRefused) as cm:
+            drv.setup()
+        self.assertIn(needle, str(cm.exception))
+        self.assertEqual(lr.item("A")["status"], "pending")
+
     def test_a_driver_inside_a_claude_code_session_refuses_whatever_else_is_set(self):
         lr = self.fresh()
-        self.refused(lr, {"CLAUDECODE": "1"}, "CS-2")
-        self.refused(lr, {"CLAUDECODE": "1", launch.ENV_HARNESS: "0"}, "CS-2")
-        self.refused(lr, {"CLAUDECODE": "yes", launch.ENV_HARNESS: "true"}, "CS-2")
-
-    def path_with_git_only(self, lr, *extra):
-        """A PATH that has git (loopctl needs it) and nothing named claude, so that a lookup cannot find a real one."""
-        d = os.path.join(lr.home, "pathdir-%d" % len(os.listdir(lr.home)))
-        os.makedirs(d)
-        os.symlink(shutil.which("git"), os.path.join(d, "git"))
-        return os.pathsep.join((d,) + extra)
+        self.refused(lr, {"CLAUDECODE": "1"}, "CS-2")                                           # the whole command, once
+        self.setup_refuses(lr, {"CLAUDECODE": "1", launch.ENV_HARNESS: "0"}, "CS-2")
+        self.setup_refuses(lr, {"CLAUDECODE": "yes", launch.ENV_HARNESS: "true"}, "CS-2")
 
     def test_the_harness_exception_needs_the_fake_binary_and_a_real_looking_binary_never_qualifies(self):
         lr = self.fresh()
@@ -60,16 +63,24 @@ class Refusals(DriverTestCase):
         with open(p, "w") as fh:
             fh.write("#!/bin/sh\necho should never run >> %s/ran\nexit 0\n" % lr.home)
         os.chmod(p, 0o755)
-        self.refused(lr, {"CLAUDECODE": "1", launch.ENV_HARNESS: "1", "KIT_CLAUDE_BIN": p}, "CS-2")
+        self.setup_refuses(lr, {"CLAUDECODE": "1", launch.ENV_HARNESS: "1", "KIT_CLAUDE_BIN": p}, "CS-2")
         self.assertFalse(os.path.exists(os.path.join(lr.home, "ran")))                          # not even started for a version check
 
     def test_a_version_below_the_floor_or_unreadable_or_a_missing_binary_refuses(self):
         lr = self.fresh()
-        self.refused(lr, {"KIT_CLAUDE_VERSION": "2.1.100"}, "below the kit floor")
-        self.refused(lr, {"KIT_CLAUDE_VERSION": "banana"}, "cannot be read")
-        self.refused(lr, {"KIT_CLAUDE_BIN": os.path.join(lr.home, "nope")}, "not an executable file")
-        lr.env.pop("KIT_CLAUDE_BIN")
-        self.refused(lr, {"PATH": self.path_with_git_only(lr)}, "claude is not on PATH")
+        self.refused(lr, {"KIT_CLAUDE_VERSION": "2.1.100"}, "below the kit floor")             # the whole command, once
+        self.setup_refuses(lr, {"KIT_CLAUDE_VERSION": "banana"}, "cannot be read")
+        self.setup_refuses(lr, {"KIT_CLAUDE_BIN": os.path.join(lr.home, "nope")}, "not an executable file")
+        env = dict(lr.env)
+        env.pop("KIT_CLAUDE_BIN")
+        d = os.path.join(lr.home, "pathdir")                                                    # a PATH with git (loopctl needs it) and nothing named claude
+        os.makedirs(d)
+        os.symlink(shutil.which("git"), os.path.join(d, "git"))
+        drv = lr.driver_at("A", begin=False)
+        drv.env = dict(env, PATH=d)
+        with self.assertRaises(launch.LaunchRefused) as cm:
+            drv.setup()
+        self.assertIn("claude is not on PATH", str(cm.exception))
 
     def test_a_version_above_the_tested_maximum_refuses_at_l3(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"autonomy_level": "L3"})
@@ -166,7 +177,7 @@ class Guards(DriverTestCase):
         for c in lr.calls():
             self.assertEqual(c["env"], {"CLAUDECODE": None, launch.ENV_HARNESS: None, "AWS_ACCESS_KEY_ID": None, "GH_TOKEN": None, "GITHUB_TOKEN": None, "SSH_AUTH_SOCK": None,
                                         "ANTHROPIC_API_KEY": "sk-ant-fake", "KIT_CLAUDE_VERSION": "2.1.302", "HOME": lr.home})
-        text = open(lr.calls_log).read() + json.dumps(lr.rs.read_events("loopctl"))
+        text = read_text(lr.calls_log) + json.dumps(lr.rs.read_events("loopctl"))
         self.assertNotIn("AKIAFAKEFAKEFAKEFAKE", text)
         self.assertNotIn("sk-ant-fake", json.dumps(lr.rs.read_events("loopctl")))               # and the event log never records a secret
 

@@ -9,6 +9,7 @@ from ... import SCRIPTS_DIR  # noqa: F401
 
 import json
 
+from kitlib import config as kconfig
 from loopctl import driver
 
 from . import DriverTestCase, item_doc
@@ -62,11 +63,12 @@ class Reviews(DriverTestCase):
 
     def test_which_reviewers_run(self):
         plain, risky = item_doc("A", estimate=ENG), item_doc("A", estimate=ENG, riskClass="high")
+        lr = self.dr(items=[plain])
+        drv = lr.driver_at("A", begin=False)
         for mode, item, want in (("off", plain, ["code-reviewer"]), ("off", risky, ["code-reviewer"]), ("sensitive", plain, ["code-reviewer"]),
                                  ("sensitive", risky, ["code-reviewer", "security-reviewer"]), ("every_item", plain, ["code-reviewer", "security-reviewer"])):
             with self.subTest(mode=mode, risk=item.get("riskClass")):
-                lr = self.dr(items=[item], cfg={"security_review": mode})
-                drv = lr.driver_at("A", begin=False)
+                drv.cfg = kconfig.load_text("```yaml\nsecurity_review: %s\n```\n" % mode)
                 self.assertEqual(drv.review_roles(item), want)
 
 

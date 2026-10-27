@@ -10,7 +10,7 @@ import unittest
 
 from ... import SCRIPTS_DIR  # noqa: F401
 
-from loopctl import gates
+from loopctl import driver, gates
 from loopctl.gates import GateResult
 
 from . import DriverTestCase, item_doc, render_config
@@ -111,22 +111,25 @@ class Happy(DriverTestCase):
         self.assertEqual((r.rc, json.loads(r.out)["outcome"], json.loads(r.out)["children"]), (0, "complete", 0), r)
         self.assertEqual(len(lr.calls()), 4)
 
-    def test_a_gate_that_is_off_is_not_run_or_recorded_and_one_that_is_not_installed_is_skipped(self):
+    def test_a_gate_that_is_off_is_not_run_or_recorded_one_not_installed_is_skipped_and_a_report_mode_failure_does_not_block(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"gates": {"g6": "off", "g9": "report"}})
         lr.stubs.results["g9"] = GateResult.failed([{"id": "g9.new-dep", "severity": "warn", "message": "left-pad added"}])
-        lr.set_scenario(lr.happy())
-        lr.approve()
+        drv = lr.driver_at("A", "design_review", "building", "verifying")
         real = gates.installed
         gates.installed = lambda: [n for n in real() if n != "g11"]                          # g11 "is not installed" (whatever Phase 4b ships)
         self.addCleanup(setattr, gates, "installed", real)
-        self.assertEqual(lr.run().rc, 0)
+        results = drv.run_gates("A", driver.VERIFY_GATES)
         names = lr.stubs.names()
-        self.assertNotIn("g6", names)
+        self.assertNotIn("g6", names)                                                         # the runner skips an `off` gate without calling it ...
         self.assertNotIn("g11", names)
         self.assertIn("g9", names)
-        self.assertNotIn("g6", lr.item("A")["gates"])
-        g9 = lr.item("A")["gates"]["g9"]
-        self.assertEqual((g9["mode"], g9["status"], g9["blocking"]), ("report", "fail", False))   # a report-mode gate that fails is recorded and does not block
+        it = lr.item("A")
+        self.assertNotIn("g6", it["gates"])                                                   # ... and an `off` gate writes nothing
+        self.assertNotIn("g11", it["gates"])
+        g9 = it["gates"]["g9"]
+        self.assertEqual((g9["mode"], g9["status"], g9["blocking"]), ("report", "fail", False))
+        self.assertFalse(drv.gate_failure("A", results, "verifying"))                         # a report-mode gate that fails is recorded and does not block
+        self.assertEqual(lr.item("A")["status"], "verifying")
 
     def test_an_env_failure_from_g0_parks_the_item_caps_the_level_and_launches_nothing(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)])

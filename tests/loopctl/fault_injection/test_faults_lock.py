@@ -19,10 +19,10 @@ from ...helpers import ProcessTracker
 from ...helpers.procs import wait_for
 
 from kitlib import runstate
-from loopctl import driver, lock as lock_mod
+from loopctl import driver, lock as lock_mod, startrun
 from loopctl.gates import GateResult
 
-from . import DriverTestCase, item_doc
+from . import DriverTestCase, item_doc, read_text
 
 ENG = {"loc": 100, "engineers": ["backend-engineer"]}
 
@@ -90,7 +90,7 @@ class Contention(DriverTestCase):
         lr.approve()
 
         def steal():
-            wait_for(lambda: os.path.exists(pidfile) and open(pidfile).read().strip(), 10)
+            wait_for(lambda: read_text(pidfile), 10)
             self.intruder(lr)
         t = threading.Thread(target=steal)
         t.start()
@@ -121,6 +121,11 @@ class StaleLock(DriverTestCase):
         with open(lr.rs.lock_path, "w") as fh:
             json.dump(base, fh)
 
+    def lock_check(self, lr):
+        """The `lock` row of `run`'s preflight: what `loopctl run` would decide about the lock, without starting anything."""
+        rows = {p["id"]: p for p in startrun.preflight(lr.context(), None, None)}
+        return rows["lock"]["ok"], rows["lock"]["message"]
+
     def test_only_the_lock_of_a_dead_driver_on_this_host_is_taken_over(self):
         lr = self.lr()
         refused = {
@@ -135,26 +140,30 @@ class StaleLock(DriverTestCase):
         for name, rec in refused.items():
             with self.subTest(name):
                 self.put(lr, **rec)
-                r = lr.run()
-                self.assertEqual(r.rc, 3, (name, r))
-                self.assertIn("another session", r.err)
-                self.assertEqual(lr.calls(), [])
+                ok, msg = self.lock_check(lr)
+                self.assertFalse(ok, name)
+                self.assertIn("another session", msg)
                 self.assertEqual(lr.rs.read_lock()["runId"], "run-old")                        # untouched
         for name, text in (("an unparsable lock", "{broken"), ("a lock that is JSON null", "null"), ("a lock that is a list", "[1]")):
             with self.subTest(name):
                 with open(lr.rs.lock_path, "w") as fh:
                     fh.write(text)
-                r = lr.run()
-                self.assertEqual(r.rc, 3, (name, r))
+                self.assertFalse(self.lock_check(lr)[0], name)
                 with open(lr.rs.lock_path) as fh:
                     self.assertEqual(fh.read(), text)
+        self.put(lr, driverPid=os.getpid())
+        r = lr.run()                                                                           # and the command itself says no, touching nothing
+        self.assertEqual(r.rc, 3, r)
+        self.assertIn("another session", r.err)
+        self.assertEqual(lr.calls(), [])
 
     def test_a_dead_drivers_lock_is_taken_over_at_once_whatever_its_heartbeat_says(self):
         lr = self.lr()
         for beat in ("2020-01-01T00:00:00Z", runstate.now_iso()):                           # ancient, and a second ago
             self.put(lr, heartbeat=beat)
-            r = lr.run("--dry-run")
-            self.assertIn("takes it over", r.out, beat)
+            ok, msg = self.lock_check(lr)
+            self.assertTrue(ok, beat)
+            self.assertIn("takes it over", msg, beat)
 
     def test_two_takers_cannot_both_win(self):
         lr = self.lr()

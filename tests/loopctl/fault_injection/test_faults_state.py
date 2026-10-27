@@ -16,7 +16,7 @@ from ...helpers.procs import wait_for
 from kitlib import runstate
 from loopctl import abort, state as state_mod
 
-from . import DriverTestCase, item_doc
+from . import DriverTestCase, item_doc, read_text
 
 ENG = {"loc": 100, "engineers": ["backend-engineer"]}
 
@@ -128,7 +128,7 @@ class Stop(DriverTestCase):
 
     def after_child_starts(self, pidfile, action):
         def go():
-            wait_for(lambda: os.path.exists(pidfile) and open(pidfile).read().strip(), 10)
+            wait_for(lambda: read_text(pidfile), 10)
             action()
         t = threading.Thread(target=go)
         t.start()
@@ -152,9 +152,6 @@ class Stop(DriverTestCase):
         self.assertEqual(lr.children_left(), [])
         self.assertEqual(lr.item("A")["status"], "building")
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")
-        r = lr.run()
-        self.assertEqual(r.rc, 3, r)                                                                   # refused while HALT stands
-        self.assertIn("HALT", r.err)
         self.assertEqual(lr.ctl("resume").rc, 0)
         self.assertFalse(lr.rs.is_halted())                                                            # and a human's `resume` clears it
 

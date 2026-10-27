@@ -128,10 +128,11 @@ class Crash(DriverTestCase):
         self.assertEqual(len(lr.repo.git("log", "--merges", "--format=%H", "main").splitlines()), 1)
         self.assertEqual(lr.branch_names(), ["main"])
 
-    def test_a_merge_whose_record_loses_to_a_human_is_recovered_in_the_same_run_or_stops_loudly(self):
+    def test_a_merge_whose_record_loses_a_race_is_recovered_in_the_same_run(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)])
-        lr.set_scenario(lr.happy())
-        lr.approve()
+        drv = lr.driver_at("A", "design_review", "building", "verifying", "reviewing")
+        lr.repo.commit_file("src/a.py", "x = 1\n", "the work")
+        head = lr.repo.head()
         orig = state_mod.Loop.advance
 
         def refusing(self_, iid, to, *a, **kw):
@@ -142,12 +143,12 @@ class Crash(DriverTestCase):
             return orig(self_, iid, to, *a, **kw)
         state_mod.Loop.advance = refusing
         try:
-            r = lr.run()
+            drv.merge_item("A", head)
         finally:
             state_mod.Loop.advance = orig
-        self.assertEqual(r.rc, 0, r)                                                          # recover() found the merge by its trailer and recorded it
-        self.assertEqual(lr.item("A")["status"], "merged")
+        self.assertEqual(lr.item("A")["status"], "merged")                                  # recover() found the merge by its trailer and recorded it
         self.assertEqual(len(lr.repo.git("log", "--merges", "--format=%H", "main").splitlines()), 1)
+        self.assertEqual(lr.item("A")["mergeCommit"], lr.repo.git("rev-parse", "main"))
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ from ... import REPO_ROOT, SCRIPTS_DIR
 from ...helpers import bins
 from .. import LoopRepo, LoopTestCase, Result, item_doc  # noqa: F401
 
+from kitlib import runstate
 from loopctl import common, driver, gates, launch
 from loopctl.gates import GateResult
 
@@ -47,6 +48,15 @@ def render_config(overrides=None):
             lines.append("%s: %s" % (k, v))
     lines += ["```", ""]
     return "\n".join(lines)
+
+
+def read_text(path: str) -> str:
+    """The file's text, or '' if it is not there (yet): for polling a pid file a fake child writes."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return ""
 
 
 def agent_file(role: str) -> str:
@@ -105,14 +115,16 @@ class GateStubs(object):
 class DriverRepo(LoopRepo):
     def __init__(self, items: Optional[List[Dict[str, Any]]] = None, cfg: Optional[Dict[str, Any]] = None, scenario: Optional[Dict[str, Any]] = None,
                  agents: Sequence[str] = AGENT_NAMES, milestones: Optional[List[str]] = None, timing: Optional[Dict[str, float]] = None) -> None:
-        super(DriverRepo, self).__init__(items=items, tier2=True, milestones=milestones)
+        super(DriverRepo, self).__init__(items=items, tier2=True, milestones=milestones, commit=False)       # one commit for everything, below
         self.cfg_text = render_config(cfg)
+        self.write_plan(self.items)
         self.repo.write(".claude/loop.config.md", self.cfg_text)
+        self.repo.write(".gitignore", "")
         for a in agents:
             self.repo.write(".claude/agents/%s.md" % a, agent_file(a))
-        self.commit_all("config and agents")
+        self.commit_all("plan, config and agents")
         self.base = self.repo.head()
-        self.rs = self.context().rs
+        self.rs = runstate.RunState(self.repo.common_dir())
         self.claude = bins.install_fake_claude(os.path.join(self.home, "bin"), {})
         self.calls_log = os.path.join(self.home, "calls.jsonl")
         self.env["KIT_CLAUDE_BIN"] = self.claude
@@ -178,7 +190,7 @@ class DriverRepo(LoopRepo):
         """A Driver (not started) on a held lock, with `iid` begun on its branch and walked through `stages` (for tests of one step)."""
         loop = self.fast_start()
         run = self.rs.read_run()
-        drv = driver.Driver(loop.ctx, loop, run, False)
+        drv = driver.Driver(loop.ctx, loop, run, False, out=io.StringIO())              # the narration goes nowhere
         drv.ib = "main"
         drv.anchor = self.base
         drv.binary = self.claude
