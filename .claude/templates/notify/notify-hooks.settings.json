@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Merge the `hooks` block into your .claude/settings.json (or settings.local.json) in one reviewed commit (H6). INTERACTIVE sessions only: do not add it to a driver child's",
+    "profile (a child is told about its own stops by the driver). Every hook runs the human's `notify_command` through .claude/scripts/notify.py and sends nothing itself.",
+    "The hook event names Notification, StopFailure and PermissionRequest and the fields of their input are unverified on the pinned CLI (probe); notify.py reads only",
+    "hook_event_name, notification_type and tool_name from the input, never its free text, and does nothing when no notify_command is configured."
+  ],
+  "hooks": {
+    "Notification": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py\" --hook", "timeout": 30}]}
+    ],
+    "StopFailure": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py\" --hook", "timeout": 30}]}
+    ],
+    "PermissionRequest": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py\" --hook", "timeout": 30}]}
+    ]
+  }
+}

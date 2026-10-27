@@ -1,0 +1,40 @@
+{
+  "_comment": "Copy to results/<run_id>.json and fill in. This file is ignored by summarize.py. kind=run needs status, kit, conditions, wall_time_min, items, rescues, failures, defects_escaped. For kind=replay delete those and fill agent_type, source_run and replayed_dispatches instead. See docs/baseline/README.md for what each field means and the rescue taxonomy.",
+  "schema": "baseline-result.v1",
+  "kind": "run",
+  "run_id": "run-1",
+  "date": "2026-01-01",
+  "status": "aborted",
+  "cannot_finish_reason": null,
+  "kit": {
+    "tag": "v1.2.0",
+    "commit": "cb6218fceb914ba437e5e95ee5f5edabc12b427d",
+    "claude_version": "",
+    "model": ""
+  },
+  "conditions": {
+    "sandbox": true,
+    "cloud_credentials": false,
+    "observation_hook": true,
+    "demo_capability": "http_check",
+    "python3": "",
+    "notes": ""
+  },
+  "wall_time_min": 0,
+  "active_time_min": null,
+  "spend_usd": null,
+  "tool_calls": null,
+  "permission_prompts": null,
+  "checkpoint_approvals": 0,
+  "items": [
+    {"id": "F1", "status": "pending", "retries": 0, "block_reason": null},
+    {"id": "F2", "status": "pending", "retries": 0, "block_reason": null},
+    {"id": "F3", "status": "pending", "retries": 0, "block_reason": null}
+  ],
+  "rescues": [],
+  "failures": [],
+  "defects_escaped": {"checked": false, "failed_ac_ids": []},
+  "dispatches": {},
+  "transcript_ref": null,
+  "notes": ""
+}

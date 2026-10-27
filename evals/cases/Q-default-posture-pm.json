@@ -1,0 +1,26 @@
+{
+  "id": "Q-default-posture-pm",
+  "class": "quality",
+  "setup": {
+    "fixture": "empty-repo",
+    "mode": null
+  },
+  "prompt": "We need users to be able to export their data.",
+  "graders": [
+    {
+      "type": "tool_not_used",
+      "tool": "Agent"
+    },
+    {
+      "type": "tool_not_used",
+      "tool": "edit"
+    },
+    {
+      "type": "regex",
+      "target": "final",
+      "pattern": "\\?"
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}

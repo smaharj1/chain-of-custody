@@ -22,7 +22,7 @@ Local-first is a deliberate choice. Verification, demos, and the whole checkpoin
 
 When the deploy milestone arrives and you've been developing on the default SQLite: set `DATABASE_URL` to your Postgres instance, regenerate the migrations for the Postgres dialect, and re-run your seed. The ORM re-emits them and the design keeps schemas dialect-portable, so this is low-friction, but it is a regeneration rather than a reuse. Budget an item for it instead of treating it as a config flip.
 
-If you're a beginner who deleted the infra agent (as [choosing-your-stack.md](choosing-your-stack.md) suggests), start with a managed platform in the Vercel / Railway / Supabase class, where deploy is "connect the repo and push." Re-add `infra-engineer` and `context/infra.md` when you have real infrastructure-as-code to manage.
+If you're a beginner who deleted the infra agent (as [choosing-your-stack.md](../.claude/context/choosing-your-stack.md) suggests), start with a managed platform in the Vercel / Railway / Supabase class, where deploy is "connect the repo and push." Re-add `infra-engineer` and `context/infra.md` when you have real infrastructure-as-code to manage.
 
 ## Monorepo or multiple repos?
 
@@ -58,6 +58,6 @@ If your runner genuinely can't report a count, wrap it in a small script that fa
 
 **API-only or CLI tool:** delete the app agents (`app-engineer.md`, `admin-app-engineer.md`) and `context/shared-frontend.md`. Nothing else needs rewiring, since the loop's Backend→frontend dispatch gate never fires when no frontend agent exists in the roster. Keep the `api-contract.md` template but treat it as a generic *interface* contract: endpoints for an API, commands/flags/exit codes for a CLI.
 
-**Mobile:** the frontend agents are web-oriented, but the patterns transfer. Duplicate and adjust `app.md` (and the agent file) for React Native or your framework, per [choosing-your-stack.md](choosing-your-stack.md). The one real gap is the auto-demo: the loop screenshots a browser route and there's no simulator equivalent, so mobile items' demo targets fall back to what the loop can verify, usually an endpoint assertion or a named passing test, and you check the simulator yourself at checkpoints.
+**Mobile:** the frontend agents are web-oriented, but the patterns transfer. Duplicate and adjust `app.md` (and the agent file) for React Native or your framework, per [choosing-your-stack.md](../.claude/context/choosing-your-stack.md). The gap is the auto-demo, which screenshots a browser route. Where your session has an iOS Simulator tool, the loop can launch the build in the Simulator and screenshot the screen for the demo. Where it doesn't, mobile items' demo targets fall back to what the loop can verify, usually an endpoint assertion or a named passing test, and you check the simulator yourself at checkpoints.
 
 **Desktop apps, data pipelines, games:** same principle. The team structure and the loop are shape-agnostic; only the *demo target* changes. Where a web item's acceptance is "this route renders X," yours is a command that exits 0 with expected output, or a test asserting the pipeline produced the right rows. As long as each item has a falsifiable local assertion, the verify gate works unchanged.

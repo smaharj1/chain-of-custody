@@ -1,0 +1,19 @@
+{
+  "enableAllProjectMcpServers": false,
+  "enabledMcpjsonServers": [],
+  "permissions": {
+    "deny": [
+      "mcp__*__run_script",
+      "mcp__*deploy*",
+      "mcp__*apply*",
+      "mcp__*destroy*",
+      "mcp__*terminate*",
+      "mcp__*provision*",
+      "mcp__*rollout*",
+      "mcp__*change_set*",
+      "mcp__*__create_stack",
+      "mcp__*__update_stack",
+      "mcp__*__delete_stack"
+    ]
+  }
+}

@@ -1,0 +1,254 @@
+# infra-plan: the PREVIEW plan for a pull request (report section 8.2, section 8.4, RC-3, RC-4).
+#
+# Install as .github/workflows/infra-plan.yml. Nothing in this workflow applies anything. The plan that is
+# applied is made again from `main` after merge (infra-apply.yml); this one is a preview comment only.
+#
+# It starts only by a human act: an approver applies the `plan-ok` label, or runs this workflow by hand
+# (workflow_dispatch). The bot has no `actions` scope and label-guard.yml strips the label from anyone not in
+# factory_approvers; this workflow checks the approver again itself (gate.py authorize) and refuses bots.
+# A new commit on the pull request removes the label, so the plan is always of what the human looked at.
+#
+# Jobs, each with only what it needs:
+#   authorize   no credentials. Approver check; resolves the PR and its head sha.
+#   fetch       no credentials. Downloads the PR source at the approved sha as an archive (never `git checkout`s it in
+#               this privileged trigger). Source policy before init and again after init; packs the source and records
+#               its sha256.
+#   plan        OIDC, plan-only role, environment `plan-preview`. Verifies the pack hash, repeats the policy, then runs
+#               `terraform plan -lock=false` with its output discarded (a plan prints values). A plan EXECUTES provider
+#               and module code from the PR, which is why it sits behind the human gate and the source policy; the
+#               plan-only role is the remaining limit. It writes a summary of resource addresses and actions only, with
+#               the base ref's gate.py. The plan file and the plan JSON never leave this job.
+#   comment     no OIDC, no PR code. Posts that summary on the pull request.
+#
+# Repository variables: FACTORY_APPROVERS (same logins as factory_approvers), FACTORY_BOT_LOGIN (the bot's login),
+# INFRA_PLAN_ROLE_ARN (the plan-only role; see .claude/templates/security/oidc/aws-plan-preview.trust.json),
+# AWS_REGION. Environment `plan-preview` needs no reviewers (the human gate is the label). Set TF_ROOT below.
+name: infra-plan
+
+on:
+  pull_request_target:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Number of the pull request to preview
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-plan-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  TF_ROOT: infra
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+
+jobs:
+  reset:
+    if: ${{ github.event_name == 'pull_request_target' && github.event.action == 'synchronize' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Remove plan-ok after new commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: gh api -X DELETE "repos/$REPO/issues/$NUMBER/labels/plan-ok" || true
+
+  authorize:
+    if: ${{ (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'plan-ok') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - name: Checkout main (trusted scripts)
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Require an approver who is not a bot
+        env:
+          APPROVERS: ${{ vars.FACTORY_APPROVERS }}
+          BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          SENDER: ${{ github.event.sender.login || github.actor }}
+        run: python3 .claude/scripts/infra/gate.py authorize --actor "$ACTOR" --actor "$TRIGGERING_ACTOR" --actor "$SENDER" --approvers "$APPROVERS" --bot "$BOT_LOGIN"
+      - name: Require refs/heads/main for a dispatch
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: python3 .claude/scripts/infra/gate.py require-main-ref --ref "$GITHUB_REF"
+      - name: Resolve the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT" = workflow_dispatch ]; then number="$INPUT_PR"; else number="$EVENT_PR"; fi
+          case "$number" in ''|*[!0-9]*) echo "not a pull request number" >&2; exit 1 ;; esac
+          info="$(gh api "repos/$REPO/pulls/$number" --jq '[.state, .base.ref, .head.sha] | @tsv')"
+          state="$(printf '%s' "$info" | cut -f1)"
+          base="$(printf '%s' "$info" | cut -f2)"
+          head="$(printf '%s' "$info" | cut -f3)"
+          if [ "$EVENT" = pull_request_target ]; then head="$EVENT_HEAD"; fi
+          [ "$state" = open ] || { echo "pull request $number is not open" >&2; exit 1; }
+          [ "$base" = main ] || { echo "pull request $number does not target main" >&2; exit 1; }
+          case "$head" in *[!0-9a-f]*|'') echo "bad head sha" >&2; exit 1 ;; esac
+          [ "${#head}" -eq 40 ] || { echo "bad head sha" >&2; exit 1; }
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head" >> "$GITHUB_OUTPUT"
+
+  fetch:
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      source_sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - name: Checkout main (trusted scripts and policy)
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          path: base
+          persist-credentials: false
+      - name: Download the pull request source at the approved sha, as an archive (data only, no checkout)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
+        run: |
+          set -eu
+          mkdir pr
+          gh api "repos/$REPO/tarball/$HEAD_SHA" > pr.tgz
+          tar --no-same-owner --no-same-permissions -xzf pr.tgz -C pr --strip-components=1
+      - name: Source policy, before terraform runs
+        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: terraform init without a backend
+        run: terraform -chdir="pr/$TF_ROOT" init -backend=false -lockfile=readonly
+      - name: Source policy on the downloaded modules
+        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init
+      - name: Pack the source that passed
+        id: pack
+        run: |
+          set -eu
+          tar --exclude=.git --exclude=.terraform -czf source.tgz -C pr .
+          echo "sha256=$(python3 base/.claude/scripts/infra/gate.py hash-file source.tgz)" >> "$GITHUB_OUTPUT"
+      - name: Keep the pack for the plan job
+        uses: actions/upload-artifact@v4 # pin to SHA
+        with:
+          name: infra-source
+          path: source.tgz
+          retention-days: 1
+
+  plan:
+    needs: [authorize, fetch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: plan-preview
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout main (trusted scripts and policy)
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: main
+          path: base
+          persist-credentials: false
+      - name: Fetch the pack
+        uses: actions/download-artifact@v4 # pin to SHA
+        with:
+          name: infra-source
+      - name: Verify the pack is the one that passed policy
+        env:
+          EXPECTED: ${{ needs.fetch.outputs.source_sha256 }}
+        run: python3 base/.claude/scripts/infra/gate.py verify-hash --file source.tgz --sha256 "$EXPECTED"
+      - name: Unpack as data
+        run: |
+          set -eu
+          mkdir pr
+          tar --no-same-owner --no-same-permissions -xzf source.tgz -C pr
+      - name: Source policy again, on what will be planned
+        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: terraform init without a backend or credentials
+        run: terraform -chdir="pr/$TF_ROOT" init -backend=false -lockfile=readonly
+      - name: Source policy on the downloaded modules, before any credential exists
+        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init
+      - name: Assume the plan-only role
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-plan-preview
+          role-duration-seconds: 3600
+      - name: terraform init with the backend
+        run: terraform -chdir="pr/$TF_ROOT" init -lockfile=readonly
+      - name: terraform plan, preview only, no lock because the plan-only role cannot write one
+        run: |
+          set -eu
+          terraform -chdir="pr/$TF_ROOT" plan -lock=false -out=tfplan -no-color > /dev/null
+          terraform -chdir="pr/$TF_ROOT" show -json tfplan > plan.json
+      - name: Summarise without values, with the base ref's script
+        run: python3 base/.claude/scripts/infra/gate.py plan-summary --plan-json plan.json --title "Infrastructure plan preview" > summary.md
+      - name: Hand only the values-free summary to the comment job
+        uses: actions/upload-artifact@v4 # pin to SHA
+        with:
+          name: infra-plan-summary-${{ github.run_id }}
+          path: summary.md
+          retention-days: 1
+
+  comment:
+    needs: [authorize, plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Fetch the summary
+        uses: actions/download-artifact@v4 # pin to SHA
+        with:
+          name: infra-plan-summary-${{ github.run_id }}
+      - name: Post or update the preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ needs.authorize.outputs.number }}
+        run: |
+          set -eu
+          existing="$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate --jq '[.[] | select(.body | contains("kit:infra-plan-preview")) | .id] | first // empty')"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$existing" -F body=@summary.md
+          else
+            gh api -X POST "repos/$REPO/issues/$NUMBER/comments" -F body=@summary.md
+          fi

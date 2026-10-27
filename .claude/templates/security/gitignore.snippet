@@ -1,0 +1,27 @@
+# Secrets policy (Chain of Custody report section 5.4). Append to your .gitignore.
+# Local env files hold dev and test values only; deployed environments use a secret manager.
+.env*
+!.env.example
+
+# Keys and credentials never belong in the repo.
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+.netrc
+.pypirc
+.git-credentials
+
+# Infrastructure state and local plans can hold secrets.
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfplan
+crash.log
+
+# Per-user settings and local runtime state the kit writes.
+.claude/settings.local.json
+.claude/worktrees/

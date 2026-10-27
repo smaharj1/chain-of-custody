@@ -1,0 +1,36 @@
+{
+  "case": "Q-default-posture-pm",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "Before designing anything: which data should be exported (profile, bookings, both)? In which format? Who may export, and how often?",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Before designing anything: which data should be exported (profile, bookings, both)? In which format? Who may export, and how often?",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Before designing anything: which data should be exported (profile, bookings, both)? In which format? Who may export, and how often?",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "Dispatching the backend engineer now.",
+      "tool_calls": [
+        {
+          "tool": "Agent",
+          "input": {
+            "subagent_type": "backend-engineer",
+            "prompt": "build export"
+          }
+        }
+      ],
+      "files": []
+    }
+  ]
+}

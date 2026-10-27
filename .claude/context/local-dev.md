@@ -18,10 +18,11 @@
 
 ## Local Database
 
-<!-- The default local store and how it's configured. Example: -->
-<!-- - SQLite by default — file at ./.data/dev.db (no setup needed) -->
-<!-- - Connection via DATABASE_URL in .env.local -->
-<!-- - To switch to Postgres later: set DATABASE_URL to a Postgres URL; migrations regenerate per-dialect -->
+<!-- The local store MUST be the production engine (dialect parity, DEC-8; rules in .claude/context/local-dev-rules.md). -->
+<!-- In-process build of the production dialect first, then a container. SQLite only if production is SQLite or libSQL. Example for a Postgres prod: -->
+<!-- - Postgres 16 in-process (PGlite or embedded-postgres), data in ./.data/pgdata, no Docker needed -->
+<!-- - Connection via DATABASE_URL in .env.local (dev-only value, never a production URL) -->
+<!-- - If neither an in-process engine nor Docker is available: the doctor reports an error and the plan is capped at L1 -->
 
 ## Apply Migrations to the Durable Dev DB
 
@@ -49,19 +50,23 @@
 ## Ephemeral Per-Item DB
 
 <!-- How the loop creates a throwaway DB for each item's verification. Example: -->
-<!-- - SQLite: copy ./.data/dev.db to a temp file, point DATABASE_URL at it, delete after verify -->
+<!-- - Postgres: CREATE DATABASE item_$ID TEMPLATE <seeded>, point DATABASE_URL at it, drop it after verify (seconds) -->
+<!-- - SQLite (only if production is SQLite): copy the .db file to a temp path, point DATABASE_URL at it, delete after verify -->
 <!-- - The throwaway DB is how a failed item's schema changes are discarded for free -->
 
 ## Verify-Run Harness
 
 <!-- How `verify_run` produces an EXIT CODE from a dev command that never exits on its own. -->
-<!-- The canonical pattern: boot in background → poll the demo route with a timeout → assert -->
-<!-- with curl → capture the exit code as runExit → kill the server. Example: -->
+<!-- The canonical pattern (L-27, .claude/context/local-dev-rules.md): check the dedicated verify ports are free → boot in its OWN -->
+<!-- process group → wait for the demo route with a deadline (no sleep loops) → assert with curl → capture the exit code as -->
+<!-- runExit → kill the whole group. A bare `pnpm dev & ... kill $pid` leaks the child servers and their ports. Example: -->
 <!-- ```bash -->
-<!-- pnpm dev & pid=$! -->
-<!-- for i in $(seq 30); do curl -sf http://localhost:5173/ >/dev/null && break; sleep 1; done -->
-<!-- curl -sf http://localhost:5173/<demo-target-route>; rc=$? -->
-<!-- kill $pid -->
+<!-- set -m                                       # job control: the background job gets its own process group -->
+<!-- for port in 5183 3011; do lsof -ti "tcp:$port" >/dev/null && { echo "port $port busy" >&2; exit 2; }; done -->
+<!-- WEB_PORT=5183 API_PORT=3011 pnpm dev & pid=$!   # under set -m, pid is also the group id -->
+<!-- trap 'kill -TERM -- "-$pid" 2>/dev/null' EXIT   # kills pnpm AND the servers it spawned -->
+<!-- curl -sf --retry 30 --retry-connrefused --retry-delay 1 http://localhost:5183/ >/dev/null -->
+<!-- curl -sf http://localhost:5183/<demo-target-route>; rc=$? -->
 <!-- exit $rc -->
 <!-- ``` -->
 <!-- Replace <demo-target-route> per item (its falsifiable acceptance assertion's route/endpoint). -->
@@ -80,3 +85,5 @@
 <!-- - Auth: dev mode with a seeded test user (no real provider needed to log in) -->
 <!-- - Payments: Stripe test mode keys -->
 <!-- - Email: logged to console instead of sent -->
+<!-- Secrets: test keys and dev values only, in .env.local / .env.test (gitignored); never committed, never in briefs or reports. -->
+<!-- Production secrets are never on this machine. Policy: docs/security/secrets-policy.md -->

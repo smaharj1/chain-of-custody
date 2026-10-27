@@ -1,0 +1,5 @@
+{
+  "name": "probe13",
+  "version": "0.0.1",
+  "description": "V13 probe plugin: a hook, an agent and a command. Probe use only."
+}

@@ -1,0 +1,68 @@
+# Paths that tools/check-refs.py may find mentioned in markdown without a matching file.
+# One fnmatch pattern per line, matched against the repo-relative path. Keep this short:
+# every entry needs a reason. Run `python3 tools/check-refs.py --list-unused-allow` to prune.
+
+# Runtime files the v1 loop creates in a user's project; they are gitignored, so never tracked here.
+.claude/loop.jsonl
+.claude/metrics.jsonl
+.claude/orchestrate.lock
+.claude/settings.local.json
+.claude/worktrees
+.claude/worktrees/*
+
+# Files that live in a user's project, not in the kit (the docs tell the user to create them).
+docs/tech_spec.md
+docs/features
+docs/features/*
+
+# Historical CHANGELOG entries naming files that were moved or renamed since.
+docs/design/loop-engineering.md
+
+# Human-committed evidence gate (IMP-1): absent in the kit repo by design, so docs may name it.
+docs/baseline/evidence.json
+
+# The hello-loop fixture's kit-overlay primers name files of the fixture project (the run's root), not the kit repo.
+tests/helpers.py
+tests/test_health.py
+tests/test_migrate.py
+
+# 0b-prose: files that live in a user's project, not in the kit.
+.claude/launch.json
+docs/domain-glossary.md
+
+# 0b-prose: moved to .claude/context/choosing-your-stack.md (IMP-20). CHANGELOG entries are history;
+# docs/getting-started.md is a hot file the conductor updates at merge (see changelog.d/0b-prose.md).
+docs/choosing-your-stack.md
+
+
+# Probe harness (IMP-7): paths inside a scratch repo (tools/probes/files/ copies them there), the results file the
+# human creates from the template, and paths of later phases that docs/design/probe-assumptions.md marks "(planned)".
+.claude/probe/*
+docs/design/probe-results.md
+.claude/scripts/guards*
+.claude/scripts/loopctl.py
+.claude/rules*
+.claude/skills*
+.claude/templates/settings*
+tests/guards*
+tests/loopctl*
+tests/boundary*
+tools/check-skills.py
+tools/evals*
+docs/security/managed-settings.md
+docs/security/platform-requirements.md
+
+# 6-infra-ci: files the infra CI templates are installed as, in the user's project (not in the kit repo).
+.github/workflows/infra-*.yml
+.claude/infra-policy.json
+
+# 11a-bootstrap-ops: files /bootstrap writes in a user's project (never tracked in the kit repo), and the deferred-designs file the release stage writes.
+.claude/bootstrap-receipt.json
+.claude/bootstrap-receipt.json.lock
+.claude/bootstrap/*
+.claude/pr/
+.claude/skills/launch-app/*
+.github/workflows/intake.yml
+.github/workflows/dependency-check.yml
+.github/workflows/smoke.yml
+docs/design/deferred.md

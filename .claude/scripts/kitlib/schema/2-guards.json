@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "phase": "2-guards",
+  "sections": [
+    {
+      "id": "guards",
+      "title": "Guards (report section 7). Read by .claude/scripts/guards/",
+      "comment": [],
+      "example_title": "Guards"
+    }
+  ],
+  "keys": [
+    {
+      "name": "roster",
+      "type": "map",
+      "default": {},
+      "owner_phase": "2-guards",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "guards",
+      "doc": [
+        "extra subagent roles the guards should know, as role: engineer | critic (CS-39).",
+        "  The built-in roster (the kit's own agent names) needs no entry. A role that is not on the roster is treated",
+        "  as an engineer (agent-blind default); a `<plugin>:` prefix on agent_type is stripped before matching."
+      ]
+    },
+    {
+      "name": "protected_branches",
+      "type": "list",
+      "default": ["main", "master"],
+      "owner_phase": "2-guards",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "guards",
+      "doc": [
+        "branches that are shared: no edits to app source while checked out, no push, no force-delete, no hard-reset onto them.",
+        "  main and master are always protected, whatever this says."
+      ]
+    },
+    {
+      "name": "integration_branch",
+      "type": "string",
+      "default": "",
+      "owner_phase": "2-guards",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "guards",
+      "doc": [
+        "the loop's integration branch, if you use one (DEC-2). Protected like main. Empty = none."
+      ]
+    },
+    {
+      "name": "main_edit_allow",
+      "type": "list",
+      "default": [],
+      "owner_phase": "2-guards",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "guards",
+      "doc": [
+        "extra path globs that may be edited while on a protected branch (repo-relative, `**` crosses directories).",
+        "  Built in: docs/**, plan files, README/CHANGELOG/GLOSSARY/LICENSE/.gitignore, CLAUDE.md and .claude/context/**.",
+        "  There is no allow-list for the rest of .claude/** (report section 7.1)."
+      ]
+    }
+  ]
+}

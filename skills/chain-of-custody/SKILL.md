@@ -7,6 +7,8 @@ metadata:
 
 # Chain of Custody
 
+> **Advisory runtime.** Outside Claude Code this workflow is guidance, not enforcement. The kit's guards, subagents and unattended loop run only in Claude Code. The parity table is in `AGENTS.md`; read it before relying on this.
+
 Use this skill when the current project contains the Chain of Custody workflow
 under `.claude/`. The `.claude/` files are canonical; this skill is only the
 Codex discovery and routing layer.
@@ -38,3 +40,9 @@ surface missing or conflicting requirements rather than guessing.
 If `.claude/` is absent, do not pretend this workflow is active; use the
 project's available instructions or explain that the kit must be installed
 first.
+
+## Parity
+
+Codex does not load `.claude/agents/`, does not run the kit's git and edit hooks, and
+must not run the unattended `/orchestrate` loop. For an independent review, use a separate
+session. The full parity table is in `AGENTS.md`.

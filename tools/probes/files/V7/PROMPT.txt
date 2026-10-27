@@ -1,0 +1,2 @@
+== dispatch ==
+Dispatch the subagent probe-v7 with exactly this prompt: "NONCE-V7-91c4: follow your instructions." Do nothing else. When it returns, reply with one line: v7 done.
