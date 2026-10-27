@@ -510,10 +510,16 @@ MUTATING_WORDS = {"create", "update", "delete", "remove", "put", "post", "send",
                   "dispatch", "reply", "comment", "react", "complete", "submit", "commit", "move", "rename", "copy", "replace", "clear",
                   "reset", "kill", "delete", "unsubscribe", "subscribe", "invite", "ban", "sign", "login", "logout", "install", "uninstall",
                   "enable", "disable", "configure", "provision", "scale", "migrate", "sync", "forward", "share", "transition", "close", "open"}
+# Verbs that make a tool a mutation only as the FIRST word of its name (`edit_file`, `purge_cache`, `email_user`); later in a name they are nouns or adjectives
+# (`read_email`, `get_edit_history`, `list_launch_templates`). Second review, R-A-6: the main-session check is still a denylist, so these close the reviewer's
+# examples and no more; an allowlist would ask on `slack_read_channel`, `suggest_time` and the browser tools.
+FIRST_WORD_MUTATING = {"edit", "save", "append", "purge", "rotate", "launch", "email", "mail", "erase", "wipe", "flush", "overwrite", "spawn", "mute", "unmute",
+                       "pin", "unpin", "star", "bookmark", "block", "unblock", "follow", "unfollow", "tag", "label", "mark", "note", "log", "record", "store",
+                       "emit", "notify"}
 
 
 # a tool that runs a command line or a script it is handed: the verb it performs is in an argument the guard cannot read
-GENERIC_EXEC_WORDS = {"call", "cli", "shell", "bash", "terminal", "eval"}
+GENERIC_EXEC_WORDS = {"call", "cli", "shell", "bash", "terminal", "eval", "python", "sh", "zsh", "powershell", "evaluate", "repl", "cmd"}
 
 
 def _split_words(s: str) -> List[str]:
@@ -540,7 +546,7 @@ def check_mcp(ctx: Ctx) -> Optional[Decision]:
     reads = bool(first) and any(first == p or first.startswith(p) for p in READ_PREFIXES) and first not in MUTATING_WORDS and \
         not any(w in MUTATING_WORDS or w in GENERIC_EXEC_WORDS for w in tail)
     generic = any(w in GENERIC_EXEC_WORDS for w in words)
-    mutating = (any(w in MUTATING_WORDS for w in words) and not reads) or generic
+    mutating = (any(w in MUTATING_WORDS for w in words) and not reads) or generic or first in FIRST_WORD_MUTATING
     if ctx.is_subagent:
         if reads:
             return None
