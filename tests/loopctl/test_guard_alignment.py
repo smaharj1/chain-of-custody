@@ -24,6 +24,9 @@ READS = [
     # Phase 10: the learning loop's reads
     ["retro"], ["retro", "--json"], ["retro", "--milestone", "M1"], ["harness"], ["harness", "--json"], ["gaps"], ["gaps", "--json", "--min", "1"],
     ["calibration", "report"], ["calibration", "scan"], ["calibration", "report", "--json"], ["report", "scan"], ["report", "scan", "--json"],
+    # Phase 11b: the extras' reads
+    ["merge-class", "A"], ["merge-class", "A", "--paths", "docs/a.md", "--json"], ["remote-lock", "status"], ["remote-lock", "status", "--json"],
+    ["claim", "list"], ["claim", "show", "A"], ["manifest", "show"], ["manifest", "verify", "latest", "--expect-hash", "abc"],
 ]
 # commands (with typical arguments) the table calls writes
 WRITES = [
@@ -35,6 +38,10 @@ WRITES = [
     ["gaps", "--write"], ["gaps", "--min", "1", "--write"], ["calibration", "scan", "--write"], ["calibration", "report", "--write"],
     ["calibration", "record", "--blocker", "bk-000000000000", "--outcome", "fixed", "--by", "Pat"], ["calibration"], ["calibration", "frobnicate"],
     ["retro", "--write"], ["harness", "--apply"], ["gaps", "--force"],
+    # Phase 11b: the extras' writes
+    ["remote-lock", "acquire"], ["remote-lock", "renew"], ["remote-lock", "release"], ["remote-lock", "steal", "--host-dead"], ["remote-lock", "status", "--force"],
+    ["claim", "take", "F1", "--by", "Pat"], ["claim", "release", "F1", "--by", "Pat"], ["claim", "show", "F1", "--force"], ["claim"], ["remote-lock"], ["manifest"],
+    ["manifest", "write", "F1"], ["manifest", "verify", "latest", "--write"], ["merge-class", "F1", "--apply"],
 ]
 
 
@@ -142,7 +149,7 @@ class ReadsWriteNothing(LoopTestCase):
         lr = self.lr(tier2=False)
         lr.repo.write("build-plan.json", json.dumps({"goal": "g", "items": [{"id": "F1", "milestone": "M", "title": "t", "slug": "s", "size": "S", "dependsOn": [],
                                                                             "intent": "i", "acceptance": ["AC-F1-1: `x` returns 200"], "requiresEnv": []}]}))
-        for args in ([a for a in READS if a[0] not in ("audit", "abort", "report")]):
+        for args in ([a for a in READS if a[0] not in ("audit", "abort", "report", "remote-lock", "claim", "manifest", "merge-class")]):       # the extras' reads have their own tests (they refuse, rc 3, without the opt-in)
             r = lr.ctl(*args)
             self.assertIn(r.rc, (0, 1, 3), (args, r))
             if r.rc == 3:

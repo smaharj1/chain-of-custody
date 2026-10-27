@@ -48,7 +48,7 @@ from kitlib import evidence, gitutil, jsonio, levels, runstate
 from . import common, ledger, plan as plan_mod, state as state_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED
 
-__all__ = ["SCHEMA", "wanted", "rows", "ready", "Supervisor", "attach", "assess", "watch_once", "estimate_killed_cost", "demotion_of", "DEMOTION_REASONS",
+__all__ = ["SCHEMA", "wanted", "rows", "notify_row", "watch_row", "ready", "Supervisor", "attach", "assess", "watch_once", "estimate_killed_cost", "demotion_of", "DEMOTION_REASONS",
            "classify_outcome", "next_step"]
 
 SCHEMA = "loopctl.unattended.v1"
@@ -62,7 +62,7 @@ WATCH_FRESH_S = 900.0
 TIMING_ENV = "KIT_DRIVER_TEST_TIMING"
 
 # outcome (Driver.outcome) -> (notification kind, level)
-_WAITING = ("awaiting_human", "checkpoint", "stopped_by_human", "delivery")
+_WAITING = ("awaiting_human", "checkpoint", "stopped_by_human", "delivery", "claimed")
 _NEXT = {
     "cost_unknown": "check the cost field, then run loopctl approve cost --by NAME",
     "budget_run_80": "run loopctl approve cost --by NAME to accept the rest",
@@ -134,6 +134,23 @@ def evidence_row(ctx: Any) -> Dict[str, Any]:
     return _row("evidence", True, "the evidence gate passed (attested by %s)" % common.clean_text((st.data or {}).get("attested_by"), 40))
 
 
+def notify_row(cfg: Any, env: Any, repo: str, common_dir: str) -> Dict[str, Any]:
+    """Is `notify_command` usable (no shell, a real program outside the repository)? Pure: the start check and the doctor's L4 prerequisite share it."""
+    ok, why = notify_mod.configured(notify_mod.settings_from_config(cfg), env, notify_mod.forbidden_roots(repo, common_dir))
+    return _row("notify", ok, "notify_command is usable" if ok else "%s: a run that cannot reach you does not start" % why)
+
+
+def watch_row(rs: Any, now: Optional[float] = None) -> Dict[str, Any]:
+    """Has the external watchdog (`loopctl unattended watch`, from cron or launchd) checked in within WATCH_FRESH_S? Shared with the doctor's L4 prerequisite."""
+    wt = read_watch(rs)
+    t = time.time() if now is None else now
+    age = t - float(wt.get("ts", 0)) if wt and isinstance(wt.get("ts"), (int, float)) and not isinstance(wt.get("ts"), bool) else None
+    fresh = age is not None and 0 <= age < WATCH_FRESH_S
+    return _row("watch", fresh, "the external watchdog checked in %ds ago" % int(age) if fresh else
+                "no external watchdog has checked in within %d minutes: schedule `loopctl unattended watch` every 5 minutes (cron or launchd); a driver that is "
+                "killed cannot notify anyone, so a run nobody watches does not start" % (WATCH_FRESH_S // 60))
+
+
 def default_level(ctx: Any) -> Optional[str]:
     """The doctor's effective level, or None against the test double (the doctor would describe a fake machine; the driver does the same)."""
     from . import launch
@@ -163,8 +180,7 @@ def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optiona
     out.append(_row("budget", not missing and spent.ok, ("run_budget_usd and day_budget_usd are set" if not missing else "%s not set: nobody is watching the spend, so a ceiling is required" % " and ".join(missing))
                     if not missing and spent.ok else (("the spend ledger says stop: %s" % common.clean_text("; ".join(spent.reasons), 200)) if spent is not None else
                     "%s not set: nobody is watching the spend, so a ceiling is required" % " and ".join(missing))))
-    ok, why = notify_mod.configured(notify_mod.settings_from_config(cfg), ctx.env, notify_mod.forbidden_roots(ctx.repo, ctx.rs.common_dir))
-    out.append(_row("notify", ok, "notify_command is usable" if ok else "%s: a run that cannot reach you does not start" % why))
+    out.append(notify_row(cfg, ctx.env, ctx.repo, ctx.rs.common_dir))
     fn = level_fn or default_level
     try:
         eff = fn(ctx)
@@ -198,12 +214,7 @@ def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optiona
             out.append(_row("work", True, "next: %s" % (approved[0] if approved else (inflight[0] + " (left in flight; recovery resets it)" if inflight else eligible[0]))))
         else:
             out.append(_row("work", False, "nothing can run: %s" % (("%s waits for a human" % waiting[0]) if waiting else "no item is eligible (done, parked or waiting on a dependency)")))
-    wt = read_watch(ctx.rs)
-    age = time.time() - float(wt.get("ts", 0)) if wt and isinstance(wt.get("ts"), (int, float)) else None
-    fresh = age is not None and 0 <= age < WATCH_FRESH_S
-    out.append(_row("watch", fresh, "the external watchdog checked in %ds ago" % int(age) if fresh else
-                    "no external watchdog has checked in within %d minutes: schedule `loopctl unattended watch` every 5 minutes (cron or launchd); a driver that is "
-                    "killed cannot notify anyone, so a run nobody watches does not start" % (WATCH_FRESH_S // 60)))
+    out.append(watch_row(ctx.rs))
     return out
 
 

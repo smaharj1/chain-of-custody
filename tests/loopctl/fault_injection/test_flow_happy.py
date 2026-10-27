@@ -91,7 +91,7 @@ class Happy(DriverTestCase):
         self.assertNotIn("REWORK", calls[0]["stdin"])
         # gates: phase order per item, on the item's own diff, with the run's one config
         names = lr.stubs.names()
-        per_item = ["g0", "g5", "g1", "g3", "g6", "g9", "g11", "docs", "g7", "evidence"]
+        per_item = ["g0", "g5", "g1", "g3", "g6", "g9", "g11", "docs", "g10", "g7", "evidence"]
         self.assertEqual(names, per_item + per_item)
         by_item = {}
         for c in lr.stubs.calls:
@@ -101,7 +101,7 @@ class Happy(DriverTestCase):
         self.assertTrue(all(c["cfg"] is lr.stubs.calls[0]["cfg"] for c in lr.stubs.calls))   # one config object: the run's anchor, never the branch's
         self.assertEqual(len({c["head"] for c in by_item["A"][1:8]}), 1)                      # the verify gates all judged one head
         self.assertEqual(st.items["A"]["review"]["code"], "approved")
-        self.assertEqual(set(st.items["A"]["gates"]), {"g0", "g1", "g3", "g5", "g6", "g7", "g9", "g11", "docs", "evidence", "reviews"})
+        self.assertEqual(set(st.items["A"]["gates"]), {"g0", "g1", "g3", "g5", "g6", "g7", "g9", "g11", "docs", "g10", "evidence", "reviews"})
         # the event log
         evs = {e["event"] for e in lr.rs.read_events("loopctl") if e.get("source") == "driver"}
         for e in ("start", "begin", "gate", "advance", "launch", "child_done", "engineer_report", "merged"):

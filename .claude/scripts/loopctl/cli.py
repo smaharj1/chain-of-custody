@@ -10,10 +10,12 @@ in step (a test compares them).
         run --dry-run   abort --dry-run   unattended check|status|promotion|intake (without --write)
         parallel check|status|leases   (and `parallel cleanup|cascade --dry-run`)
         retro   harness   gaps (without --write)   calibration report|scan (without --write)   report scan      (Phase 10, the learning loop)
+        merge-class   remote-lock status   claim list|show   manifest show|verify      (Phase 11b, the extras; merge-class merges nothing)
 
     TIER 1 WRITES (work with `loopctl_tier2: false`)
         lock acquire|release|steal   migrate-plan --write   halt   resume   unattended watch|notify-test|intake --write
         parallel cleanup --apply (cascade --apply also needs Tier 2)   gaps --write   calibration scan --write|record
+        remote-lock acquire|renew|release|steal   claim take|release   manifest write      (Phase 11b; OPT-IN, evidence-gated, advisory)
 
     TIER 2 WRITES (refuse unless `loopctl_tier2: true` in the BASE sha's loop.config; OPT-IN, IMP-1)
         approve  begin  advance  fail  clarify  park  gate  spend  run  abort  reconcile --apply
@@ -41,13 +43,14 @@ from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlErr
 
 __all__ = ["main", "READ_COMMANDS", "FLAG_READ", "TIER1_WRITES", "TIER2_WRITES", "classification"]
 
-READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version", "retro", "harness", "gaps")
+READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version", "retro", "harness", "gaps", "merge-class")
 # command -> flags that make an otherwise-writing command read-only (and the flags that always make it a write)
 FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
              "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake"),
-             "parallel": ("check", "status", "leases", "--dry-run"), "calibration": ("report", "scan")}
+             "parallel": ("check", "status", "leases", "--dry-run"), "calibration": ("report", "scan"),
+             "remote-lock": ("status",), "claim": ("list", "show"), "manifest": ("show", "verify")}
 WRITE_FLAGS = ("--apply", "--write", "--force")
-TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended", "parallel", "calibration")
+TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended", "parallel", "calibration", "remote-lock", "claim", "manifest")
 TIER2_WRITES = ("approve", "begin", "advance", "fail", "clarify", "park", "gate", "spend", "run", "abort", "reconcile")
 
 
@@ -1041,12 +1044,33 @@ def cmd_harness(args: List[str], env: Mapping[str, str], out: Out) -> int:
     return commands.cmd_harness(args, env, out)
 
 
+def cmd_remote_lock(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from . import extras
+    return extras.cmd_remote_lock(args, env, out)
+
+
+def cmd_claim(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from . import extras
+    return extras.cmd_claim(args, env, out)
+
+
+def cmd_merge_class(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from . import extras
+    return extras.cmd_merge_class(args, env, out)
+
+
+def cmd_manifest(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from . import extras
+    return extras.cmd_manifest(args, env, out)
+
+
 COMMANDS = {
     "validate": cmd_validate, "status": cmd_status, "render": cmd_render, "doctor": cmd_doctor, "audit": cmd_audit, "report": cmd_report,
     "help": cmd_help, "version": cmd_version, "evidence": cmd_evidence, "cost": cmd_cost, "migrate-plan": cmd_migrate_plan, "lock": cmd_lock,
     "halt": cmd_halt, "resume": cmd_resume, "approve": cmd_approve, "begin": cmd_begin, "advance": cmd_advance, "fail": cmd_fail,
     "clarify": cmd_clarify, "park": cmd_park, "gate": cmd_gate, "spend": cmd_spend, "reconcile": cmd_reconcile, "abort": cmd_abort, "run": cmd_run,
     "unattended": cmd_unattended, "parallel": cmd_parallel, "retro": cmd_retro, "gaps": cmd_gaps, "calibration": cmd_calibration, "harness": cmd_harness,
+    "remote-lock": cmd_remote_lock, "claim": cmd_claim, "merge-class": cmd_merge_class, "manifest": cmd_manifest,
 }
 
 

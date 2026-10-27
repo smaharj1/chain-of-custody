@@ -67,6 +67,15 @@ quick_lane_max_loc: 30           # largest quick-lane change that may skip revie
 # writes drafts under the git directory and prints the commands a human runs (H6). Read from the BASE sha, never from the branch under judgement (CO-11).
 report_trailers: warn            # warn first; block when `loopctl report scan` says the streak is clean
 
+# --- Loopctl extras ---
+# OPT-IN and evidence-gated: `remote_lock`, `merge_policy: auto-low-risk` and `gates.g10` refuse until docs/baseline/evidence.json passes.
+# Read from the BASE sha, never from the branch under judgement (CO-11).
+merge_policy: human              # keep a person as the merger (the only setting that merges anything)
+g10_a11y_cmd: python3 tools/g10-a11y.py   # your wrapper (the kit bundles no tool)
+g10_perf_cmd: tools/g10-perf.sh  # your wrapper (the kit bundles no tool)
+g10_pii_cmd: python3 tools/g10-pii.py   # your wrapper (the kit bundles no tool)
+g10_observability_cmd: python3 tools/g10-obs.py   # your wrapper (the kit bundles no tool)
+
 # --- Delivery ---
 # Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the
 # work and prints the exact commands; the human runs them (IMP-25).

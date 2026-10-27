@@ -194,6 +194,34 @@ gaps_min_occurrences: 2          # `loopctl gaps` drafts a rule or primer change
 calibration_min_samples: 5       # `loopctl calibration report` judges a critic's precision only after this many logged blockers with a final outcome; before that it says `pending`.
 harness_min_item_runs: 10        # `loopctl harness` names a gate a removal candidate only after it has run on at least this many items without once blocking or catching anything.
 
+# --- Loopctl extras (report 6.2 L5, 9 G10, 10.3 remote lock, F-25, F-26; python3 .claude/scripts/loopctl remote-lock|claim|manifest|merge-class) ---
+# OPT-IN and evidence-gated: `remote_lock`, `merge_policy: auto-low-risk` and `gates.g10` refuse until docs/baseline/evidence.json passes.
+# Read from the BASE sha, never from the branch under judgement (CO-11).
+merge_policy: human              # human | auto-low-risk   (report 6.2 L5, DEC-3). Who merges. `human` (the default, and the only value that does anything in this kit): a person merges
+                                 #   every pull request. `auto-low-risk` is the L5 opt-in: it makes `loopctl merge-class` able to call an item ELIGIBLE (docs and copy only, never an
+                                 #   always_human_paths file, never on a repo that deploys on main without a human gate). It is a classifier input, not a switch: NO command in this kit
+                                 #   merges anything, and `gh pr merge` stays denied to every agent. The doctor refuses it until the evidence gate and the promotion bar pass.
+low_risk_paths: [docs/**, "**/*.md"]   # L5 only. Globs of the files an item may touch and still be called low-risk (documents, copy). A file that matches always_human_paths, the deploy-surface
+                                 #   floor or the kit's own never-list (migrations, auth, payments, infra, .github/, .claude/, lockfiles, CI and test config) is never low-risk, whatever this says.
+remote_lock: ""                  # OPT-IN, EXPERIMENTAL. Name of the git remote that holds refs/loopctl/lock/<plan>: one run per plan across machines (report 10.3, RC-10, RC-12). Empty = off
+                                 #   (the local run lock alone). ADVISORY coordination, not a boundary: anyone with contents: write can move or delete the ref. A remote name, never a URL.
+                                 #   Refuses to enable until the evidence gate passes. A driver run takes it at start and keeps it with a heartbeat (lock_stale_min is its time limit).
+claim_ttl_h: 72                  # Hours a human's claim on a plan item (refs/loopctl/claim/<plan>/<item>, `loopctl claim take`) lasts before anyone may take it over (F-25). Needs remote_lock.
+                                 #   The driver skips an item someone else has claimed; it never takes a claim itself.
+g10_a11y_cmd: ""                 # G10 only. Your program for accessibility on the changed routes (axe, Lighthouse, pa11y, ...). Run WITHOUT a shell: write the program and its arguments only (no pipes, redirects, `$VAR` or `;`;
+                                 #   wrap those in a script of yours). Environment: LOOPCTL_G10_SCOPE = a JSON file listing the changed non-test files. It must print one JSON object on its
+                                 #   last output line: {"schema": "g10.v1", "check": "a11y", "checked": N, "violations": N}. violations must be 0 and checked at least 1. Empty = this check is not run.
+g10_perf_cmd: ""                 # G10 only. Your program for the performance budget (Lighthouse CI, a bundle-size check, ...). Run WITHOUT a shell: write the program and its arguments only (no pipes, redirects, `$VAR` or `;`;
+                                 #   wrap those in a script of yours). Environment: LOOPCTL_G10_SCOPE = a JSON file listing the changed non-test files. It must print one JSON object on its
+                                 #   last output line: {"schema": "g10.v1", "check": "perf", "checked": N, "violations": N}. violations must be 0 and checked at least 1. Empty = this check is not run.
+g10_pii_cmd: ""                  # G10 only. Your program for PII tagging of the new fields (a schema scan of your own). Run WITHOUT a shell: write the program and its arguments only (no pipes, redirects, `$VAR` or `;`;
+                                 #   wrap those in a script of yours). Environment: LOOPCTL_G10_SCOPE = a JSON file listing the changed non-test files. It must print one JSON object on its
+                                 #   last output line: {"schema": "g10.v1", "check": "pii", "checked": N, "violations": N}. violations must be 0 and checked at least 1. Empty = this check is not run.
+g10_observability_cmd: ""        # G10 only. Your program for a log, metric or trace for each new endpoint. Run WITHOUT a shell: write the program and its arguments only (no pipes, redirects, `$VAR` or `;`;
+                                 #   wrap those in a script of yours). Environment: LOOPCTL_G10_SCOPE = a JSON file listing the changed non-test files. It must print one JSON object on its
+                                 #   last output line: {"schema": "g10.v1", "check": "observability", "checked": N, "violations": N}. violations must be 0 and checked at least 1. Empty = this check is not run.
+g10_timeout_s: 600               # G10 only. Seconds before a g10_*_cmd's process group is killed.
+
 # --- Guards (report section 7). Read by .claude/scripts/guards/ ---
 roster: {}                       # extra subagent roles the guards should know, as role: engineer | critic (CS-39).
                                  #   The built-in roster (the kit's own agent names) needs no entry. A role that is not on the roster is treated
@@ -267,6 +295,8 @@ gates:
   g4: off                        # on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G4 mutation testing: the changed lines are mutated and the acceptance tests
                                  #   must kill at least mutation_min percent. Tool-agnostic: you supply mutation_cmd. Refuses `on` and `report` until the evidence
                                  #   gate has passed (docs/baseline/evidence.json, `python3 .claude/scripts/loopctl evidence --check`). Other gates default to on.
+  g10: off                       # on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G10 product checks (accessibility, performance budget, PII, observability): you supply the commands (g10_*_cmd);
+                                 #   no tool is bundled. Refuses `on` and `report` until the evidence gate has passed. Other gates default to on.
 g5_ast_lint: []                  # OPT-IN, EXPERIMENTAL (IMP-1). Languages the G5 test-integrity AST lint runs for: python (stdlib ast, trustworthy), javascript
                                  #   (regex heuristic, report-only, low confidence). Empty = only the G5 path-glob check runs. Needs the evidence gate.
 heldout_cmd: ""                  # G3 held-out acceptance tests, runner: driver only. Run in the item's worktree with LOOPCTL_HELDOUT_DIR (the item's directory under

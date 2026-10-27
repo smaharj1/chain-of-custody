@@ -1550,5 +1550,501 @@
 "why": "only the reads pass while HALT is set",
 "rule": "guard-halt:halted",
 "halt": true
+},
+{
+"id": "loopctl-186",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl merge-class F1",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-187",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl merge-class F1 --paths docs/a.md --json",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-188",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock status",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-189",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock status --json",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-190",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim list",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-191",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim show F1",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-192",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl manifest show",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-193",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl manifest verify latest --expect-hash abc",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-194",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl manifest verify --file x.json",
+"expect": "allow",
+"why": "a read command, or a read flag"
+},
+{
+"id": "loopctl-195",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock acquire",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-196",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock release",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-197",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock renew",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-198",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock steal --host-dead",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-199",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock steal --corrupt",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-200",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim take F1 --by bob",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-201",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim take F1 --by bob --override",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-202",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim release F1 --by bob",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-203",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl manifest write F1",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-204",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl manifest write",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-205",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl remote-lock acquire",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-206",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl claim take F1 --by bob",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-207",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl manifest write F1",
+"expect": "deny",
+"why": "a write the registered conductor alone may make",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-208",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock status --force",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-209",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim show F1 --force",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-210",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim list --write",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-211",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl manifest verify latest --write",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-212",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl manifest show --apply",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-213",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl --json claim take F1",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-214",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl -x remote-lock acquire",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-215",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl merge-class F1 --apply",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-216",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl manifest",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-217",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl claim",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-218",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl remote-lock",
+"expect": "deny",
+"why": "a write flag, or an option before the command, turns a read into a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-219",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl remote-lock acquire",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-220",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl claim take F1 --by bob",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-221",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl manifest write F1",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-222",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl remote-lock status",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-223",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl merge-class F1",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-224",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl merge-class F1",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-225",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl remote-lock status",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-226",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl claim list",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-227",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl manifest verify latest",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-228",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl remote-lock acquire",
+"expect": "deny",
+"why": "only the reads pass while HALT is set",
+"rule": "guard-halt:halted",
+"halt": true
+},
+{
+"id": "loopctl-229",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl claim take F1 --by bob",
+"expect": "deny",
+"why": "only the reads pass while HALT is set",
+"rule": "guard-halt:halted",
+"halt": true
+},
+{
+"id": "loopctl-230",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl manifest write F1",
+"expect": "deny",
+"why": "only the reads pass while HALT is set",
+"rule": "guard-halt:halted",
+"halt": true
+},
+{
+"id": "loopctl-231",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "gh pr merge 5 --auto --squash",
+"expect": "deny",
+"why": "gh pr merge is denied to every agent: merges are made by a human (merge_policy: human)",
+"rule": "guard-git:gh-pr-merge"
+},
+{
+"id": "loopctl-232",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "gh pr merge --auto",
+"expect": "deny",
+"why": "gh pr merge is denied to every agent: merges are made by a human (merge_policy: human)",
+"rule": "guard-git:gh-pr-merge"
+},
+{
+"id": "loopctl-233",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "gh pr merge 5 --rebase --delete-branch",
+"expect": "deny",
+"why": "gh pr merge is denied to every agent: merges are made by a human (merge_policy: human)",
+"rule": "guard-git:gh-pr-merge"
+},
+{
+"id": "loopctl-234",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "gh pr merge 5 --auto --squash",
+"expect": "deny",
+"why": "gh pr merge is denied to every agent: merges are made by a human (merge_policy: human)",
+"rule": "guard-git:gh-pr-merge"
+},
+{
+"id": "loopctl-235",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "gh pr merge --auto",
+"expect": "deny",
+"why": "gh pr merge is denied to every agent: merges are made by a human (merge_policy: human)",
+"rule": "guard-git:gh-pr-merge"
+},
+{
+"id": "loopctl-236",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "gh pr merge 5 --rebase --delete-branch",
+"expect": "deny",
+"why": "gh pr merge is denied to every agent: merges are made by a human (merge_policy: human)",
+"rule": "guard-git:gh-pr-merge"
+},
+{
+"id": "loopctl-237",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "git push origin refs/loopctl/claim/demo/F1",
+"expect": "deny",
+"why": "refs/loopctl/* is pushed only by loopctl, from its own process",
+"rule": "guard-git:push-refspec",
+"config": {
+"delivery": "push-branch"
+}
+},
+{
+"id": "loopctl-238",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "git push origin HEAD:refs/loopctl/lock/demo",
+"expect": "deny",
+"why": "refs/loopctl/* is pushed only by loopctl, from its own process",
+"rule": "guard-git:push-refspec",
+"config": {
+"delivery": "push-branch"
+}
+},
+{
+"id": "loopctl-239",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "git push --force-with-lease=refs/loopctl/lock/demo: origin HEAD:refs/loopctl/lock/demo",
+"expect": "deny",
+"why": "refs/loopctl/* is pushed only by loopctl, from its own process",
+"rule": "guard-git:push-refspec",
+"config": {
+"delivery": "push-branch"
+}
+},
+{
+"id": "loopctl-240",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "git push origin :refs/loopctl/lock/demo",
+"expect": "deny",
+"why": "a delete of refs/loopctl/* is refused too",
+"rule": "guard-git:push-delete",
+"config": {
+"delivery": "push-branch"
+}
 }
 ]

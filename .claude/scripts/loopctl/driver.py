@@ -33,7 +33,7 @@ every event, `stop_hooks` are asked with HALT and the lock, `cost_hook` may supp
 once however the run ended. `tick` is the poll function (the unattended supervisor wraps it to record a sign of life).
 
 WHAT IS NOT BUILT HERE (deferred, with where it goes): pushing a branch or opening a PR (the human's `pr_prepare` commands; see unattended.py),
-parallel items (Phase 8), the remote lock (Phase 11).
+parallel items (Phase 8). The remote lock and claims (Phase 11b, `remote_lock.py`) attach through `stop_hooks` and `item_filters`.
 
 Config and plan come from the run's start base sha for the whole run (CO-11); a gate gets `base_sha` = the item's branch point so
 that its diff is the item's own.
@@ -62,7 +62,7 @@ SCHEMA = "loopctl.driver.v1"
 ENGINEER_ORDER = ("infra-engineer", "database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer")
 PRE_GATES = ("g0",)
 STUB_GATES = ("g2",)
-VERIFY_GATES = ("g5", "g1", "g3", "g6", "g9", "g11", "docs")      # g5 first: a test-integrity hit makes the rest pointless; docs (Phase 10) is `report` by default
+VERIFY_GATES = ("g5", "g1", "g3", "g6", "g9", "g11", "docs", "g10")      # g5 first: a test-integrity hit makes the rest pointless; docs (Phase 10) is `report` by default; g10 (Phase 11b) is `off` unless opted in
 REVIEW_GATES = ("g7",)
 MAX_ITERATIONS = 200                                      # per item: a runaway backstop, not a tuning knob
 
@@ -269,6 +269,12 @@ class Driver(object):
         self.cost_hook = None  # type: Optional[Callable[[Any, float], Optional[Tuple[Dict[str, Any], str]]]]
         self.tick = self.hb.tick      # type: Callable[[], Optional[str]]
         self.supervisor = None  # type: Any
+        self.item_filters = []  # type: List[Callable[[List[str]], List[str]]]       # Phase 11b: items other people have claimed (remote_lock.ClaimsFilter)
+        self.held_back = []  # type: List[str]                                         # what the filters removed from the last choice
+        keeper = getattr(ctx, "remote_keeper", None)
+        if keeper is not None:                              # set by startrun.start when `remote_lock` is configured; imported only then
+            from . import remote_lock
+            remote_lock.attach(self, keeper)
         if self.cfg.get("autonomy") == "unattended":       # imported only then: an ordinary run does not load the notifier
             from . import unattended
             unattended.attach(self)
@@ -590,7 +596,7 @@ class Driver(object):
                 self.outcome = "awaiting_human"
                 self.say("item %s is waiting for a human (`loopctl status --pending-human`); approve it and run again" % waiting[0])
                 return EXIT_OK
-            eligible = st.eligible(order, deps)
+            eligible = self.eligible_now(st, order, deps)
             if not eligible:
                 return self.end_of_plan(st)
             iid = eligible[0]
@@ -607,6 +613,16 @@ class Driver(object):
                 return EXIT_FINDINGS
             # "retry": a discard left the item pending; the next round picks it up as attempt n+1
 
+    def eligible_now(self, st: Any, order: Sequence[str], deps: Dict[str, List[str]]) -> List[str]:
+        """The items the run may start: eligible in the state, minus what a filter removes (Phase 11b: an item another person has claimed)."""
+        out = st.eligible(order, deps)
+        self.held_back = []
+        for f in self.item_filters:
+            kept = f(out)
+            self.held_back += [i for i in out if i not in kept]
+            out = kept
+        return out
+
     def end_of_plan(self, st: Any) -> int:
         counts = st.counts()
         left = [i for i, r in st.items.items() if r["status"] not in state_mod.TERMINAL]
@@ -617,6 +633,10 @@ class Driver(object):
             return EXIT_OK
         stuck = [i for i in left if st.items[i]["status"] in state_mod.RESTING]
         self.outcome = "deadlock" if not stuck else "parked"
+        if self.held_back and not stuck:
+            self.outcome = "claimed"
+            self.say("nothing else can run: %s claimed by someone else (`loopctl claim list`); ask them, or `loopctl claim take --override`" % ", ".join(sorted(set(self.held_back), key=common.natural_key)[:6]))
+            return EXIT_FINDINGS
         self.say("nothing is eligible: %s" % ("; ".join("%s %s (%s)" % (i, st.items[i]["status"], st.items[i].get("blockReason")) for i in sorted(stuck, key=common.natural_key)[:6])
                                               or "every remaining item waits on a dependency"))
         return EXIT_FINDINGS

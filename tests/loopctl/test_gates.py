@@ -97,16 +97,16 @@ class Runner(Base):
         self.assertEqual((res["status"], res["failure_class"]), ("fail", "item"))
 
     def test_opt_in_gates_default_to_off_and_evidence_gated_ones_refuse_to_run(self):
-        # a stand-in named g10: the real g4 is also refused at the config level (the registry gates `gates.g4`), which tests/loopctl/gates covers
+        # a stand-in named g8 (not a real gate): the real g4 and g10 are also refused at the config level (the registry gates `gates.g4` and `gates.g10`), which tests/loopctl/gates covers
         lr = self.started()
         ran = []
-        gates.register(mod("g10", run=lambda ctx: ran.append(1) or GateResult("pass"), DEFAULT_MODE="off", EVIDENCE_GATED=True))
+        gates.register(mod("g8", run=lambda ctx: ran.append(1) or GateResult("pass"), DEFAULT_MODE="off", EVIDENCE_GATED=True))
         _, gctx = self.ctx_for(lr)
-        res = gates.run_gate("g10", gctx)
+        res = gates.run_gate("g8", gctx)
         self.assertEqual((res["mode"], res["status"], ran), ("off", "skipped", []))
-        lr2 = self.started(extra_cfg="gates:\n  g10: on")
+        lr2 = self.started(extra_cfg="gates:\n  g8: on")
         _, gctx = self.ctx_for(lr2)
-        res = gates.run_gate("g10", gctx)
+        res = gates.run_gate("g8", gctx)
         self.assertEqual((res["status"], res["blocking"], ran), ("error", True, []))
         self.assertEqual(res["findings"][0]["id"], "gate.evidence-required")
         # once the human commits a complete evidence file the gate runs
@@ -116,7 +116,7 @@ class Runner(Base):
             "real_feature": {"id": "f", "completed": True}, "attested_by": "Pat"}))
         _, gctx = self.ctx_for(lr2)
         self.assertTrue(gctx.evidence_passed)
-        self.assertEqual(gates.run_gate("g10", gctx)["status"], "pass")
+        self.assertEqual(gates.run_gate("g8", gctx)["status"], "pass")
 
     def test_findings_are_cleaned_and_capped(self):
         lr = self.started()
@@ -129,7 +129,7 @@ class Runner(Base):
 
     def test_an_unknown_or_broken_gate_is_a_clear_error(self):
         with self.assertRaises(gates.GateNotInstalled):
-            gates.get("g10")                    # deferred to Phase 11: never installed
+            gates.get("g8")                     # g8 is a view, not a gate: never installed
         with self.assertRaises(Exception):
             gates.register(types.SimpleNamespace(NAME="", OWNER_METRIC="x", run=None))
 

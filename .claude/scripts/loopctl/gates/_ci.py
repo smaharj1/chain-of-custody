@@ -1,7 +1,8 @@
-"""The CI halves of G3 (held-out) and G4 (mutation): what `heldout.yml` and `mutation.yml` run (report section 8.4, section 9, RC-6).
+"""The CI halves of G3 (held-out), G4 (mutation) and G10 (product checks): what `heldout.yml`, `mutation.yml` and `g10-product.yml` run (report section 8.4, section 9, RC-6).
 
     PYTHONPATH=<kit>/.claude/scripts python3 -m loopctl.gates._ci heldout  --repo DIR --base SHA --dir HELDOUT_DIR
     PYTHONPATH=<kit>/.claude/scripts python3 -m loopctl.gates._ci mutation --repo DIR --base SHA
+    PYTHONPATH=<kit>/.claude/scripts python3 -m loopctl.gates._ci g10      --repo DIR --base SHA
 
 `<kit>` is the kit EXTRACTED FROM THE BASE SHA by the workflow, never the pull request's copy. Config and plan are read at `--base`, so a pull
 request cannot change what is run or what is required (CO-11). The branch name (`HEAD_REF` in the environment, untrusted text, matched
@@ -26,7 +27,7 @@ from kitlib import evidence, gitutil
 
 from .. import branches, common
 from ..context import Context
-from . import g3_acceptance, g4_mutation, _lib
+from . import g10_product, g3_acceptance, g4_mutation, _lib
 
 
 def _annotate(level: str, title: str, message: str) -> None:
@@ -127,10 +128,40 @@ def cmd_mutation(args: argparse.Namespace) -> int:
     return 2 if res.status == "error" else 1
 
 
+def cmd_g10(args: argparse.Namespace) -> int:
+    ctx = _context(args)
+    iid = _item_for(ctx, args.head_ref or os.environ.get("HEAD_REF"))
+    if iid is None:
+        _annotate("notice", "g10", "not an item branch (feat/<slug>-a<n>): no product checks to run")
+        return 0
+    gctx = ctx.gate_context(iid, worktree=ctx.repo)
+    from . import mode_for
+    mode = mode_for(ctx.cfg, "g10", g10_product)
+    if mode == "off":
+        _annotate("notice", "g10", "gates.g10 is off at the base: nothing to run")
+        return 0
+    if not _base_evidence(ctx.repo, ctx.base_sha):
+        _annotate("error", "g10", "G10 is OPT-IN and evidence-gated: docs/baseline/evidence.json is not complete at the base (IMP-1)")
+        return 1
+    gctx.evidence_passed = True
+    res = g10_product.run(gctx)
+    for f in res.findings:
+        _annotate("error" if f["severity"] == "error" else "notice", "g10", f["message"])
+    if res.status == "pass":
+        _annotate("notice", "g10", res.evidence.get("summary", "passed"))
+        return 0
+    if res.status == "skipped":
+        return 0
+    if mode == "report":
+        _annotate("warning", "g10", "gates.g10 is report: the result is recorded, not blocking")
+        return 0
+    return 2 if res.status == "error" else 1
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    ap = argparse.ArgumentParser(prog="loopctl.gates._ci", description="CI halves of G3 (held-out) and G4 (mutation).")
+    ap = argparse.ArgumentParser(prog="loopctl.gates._ci", description="CI halves of G3 (held-out), G4 (mutation) and G10 (product checks).")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("heldout", cmd_heldout), ("mutation", cmd_mutation)):
+    for name, fn in (("heldout", cmd_heldout), ("mutation", cmd_mutation), ("g10", cmd_g10)):
         p = sub.add_parser(name)
         p.add_argument("--repo", default=".")
         p.add_argument("--base", required=True)
