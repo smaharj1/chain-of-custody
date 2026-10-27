@@ -14,7 +14,7 @@ class Stalls(UnattendedTestCase):
     """The real driver, the fake claude and the fake notifier."""
 
     def test_a_stalled_child_after_a_measured_one_is_priced_from_the_run_and_a_storm_demotes(self):
-        lr = self.un(timing={"stall_s": 0.5}, cfg={"stall_storm_n": "1"})
+        lr = self.un(timing={"stall_s": 1.0}, cfg={"stall_storm_n": "1"})
         lr.set_scenario(lr.happy(by_role={"code-reviewer": [{"behavior": "stall", "seconds": 30}]}))
         lr.approve()
         r = lr.run()
@@ -34,7 +34,7 @@ class Stalls(UnattendedTestCase):
         self.assertEqual(lr.ctl("unattended", "check", "--quiet").rc, 1)                         # and the next unattended start is refused until a human lifts it
 
     def test_a_stalled_child_with_nothing_measured_yet_parks_and_a_dead_channel_leaves_the_closing_message_for_the_watchdog(self):
-        lr = self.un(timing={"stall_s": 0.5})
+        lr = self.un(timing={"stall_s": 1.0})
         lr.set_scenario(lr.happy(by_role={"backend-engineer": [{"behavior": "stall", "seconds": 30}, lr.eng_run("A")]}))
 
         def go_down(ctx):

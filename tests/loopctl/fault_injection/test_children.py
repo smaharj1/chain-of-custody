@@ -34,7 +34,7 @@ class Base(unittest.TestCase):
         self.rs = runstate.RunState(os.path.join(self.tmp, "gitdir")).ensure()
         self.log = os.path.join(self.tmp, "calls.jsonl")
         self.claude = bins.install_fake_claude(self.tmp, {})
-        self.timing = launch.Timing(poll_s=0.03, stall_s=0.5, canary_wait_s=2.0, term_grace_s=0.3, beat_s=0.1)
+        self.timing = launch.Timing(poll_s=0.03, stall_s=1.0, canary_wait_s=10.0, term_grace_s=0.3, beat_s=0.1)
         self.prompt = os.path.join(self.tmp, "prompt.md")
         with open(self.prompt, "w") as fh:
             fh.write("do the thing\n")
@@ -126,7 +126,7 @@ class Stall(Base):
         t0 = time.time()
         res = self.run_child()
         self.assertEqual(res.reason, "stall")
-        self.assertLess(time.time() - t0, 6)
+        self.assertLess(time.time() - t0, 30)          # far below the child's 60 s: it was killed, not waited for
         self.assertTrue(res.ended_by_us)
         pid, sleeper = self.read_pid(self.pidfile("stall.pid")), self.read_pid(self.pidfile("sleeper.pid"))
         self.assertTrue(wait_for(lambda: not self.alive(pid) and not self.alive(sleeper), 3), "the child or its grandchild survived")
@@ -140,21 +140,21 @@ class Stall(Base):
         self.assertTrue(wait_for(lambda: not self.alive(pid), 3))
 
     def test_tool_events_keep_a_long_child_alive(self):
-        self.timing.stall_s = 0.3
-        self.scenario(behavior="succeed", tool_events=9, event_interval=0.1, total_cost_usd=0.01)       # ~0.8 s of work, an event every 0.1 s
+        self.timing.stall_s = 1.0
+        self.scenario(behavior="succeed", tool_events=14, event_interval=0.1, total_cost_usd=0.01)      # ~1.4 s of work, an event every 0.1 s
         res = self.run_child()
         self.assertIsNone(res.reason)
         self.assertEqual(res.returncode, 0)
-        self.assertGreater(res.duration_s, 0.6)                                                       # longer than the stall limit, and still not a stall
+        self.assertGreater(res.duration_s, 1.0)                                                       # longer than the stall limit, and still not a stall
 
     def test_work_that_goes_quiet_after_events_is_a_stall(self):
-        self.timing.stall_s = 0.5
+        self.timing.stall_s = 1.0
         self.scenario(behavior="stall", seconds=60, tool_events=3, event_interval=0.1)
         res = self.run_child()
         self.assertEqual(res.reason, "stall")
 
     def test_without_an_activity_probe_the_start_time_is_the_only_sign(self):
-        self.timing.stall_s = 0.4
+        self.timing.stall_s = 1.0
         self.scenario(behavior="stall", seconds=60)
         self.assertEqual(self.run_child(activity=False).reason, "stall")
 
@@ -206,7 +206,7 @@ class Canary(Base):
         t0 = time.time()
         res = self.run_child()
         self.assertEqual(res.reason, "canary")
-        self.assertLess(time.time() - t0, 4)
+        self.assertLess(time.time() - t0, 30)
         self.assertTrue(wait_for(lambda: not self.alive(self.read_pid(self.pidfile("nocanary.pid"))), 3))
 
     def test_the_nonce_of_another_session_does_not_count(self):

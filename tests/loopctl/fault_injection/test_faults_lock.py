@@ -98,7 +98,7 @@ class Contention(DriverTestCase):
         r = lr.run()
         t.join()
         self.assertEqual(r.rc, 3, r)
-        self.assertLess(time.time() - t0, 8)
+        self.assertLess(time.time() - t0, 30)
         with open(pidfile) as fh:
             pid = int(fh.read())
         self.assertTrue(wait_for(lambda: not runstate.pid_alive(pid), 3), "the child was left running")

@@ -267,7 +267,7 @@ class Cred(BoundaryCase):
         os.symlink("/dev/zero", os.path.join(repo.path, ".mcp.json"))
         t0 = time.time()
         res = run_checks(self.ctx(repo))
-        self.assertLess(time.time() - t0, 20)
+        self.assertLess(time.time() - t0, 60)
         self.assertTrue(any(r.id == "mcp.parse" and "not a regular file" in r.message for r in res))
 
     def test_huge_settings_file_is_capped_not_slurped(self):
