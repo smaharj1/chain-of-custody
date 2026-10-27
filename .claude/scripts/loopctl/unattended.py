@@ -35,6 +35,7 @@ prints the commands and an item that needs a PR stops at `awaiting_human`, which
 """
 from __future__ import annotations
 
+import math
 import os
 import socket
 import threading
@@ -123,8 +124,8 @@ def evidence_row(ctx: Any) -> Dict[str, Any]:
     if ctx.base_sha:
         committed = gitutil.show_file(ctx.base_sha, evidence.EVIDENCE_PATH, ctx.repo, isolated=True)
         try:
-            with open(os.path.join(ctx.repo, evidence.EVIDENCE_PATH), "r", encoding="utf-8") as fh:
-                disk = fh.read()
+            with open(os.path.join(ctx.repo, evidence.EVIDENCE_PATH), "rb") as fh:             # bytes: a CRLF file must equal its blob
+                disk = fh.read().decode("utf-8", "replace")
         except OSError:
             disk = None
         if committed is None or disk != committed:
@@ -143,8 +144,8 @@ def default_level(ctx: Any) -> Optional[str]:
     return str(eff.get("effective")) if eff.get("effective") else None
 
 
-def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optional[str]]] = None, selftest: bool = False) -> List[Dict[str, Any]]:
-    """Every check an unattended start makes, as [{id, ok, message}]. Reads only; `selftest` is not here (the driver sends the start notification)."""
+def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optional[str]]] = None) -> List[Dict[str, Any]]:
+    """Every check an unattended start makes, as [{id, ok, message}]. Reads only (the driver sends the start notification itself)."""
     out = [evidence_row(ctx)]
     cfg = ctx.cfg
     try:
@@ -156,7 +157,12 @@ def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optiona
     out.append(_row("runner", ctx.runner == "driver", "runner is %s (unattended runs need runner: driver)" % ctx.runner))
     ceilings = {k: cfg.get(k) for k in ("run_budget_usd", "day_budget_usd")}
     missing = [k for k, v in ceilings.items() if not (isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0)]
-    out.append(_row("budget", not missing, "run_budget_usd and day_budget_usd are set" if not missing else "%s not set: nobody is watching the spend, so a ceiling is required" % " and ".join(missing)))
+    spent = None  # type: Optional[Any]
+    if not missing:
+        spent = ctx.ledger().verdict(cfg, "run-preflight")     # a run id that has no spend: what is left is the day's ceiling and any unreadable or unknown entry
+    out.append(_row("budget", not missing and spent.ok, ("run_budget_usd and day_budget_usd are set" if not missing else "%s not set: nobody is watching the spend, so a ceiling is required" % " and ".join(missing))
+                    if not missing and spent.ok else (("the spend ledger says stop: %s" % common.clean_text("; ".join(spent.reasons), 200)) if spent is not None else
+                    "%s not set: nobody is watching the spend, so a ceiling is required" % " and ".join(missing))))
     ok, why = notify_mod.configured(notify_mod.settings_from_config(cfg), ctx.env, notify_mod.forbidden_roots(ctx.repo, ctx.rs.common_dir))
     out.append(_row("notify", ok, "notify_command is usable" if ok else "%s: a run that cannot reach you does not start" % why))
     fn = level_fn or default_level
@@ -180,16 +186,16 @@ def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optiona
     dem = demotion_of(state)
     out.append(_row("demotion", dem is None, "not demoted" if dem is None else "demoted to %s (%s) at %s: review it, then `loopctl approve demotion --by <name>`" % (
         dem.get("to"), common.clean_text(dem.get("reason"), 40), common.clean_text(dem.get("at"), 30))))
-    rs = state.header.get("runStatus")
-    out.append(_row("parked", rs not in ("parked", "stopped", "aborted"), "the run is %s" % rs if rs in ("parked", "stopped", "aborted") else "nothing is parked"))
+    out.append(_parked_row(state))
     if ctx.plan and not ctx.plan.fatal:
         order = plan_mod.topo_order(ctx.plan.items, [m for m in ctx.plan.plan.get("milestones", []) if isinstance(m, str)])
         deps = {i: [d for d in ctx.plan.items[i].get("dependsOn", []) if isinstance(d, str)] for i in ctx.plan.items}
         eligible = state.eligible(order, deps)
         approved = [i for i in state.by_status("awaiting_human") if state_mod._find_approval(state, i, state.items[i]["attempt"]) is not None]
         waiting = [i for i in state.by_status("awaiting_human", "pr_open") if i not in approved]
-        if eligible or approved:
-            out.append(_row("work", True, "next: %s" % (approved[0] if approved else eligible[0])))
+        inflight = state.by_status(*state_mod.ACTIVE)             # a driver that died mid-item: the next start's recovery puts it back to pending
+        if eligible or approved or inflight:
+            out.append(_row("work", True, "next: %s" % (approved[0] if approved else (inflight[0] + " (left in flight; recovery resets it)" if inflight else eligible[0]))))
         else:
             out.append(_row("work", False, "nothing can run: %s" % (("%s waits for a human" % waiting[0]) if waiting else "no item is eligible (done, parked or waiting on a dependency)")))
     wt = read_watch(ctx.rs)
@@ -199,6 +205,23 @@ def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optiona
                     "no external watchdog has checked in within %d minutes: schedule `loopctl unattended watch` every 5 minutes (cron or launchd); a driver that is "
                     "killed cannot notify anyone, so a run nobody watches does not start" % (WATCH_FRESH_S // 60)))
     return out
+
+
+def _parked_row(state: Any) -> Dict[str, Any]:
+    """Only a park that a human must answer first stops the start: a breaker stop or an abort (`approve breaker`), and a checkpoint nobody has
+    answered. Every other park is judged by the rows beside it (the ledger for money, `work` for an item that needs a human)."""
+    hdr = state.header
+    rs = hdr.get("runStatus")
+    if rs in ("stopped", "aborted"):
+        return _row("parked", False, "the run is %s (%s): a human clears it with `loopctl approve breaker --by <name>`" % (rs, common.clean_text((hdr.get("parked") or {}).get("reason"), 40)))
+    p = hdr.get("parked")
+    if rs == "parked" and isinstance(p, dict) and p.get("reason") == "checkpoint":
+        answered = any(a.get("target") == p.get("item") and a.get("scope") == "checkpoint" and not a.get("used") and a.get("choice") in ("approve", "stop")
+                       for a in state.d["approvals"])
+        if not answered:
+            return _row("parked", False, "the run waits at a checkpoint after %s: `loopctl approve checkpoint %s --by <name>`" % (common.clean_text(p.get("item"), 24), common.clean_text(p.get("item"), 24)))
+        return _row("parked", True, "the checkpoint after %s was answered" % common.clean_text(p.get("item"), 24))
+    return _row("parked", True, "nothing waits for an acknowledgement")
 
 
 def ready(rs: Sequence[Dict[str, Any]]) -> bool:
@@ -236,15 +259,21 @@ def assess(rec: Optional[Dict[str, Any]], now: float, host: str, alive: Callable
     stall_s) | halted (HALT is set; a human did it) | unknown_host (a record from another machine: only its age can be judged)."""
     if not rec or rec.get("state") != "running":
         return {"status": "idle", "message": "no unattended run is recorded as running"}
-    age = now - float(rec.get("lastBeat") or 0)
+    beat = rec.get("lastBeat")
+    known = isinstance(beat, (int, float)) and not isinstance(beat, bool) and math.isfinite(beat)
+    age = now - float(beat) if known else float("inf")                                          # a record without a usable beat is silent
+    ago = "%ds ago" % int(age) if known else "never"
+    shown = age if known else None
     same = rec.get("host") == host
     if same and not alive(rec.get("pid")):
-        return {"status": "dead", "message": "the driver (pid %s) is gone but the run is still recorded as running; last sign of life %ds ago" % (rec.get("pid"), int(age)), "age_s": age}
+        return {"status": "dead", "message": "the driver (pid %s) is gone but the run is still recorded as running; last sign of life %s" % (common.clean_text(rec.get("pid"), 12), ago),
+                "age_s": shown}
     if age > stall_s:
-        return {"status": "stalled" if same else "unknown_host", "message": "no sign of life from the driver for %d minutes" % int(age // 60), "age_s": age}
+        return {"status": "stalled" if same else "unknown_host", "message": "no sign of life from the driver for %s" % (
+            "%d minutes" % int(age // 60) if known else "as long as the record shows"), "age_s": shown}
     if halted:
-        return {"status": "halted", "message": "HALT is set; the run is stopping", "age_s": age}
-    return {"status": "ok", "message": "the driver is alive (last sign of life %ds ago)" % int(age), "age_s": age}
+        return {"status": "halted", "message": "HALT is set; the run is stopping", "age_s": shown}
+    return {"status": "ok", "message": "the driver is alive (last sign of life %s)" % ago, "age_s": shown}
 
 
 def watch_once(ctx: Any, now: Optional[float] = None, sender: Callable[..., Dict[str, Any]] = notify_mod.send) -> Dict[str, Any]:

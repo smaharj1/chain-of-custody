@@ -171,6 +171,11 @@ class Watch(UnattendedTestCase):
         self.assertEqual(unattended.assess(None, now, host, alive, 600)["status"], "idle")
         self.assertEqual(unattended.assess(dict(rec, state="ended"), now, host, alive, 600)["status"], "idle")
         self.assertEqual(unattended.assess(rec, now, host, alive, 600, halted=True)["status"], "halted")
+        for junk in ("x", None, True, [1], float("nan")):                                         # a record without a usable beat is silent, never a crash
+            res = unattended.assess(dict(rec, lastBeat=junk), now, host, alive, 600)
+            self.assertIn(res["status"], ("stalled", "ok"), junk)
+            json.dumps(res)
+        self.assertEqual(unattended.assess(dict(rec, lastBeat="x"), now, host, dead, 600)["status"], "dead")
 
     def test_the_estimate_for_a_killed_child_is_measured_capped_and_never_invented(self):
         est = unattended.estimate_killed_cost

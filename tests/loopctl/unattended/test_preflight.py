@@ -91,21 +91,51 @@ class Rows(unittest.TestCase):
         self.ctx.base_sha = self.lr.repo.git("rev-parse", "HEAD~1")                               # a base from before the evidence was merged
         self.only_bad(self.rows(), "evidence")
 
-    def test_a_demotion_a_parked_run_and_nothing_to_do_each_stop_the_start(self):
+    def test_a_demotion_an_unanswered_breaker_or_checkpoint_and_nothing_to_do_each_stop_the_start(self):
         self.cfg()
         st = self.ctx.store().read()[0]
+        L4 = lambda c: "L4"  # noqa: E731
         st.header["demotion"] = {"to": "L3", "reason": "revert", "at": "2026-10-20T00:00:00Z"}
-        self.only_bad(unattended.rows(self.ctx, st, lambda c: "L4"), "demotion")
+        self.only_bad(unattended.rows(self.ctx, st, L4), "demotion")
         st.header["demotion"] = None
-        for status in ("parked", "stopped", "aborted"):
+        for status in ("stopped", "aborted"):
             st.header["runStatus"] = status
-            self.only_bad(unattended.rows(self.ctx, st, lambda c: "L4"), "parked")
-        st.header["runStatus"] = "idle"
+            self.only_bad(unattended.rows(self.ctx, st, L4), "parked")                           # `approve breaker` first
+        st.header.update({"runStatus": "parked", "parked": {"item": "A", "reason": "checkpoint", "at": "2026-10-20T00:00:00Z"}})
+        self.only_bad(unattended.rows(self.ctx, st, L4), "parked")                               # a checkpoint nobody has answered
+        st.d["approvals"].append({"id": "ap-1", "scope": "checkpoint", "target": "A", "choice": "approve", "used": False})
+        self.assertTrue(unattended.ready(unattended.rows(self.ctx, st, L4)))                    # answered: the driver consumes it, so the human's approve is not a dead end
+        st.d["approvals"][-1]["used"] = True
+        self.only_bad(unattended.rows(self.ctx, st, L4), "parked")
+        st.d["approvals"].pop()
+        st.header["parked"] = {"item": None, "reason": "cost_unknown", "at": "2026-10-20T00:00:00Z"}
+        self.assertTrue(unattended.ready(unattended.rows(self.ctx, st, L4)))                    # a money park is judged by the ledger row, so `approve cost` is enough
+        st.header.update({"runStatus": "idle", "parked": None})
+        first = sorted(st.items)[0]
+        st.items[first]["status"] = "building"                                                    # a driver that died mid-item: recovery resets it, so it is work
+        rows = unattended.rows(self.ctx, st, L4)
+        self.assertTrue(unattended.ready(rows), [r for r in rows if not r["ok"]])
+        self.assertIn("recovery resets it", [r for r in rows if r["id"].endswith("work")][0]["message"])
         for i in st.items.values():
             i["status"] = "needs_human"
             i["blockReason"] = "x"
-        self.only_bad(unattended.rows(self.ctx, st, lambda c: "L4"), "work")
-        self.only_bad(unattended.rows(self.ctx, None, lambda c: "L4"), "state")
+        self.only_bad(unattended.rows(self.ctx, st, L4), "work")
+        self.only_bad(unattended.rows(self.ctx, None, L4), "state")
+
+    def test_a_spent_day_budget_or_an_unreadable_ledger_stops_the_start(self):
+        self.cfg()
+        spend = self.lr.rs.spend_path
+        self.addCleanup(lambda: os.path.exists(spend) and os.unlink(spend))
+        self.ctx.ledger().record("run-x", "A", 1, "s1", cost=60.0)                                # today's ceiling is 50
+        rows = self.rows()
+        self.only_bad(rows, "budget")
+        self.assertIn("day budget", [r for r in rows if r["id"].endswith("budget")][0]["message"])
+        os.unlink(spend)
+        with open(spend, "w") as fh:
+            fh.write("this is not a ledger line\n")                                                # a tampered ledger cannot prove the spend is under the ceiling
+        self.only_bad(self.rows(), "budget")
+        os.unlink(spend)
+        self.assertTrue(unattended.ready(self.rows()))
 
     def test_an_unattended_start_needs_the_external_watchdog_to_have_checked_in(self):
         self.cfg()

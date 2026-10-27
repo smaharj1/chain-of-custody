@@ -14,7 +14,7 @@ You set `autonomy: unattended` and `autonomy_level: L4` in a committed `loop.con
 2. **Pin the CLI and run the canary.** L3 and above need `claude_code_tested_max` in `.claude/KIT_VERSION`; the doctor's effective level is capped at L2 while it is `none`. Unattended runners use the same pin and have auto-update off.
 3. **Ceilings.** `run_budget_usd` and `day_budget_usd` greater than zero. Nobody is watching the spend, so both are required.
 4. **A way to reach you.** Write a small program of your own, outside the repository, and put its path in `notify_command` (below). Test it: `python3 .claude/scripts/loopctl unattended notify-test`.
-5. **The external watchdog.** Schedule `python3 .claude/scripts/loopctl unattended watch --repo <the loop worktree>` every five minutes (cron, launchd or a systemd timer). It writes `unattended.watch.json` in the git directory each time; an unattended start is refused unless it checked in within the last 15 minutes. A driver that is killed cannot tell anyone it died, so something else has to.
+5. **The external watchdog.** Schedule `python3 .claude/scripts/loopctl unattended watch --repo <the loop worktree>` every five minutes (cron, launchd or a systemd timer). It writes `unattended.watch.json` in the git directory each time; an unattended start is refused unless it checked in within the last 15 minutes. A driver that is killed cannot tell anyone it died, so something else has to. Cron's `PATH` is short: give `notify_command` as an absolute path.
 6. **Check.** `python3 .claude/scripts/loopctl unattended check` prints every row and exits 0 only when a run could start and make progress now. `loopctl run --dry-run` shows the same rows.
 
 The config keys are in [the registry](../.claude/loop.config.md) under "Unattended": `notify_command`, `notify_timeout_s`, `notify_env_allow`, `stall_run_min`, `stall_storm_n`, `stall_storm_window_min` and the four `promotion_*` keys. All are read from the base sha, never from the branch under judgement.
@@ -28,12 +28,12 @@ The config keys are in [the registry](../.claude/loop.config.md) under "Unattend
 | `evidence` | the evidence gate has not passed, or the file on disk is not the committed one at the base sha |
 | `autonomy` | `autonomy` is not `unattended` or `autonomy_level` is below L4 |
 | `runner` | `runner` is not `driver` |
-| `budget` | `run_budget_usd` or `day_budget_usd` is not set |
+| `budget` | `run_budget_usd` or `day_budget_usd` is not set, today's ceiling is already spent, or the spend ledger has an unreadable line |
 | `notify` | `notify_command` is empty, uses shell syntax, names a missing or relative program, or a program inside the repository |
 | `level` | the doctor's effective level is below L4 (it prints which cap binds: a missing prerequisite, the canary, B5, the platform) |
 | `demotion` | the install was demoted to L3 and a human has not lifted it |
-| `parked` | the run is parked, stopped or aborted: a human must clear that first |
-| `work` | nothing can run now: every item is done, parked, or waiting for a human who has not approved it |
+| `parked` | the run was stopped or aborted (`loopctl approve breaker`), or waits at a checkpoint nobody has answered. Other parks are judged by the rows beside it: money by `budget` (`approve cost`), an item that needs a human by `work` |
+| `work` | nothing can run now: every item is done, parked, or waiting for a human who has not approved it. An item a dead driver left in flight counts as work: recovery puts it back to pending |
 | `watch` | the external watchdog has not checked in recently |
 
 Then the driver sends a "started" notification. If that fails the run does not start (exit 3): a run that cannot reach you must not begin. Nothing in an unattended run waits for an `approve`: a checkpoint that needs an answer, an unknown cost, an item that needs a human all end the run and tell you.
