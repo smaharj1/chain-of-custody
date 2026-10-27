@@ -171,6 +171,7 @@ def decide(item: Dict[str, Any], status: str, cfg: Any, fclass: str, reason: str
         counters["transient"] += 1
         if counters["transient"] > _int(cfg, "max_transient_retries"):
             escalate = True
+            d.fclass = ITEM                 # recorded and judged as an item failure from here: the NORMAL retry rule decides (LC-11)
             d.note = "transient failure repeated %d times: treated as an item failure" % counters["transient"]
     counters[counter] = counters.get(counter, 0) + 1
     d.consumes = True
@@ -181,7 +182,7 @@ def decide(item: Dict[str, Any], status: str, cfg: Any, fclass: str, reason: str
     cur_acs = set(failed_acs or [])
     if (fclass == ITEM or escalate) and cur_acs and cur_acs == prev_acs and prev.get("class") in (ITEM, TRANSIENT):
         d.no_progress = True
-    exhausted = counters[counter] > max_retries or d.no_progress or reason == "reward_hack" or escalate
+    exhausted = counters[counter] > max_retries or d.no_progress or reason == "reward_hack"
 
     if counter == "design":
         if counters["design"] > _int(cfg, "max_design_rounds"):

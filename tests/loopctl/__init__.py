@@ -108,6 +108,7 @@ class LoopRepo(object):
         self.home = tempfile.mkdtemp(prefix="loopctl-home-")
         self.env = clean_env(home=self.home)
         self.env.pop("CLAUDECODE", None)
+        self.env.pop("CLAUDE_CODE_ENTRYPOINT", None)        # a test of the human-only commands sets the markers itself
         # The doctor would otherwise run the `claude` on PATH for its version (it only declines inside a Claude Code session). No test
         # may start the real binary, so the version is given explicitly and the binary override points at a path that does not exist.
         self.env["KIT_CLAUDE_VERSION"] = "2.1.302"
@@ -232,15 +233,32 @@ class LoopRepo(object):
                           "conductor_session_id": self.session})
         return loop
 
+    def item_branch(self, iid: str, file_content: str = "x\n") -> str:
+        """The item's branch with one commit of work on it (made once); returns its tip. A step into reviewing, pr_open, awaiting_human or merged
+        judges this head (review fixes LC-5), so a test that walks an item there needs a real branch."""
+        rec = self.item(iid)
+        br = rec["branch"] or "feat/%s-a%d" % ([i for i in self.items if i["id"] == iid][0]["slug"], rec["attempt"])
+        tip = self.repo.git("rev-parse", "--verify", "-q", "refs/heads/" + br, check=False).strip()
+        if tip:
+            return tip
+        self.repo.git("switch", "-q", "-c", br, "main")
+        self.repo.commit_file("src/%s.txt" % iid, file_content, "work for %s" % iid)
+        tip = self.repo.head()
+        self.repo.git("switch", "-q", "main")
+        return tip
+
     def walk(self, iid: str, *stages: str) -> None:
         for st in stages:
-            self.loop().advance(iid, st, self.session)
+            head = self.item_branch(iid) if st in ("reviewing", "pr_open", "awaiting_human") else None
+            self.loop().advance(iid, st, self.session, head=head)
 
     def complete(self, iid: str, approve: bool = False) -> str:
         """Drive an item to merged: the stages, a real --no-ff merge with the trailer, then advance. Returns the merge commit."""
         loop = self.loop()
         loop.begin(iid, self.session)
-        self.walk(iid, "design_review", "building", "verifying", "reviewing")
+        self.walk(iid, "design_review", "building", "verifying")
+        self.item_branch(iid, file_content="work for %s\n" % iid)
+        self.walk(iid, "reviewing")
         mc = self.do_merge(iid, file_content="work for %s\n" % iid)
         if approve:
             loop.approve("item", iid, "Pat")
@@ -279,9 +297,10 @@ class LoopRepo(object):
         """Simulate the loop's work for an item: a feat branch with one commit, merged --no-ff into main with the Loop-Item trailer."""
         slug = slug or [i for i in self.items if i["id"] == iid][0]["slug"]
         br = "feat/%s-a%d" % (slug, attempt)
-        self.repo.git("switch", "-q", "-c", br, "main")
-        self.repo.commit_file("src/%s.txt" % iid, file_content, "work for %s" % iid)
-        self.repo.git("switch", "-q", "main")
+        if self.repo.git("rev-parse", "--verify", "-q", "refs/heads/" + br, check=False).strip() == "":
+            self.repo.git("switch", "-q", "-c", br, "main")
+            self.repo.commit_file("src/%s.txt" % iid, file_content, "work for %s" % iid)
+            self.repo.git("switch", "-q", "main")
         msg = "Merge branch '%s'" % br
         if trailer:
             msg += "\n\nLoop-Item: %s\nLoop-Attempt: %d" % (iid, attempt)

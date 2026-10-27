@@ -29,7 +29,7 @@ class Platform(DriverTestCase):
         it = lr.item("A")
         self.assertEqual(it["status"], "merged")
         c = it["counters"]
-        self.assertEqual((c["platform"], c["partial"], c["verify"], c["transient"], lr.state().header["breaker"]), (3, 1, 0, 0, 0))     # independent counters (L-8); no retry budget used
+        self.assertEqual((c["platform"], c["partial"], c["verify"], c["transient"], lr.state().header["breaker"]), (0, 1, 0, 0, 0))     # independent counters (L-8); no retry budget used; the platform row (3 in a row) ended with the first success (LC-10)
         events = [(e["failure_class"], e["reason"]) for e in lr.rs.read_events("loopctl") if e.get("event") == "fail" and e.get("source") == "driver"]
         self.assertEqual(events, [("platform", "overloaded"), ("platform", "rate_limit"), ("platform", "cli_crash"), ("item", "partial")])
         self.assertEqual(self.slept, [failure.backoff_s(30, 1, "A:1"), failure.backoff_s(30, 2, "A:1"), failure.backoff_s(30, 3, "A:1")])   # jittered, deterministic, growing

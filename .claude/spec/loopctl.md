@@ -12,6 +12,16 @@ It is **OPT-IN** (IMP-1). The V1 prose loop in `.claude/skills/orchestrate/SKILL
 | Tier 1 writes | `lock acquire\|release\|steal`, `migrate-plan --write`, `halt`, `resume` | nothing (a kill switch and a lock must always work) |
 | Tier 2 writes | `approve begin advance fail clarify park gate spend run abort reconcile --apply` | `loopctl_tier2: true` in the loop.config **at the base sha** |
 
+Orthogonal to the tiers is **who may run** a command, one table in `kitlib/loopctl_table.py` that `loopctl/cli.py` and `guards/g_exec.py` both import:
+
+| Class | Who | Commands |
+|---|---|---|
+| read | anyone | the Read row above, plus `retro harness gaps merge-class`, `remote-lock status`, `claim list\|show`, `manifest show\|verify`, `unattended check\|status\|promotion\|intake`, `parallel check\|status\|leases` |
+| write | the registered conductor (and a human) | `begin advance fail clarify park gate spend run abort halt`, `lock acquire\|release\|steal`, `reconcile --apply` (git facts only), `migrate-plan --write`, `approve checkpoint` (any choice), `approve item --choice reject\|stop`, `approve unblock --choice keep\|replan`, `manifest write` |
+| **human** | a human in a plain terminal, or with `!` in the prompt; the guard denies it to every agent, **the conductor included** | `approve plan\|env\|breaker\|cost\|demotion`, `approve item` (the merge approval and the un-park), `approve unblock --choice reset`, `resume`, `parallel ... --apply`, `migrate-plan --force`, `reconcile --live`, `reconcile --apply` with `--prs` or `--rule-suites`, `remote-lock acquire\|renew\|release\|steal`, `claim take\|release` |
+
+The conductor relays only what acknowledges or narrows inside the approved plan (a checkpoint answer, a reject or stop, keep or replan); it prints every human command as `HUMAN STEP: <command>` and waits (`status --pending-human` prints them too). `--by` is recorded, not authenticated. The CLI itself refuses `resume`, `reconcile --live`, `remote-lock acquire|renew|release|steal` and `claim take|release` under a Claude Code session marker (`CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT`, present even when empty); the `approve` commands carry no marker check, because a printed command run with `!` may carry the marker: the guard is their one boundary. Known gap: a human who pastes a printed command without reading it is outside the kit's reach.
+
 Tier 2 is not evidence-gated: the evidence gate itself asks for three clean runs *with* loopctl. What the evidence gate caps is everything the report puts behind it: while `docs/baseline/evidence.json` is absent or incomplete (`loopctl evidence --check`), the effective level is capped at L3 and any evidence-gated config value (unattended L4/L5, `parallel_mode: worktree`, and so on) makes `run` and every Tier 2 command refuse.
 
 ## Rules every command follows
@@ -67,7 +77,9 @@ pending -> designing -> design_review -> stubbing -> building -> verifying -> re
         -> pr_open -> awaiting_human -> merged | needs_human | blocked | abandoned
 ```
 
-The enum is closed. `blockReason` is required on `blocked` and `needs_human`. `advance` takes only forward edges (design_review may skip stubbing to building when `gates.g2` is not off); a step back is `fail`. `advance <item> merged` needs `--merge-commit` (it must exist and be on the integration branch; under `delivery: local` it must carry `Loop-Item: <id>`), a human approval record for a human-gated item or one in `awaiting_human`, and every gate that is `on` and marked `REQUIRED_FOR` that transition.
+The enum is closed. `blockReason` is required on `blocked` and `needs_human`. `advance` takes only forward edges (design_review may skip stubbing to building when `gates.g2` is not off); a step back is `fail`. `advance <item> merged` needs `--merge-commit` (it must exist and be on the integration branch; under `delivery: local` it must carry `Loop-Item: <id>` and its second parent must be the judged head, under other deliveries the judged head must be in its history), a human approval for a human-gated item or one in `awaiting_human`, and every gate that is `on` and marked `REQUIRED_FOR` that transition.
+
+**The head a step judges.** Into `reviewing`, `pr_open`, `awaiting_human` or `merged`, and for any step with a required gate, `--head` is mandatory; omitted, it is the tip of the item's branch (a branch that cannot be resolved refuses). A gate result recorded for another head, or for none (outside `g0` and `g2`), is stale and refuses the step. Any forward step resets the `platform` counter (it counts failures in a row).
 
 `begin` requires: the lock held by `--session`, no HALT, an approved plan with unchanged digest and unchanged ACs, every dependency merged, no other item in progress, no circuit-breaker stop, no environment demotion.
 
@@ -86,7 +98,7 @@ A known reason keeps its class: recording `tests_failed` as `platform` is refuse
 
 ### Spend (section 10.5)
 
-`spend record` adds a child session's `total_cost_usd` to `<git-common-dir>/loopctl/spend.jsonl`. The remaining budget (`min` over `run_budget_usd`, `item_budget_usd`, `day_budget_usd` that are set) is what the driver passes as `--max-budget-usd` (`Ledger.launch_budget`). **An unknown cost parks**: a missing, renamed, non-numeric, negative or infinite cost, or an unreadable ledger line, parks the run until a human runs `approve cost`. `cost --projection` prints `unavailable (no baseline)` until `docs/baseline/results/` holds completed runs with a spend.
+`spend record` adds a child session's `total_cost_usd` to `<git-common-dir>/loopctl/spend.jsonl`. The remaining budget (`min` over `run_budget_usd`, `item_budget_usd`, `day_budget_usd` that are set) is what the driver passes as `--max-budget-usd` (`Ledger.launch_budget`). **An unknown cost parks**: a missing, renamed, non-numeric, negative or infinite cost, or an unreadable ledger line, parks the run until a human runs `approve cost`; an unacknowledged unknown of ANY earlier run parks the next run too, and an acknowledgement covers every unknown written before it. A child the unattended supervisor had to kill is charged an estimate (at least half its allowance, marked `estimated: true`). The driver judges the ledger before it records a failed child, so an unknown cost always parks with a `budget_stop` event. `cost --projection` prints `unavailable (no baseline)` until `docs/baseline/results/` holds completed runs with a spend.
 
 ### The lock (section 19.7)
 
@@ -104,7 +116,7 @@ A gate is a module `loopctl/gates/<file>.py` with `NAME` (the `gates.<NAME>` tog
 
 ## Approvals
 
-`approve plan|item|checkpoint|unblock|env|breaker|cost --by <name>` writes a record into the state (id, scope, target, name, time, note, plan digest or attempt). Records are consumed once. They are **records, not authentication**: at L1 the conductor writes one after the human said so in the chat (L-10) and `--by` is not verified; at L3+ the boundary is the PR review and CODEOWNERS. `approve plan` is also how a revised plan is re-approved (H2): an item with work against criteria that changed goes to `needs_human` (`ac_changed`). `approve breaker` is how a human lets a run go on after a circuit-breaker stop or an `abort`.
+`approve plan|item|checkpoint|unblock|env|breaker|cost --by <name>` writes a record into the state (id, scope, target, name, time, note, plan digest or attempt). Every record has a `kind`. Only `kind: merge` (written by `approve item` while the item is `reviewing`, `pr_open` or `awaiting_human`) can satisfy the merge gate, and it is bound to the item, its attempt and its `headSha`: a merge approval for head X cannot merge head Y, and it is voided (`used: true`, `voided`) when the item leaves the approvable states any way but merging, or when the head changes. The un-park (`approve item` on a `needs_human` item), acknowledgements (`reject`, `stop`, `unblock`) and `env breaker cost demotion plan` records are written already consumed; a `checkpoint` record exists only while the driver's checkpoint pause is outstanding for that item (anything else is refused) and is consumed by the driver; a record without a `kind` (written before this rule) never merges and the human approves again. `approve cost` lifts a spend park (`cost_unknown`, `budget_*`) and never writes an item approval. Records are consumed once. They are **records, not authentication**: at L1 the conductor writes one after the human said so in the chat (L-10) and `--by` is not verified; at L3+ the boundary is the PR review and CODEOWNERS. `approve plan` is also how a revised plan is re-approved (H2): an item with work against criteria that changed goes to `needs_human` (`ac_changed`). `approve breaker` is how a human lets a run go on after a circuit-breaker stop or an `abort`.
 
 ## The driver contract (Phase 4c)
 

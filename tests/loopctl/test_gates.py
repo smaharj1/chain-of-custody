@@ -157,7 +157,7 @@ class Advance(Base):
         gates.register(mod("g6", REQUIRED_FOR=(("verifying", "reviewing"),)))
         loop = lr.loop(fresh=True)
         with self.assertRaises(Refused) as cm:
-            loop.advance("A", "reviewing", lr.session)
+            loop.advance("A", "reviewing", lr.session, head="a" * 40)
         self.assertIn("gate g6 must pass", str(cm.exception))
         gctx = loop.ctx.gate_context("A", "a" * 40, None, lr.item("A"))
         res = gates.run_gate("g6", gctx)
@@ -173,7 +173,7 @@ class Advance(Base):
         loop.begin("A", lr.session)
         lr.walk("A", "design_review", "building", "verifying")
         gates.register(mod("g6", REQUIRED_FOR=(("verifying", "reviewing"),)))
-        lr.loop(fresh=True).advance("A", "reviewing", lr.session)
+        lr.loop(fresh=True).advance("A", "reviewing", lr.session, head="a" * 40)
 
     def test_a_failed_result_does_not_satisfy_the_requirement(self):
         lr = self.lr()

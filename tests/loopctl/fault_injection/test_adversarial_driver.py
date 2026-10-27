@@ -94,7 +94,8 @@ class Child(DriverTestCase):
             drv.launch_child("A", "backend-engineer", "building", "do it")                      # the failure parks via the unknown cost; the cause is in the state
         self.assertLess(__import__("time").time() - t, 30)
         it = lr.item("A")
-        self.assertEqual((it["lastFailure"]["class"], it["lastFailure"]["reason"]), ("transient", "timeout"))
+        stops = [e for e in lr.rs.read_events("loopctl") if e.get("event") == "budget_stop"]
+        self.assertIn("transient/timeout", stops[0]["cause"])                                     # the ledger is judged before the failure is recorded (LC-6)
 
     def test_the_second_signal_does_not_wait_for_the_next_poll(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)])

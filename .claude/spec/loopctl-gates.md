@@ -10,7 +10,7 @@ A gate is a module in `.claude/scripts/loopctl/gates/` with `NAME`, `OWNER_METRI
 | **G1** AC ids | FULL | on | `verifying -> reviewing` | criteria unchanged since H1; every id named by a test file at HEAD; an executed passing result for THIS head from G3 or G6 | AC coverage |
 | **G2** stubs | FULL | on | `design_review -> building`, `stubbing -> building` | `ext.g3` declared; criteria covered; stubs are stubs; stubs before tests; **red by assertion against the stubs**; pins the tests | enabler for G3 |
 | **G3** acceptance | FULL | on | `verifying -> reviewing` | pinned tests unchanged; every criterion executed and passing, none skipped; real assertions; held-out tests pass (driver) or are CI-only | held-out vs visible pass rate |
-| **G4** mutation | OPT-IN, experimental | **off**, evidence-gated | CI | `mutation_cmd` score >= `mutation_min` on the changed lines | surviving-mutant rate |
+| **G4** mutation | OPT-IN, experimental | **off**, evidence-gated | driver and CI (the driver runs it last in the verify round when it is `on` or `report`; Evidence accepts a recorded skip) | `mutation_cmd` score >= `mutation_min` on the changed lines | surviving-mutant rate |
 | **G5** integrity | FULL (glob) + OPT-IN (AST lint) | on | `verifying -> reviewing` | no test, config, CI, lint or snapshot change the plan did not allow; pinned tests untouched; with `g5_ast_lint`: skip markers, test-env detection, mocks of the footprint, snapshots with code, `-u` | integrity flags per item; false positives |
 | **G6** verify | FULL | on | `verifying -> reviewing` | wraps `verify.py`; per-AC executed and passed; no skip among AC tests; skipped count not rising; base test names subset of head's; migrations up/down/up on a prod-dialect database | verify-pass-but-CI-fail rate |
 | **G7** reviews | FULL | on | `reviewing -> pr_open \| awaiting_human \| merged` | committed, fresh, consistent code review (and security review when required); waivers | reviewer precision |
@@ -91,6 +91,14 @@ docs/features/<slug>/reports/design-review.md      optional       DESIGN_APPROVE
 ```
 
 G7 reads them from git at HEAD. A security review is required when `security_review` is `every_item`, or `sensitive` and the item is (`ext.sensitive`, risk class high, or a footprint under an auth, payment, billing, upload, session, login, password, crypto or permission path). A review is **stale** when a commit that changes anything outside the reports directory came after the commit that last touched the review file.
+
+## Review fixes (Oct 2026): verdicts, freshness and the finding ids they add
+
+- **G3 held-out must exit 0.** A held-out run whose command fails fails G3, whatever it printed.
+- **A failure on any channel wins.** The verdict of a test run is the merge of its channels (the JSON a harness prints and the text it also prints); a failure on either is a failure. A JSON-only pass counts only in G3 visible and held-out, never in G6.
+- **Freshness.** `Loop.advance` judges a head: a recorded gate result for another head, or with no head outside `g0` and `g2`, is stale (`loopctl.md`); Evidence says the same with `evidence.stale` (including a recorded pass with no head). After a parallel rebase every gate Evidence checks runs again (`loopctl-parallel.md`).
+- **New finding ids:** `g5.harness-shaped-output`, `g5.hard-exit`, `g5.ignored-config`, `g5.ignored-incomplete`, `g11.ignored-config`, `g11.ignored-incomplete`, `g11.untracked-overflow`, `g9.source-changed`, `g9.index-changed`, `evidence.stale`.
+- **`verify_tests` and an unknown test count (GT-10): no code change.** A command that exits 0 and reports no test count passes G6 with a warning; `verify_tests` is H6 config, and G3 requires the criterion tests to have executed. The reasoning is a comment in `verify.py`.
 
 ## The CI halves
 

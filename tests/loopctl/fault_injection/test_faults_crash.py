@@ -95,6 +95,8 @@ class Crash(DriverTestCase):
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")                     # settled: the worktree is back on main and clean
         self.assertEqual(lr.repo.git("status", "--porcelain"), "")
         lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A")]}))
+        self.assertEqual(lr.run().rc, 1)                                                      # the killed child's cost is unknown, and an unknown parks the NEXT run too (LC-3) ...
+        self.assertEqual(lr.ctl("approve", "cost", "--by", "Pat", "--note", "the console shows the child ended at once").rc, 0)   # ... until a human accepts it
         self.assertEqual(lr.run().rc, 0)
         self.assertEqual(lr.item("A")["status"], "merged")
 

@@ -9,9 +9,11 @@ Ceilings (`run_budget_usd`, `item_budget_usd`, `day_budget_usd`; 0 = not set): r
 and sets the item `needs_human`.
 
 UNKNOWN COST MEANS PARK. A result without a usable `total_cost_usd` (missing, renamed, a string, negative, NaN, infinite)
-is recorded as `unknown`. While an unacknowledged unknown entry exists for the run, `verdict()` says park: loopctl
-never guesses a cost. A human acknowledges with `loopctl approve cost` (`acknowledge()`). A line of the ledger that
-cannot be parsed counts as unknown too (a tampered or torn ledger cannot prove the run is under budget).
+is recorded as `unknown`. While an unacknowledged unknown entry exists, from ANY run, `verdict()` says park: loopctl
+never guesses a cost, and a new run does not start clean over an old unknown. A human acknowledges with `loopctl approve cost`
+(`acknowledge()`): an ack covers every unknown entry written before it, whatever its run. A line of the ledger that
+cannot be parsed counts as unknown too (a tampered or torn ledger cannot prove the run is under budget). An entry with
+`estimated: true` is a price the unattended supervisor put on a killed child (a guess at the charge, never below half its allowance).
 
 Projection: `loopctl cost --projection` uses the baseline's p50 and p90 spend per item once
 `docs/baseline/results/*.json` holds completed runs with a spend; before that it says `unavailable (no baseline)`.
@@ -108,11 +110,13 @@ class Ledger(object):
                "attempt": int(attempt), "sessionId": session_id if runstate.valid_id(session_id) else None,
                "role": common.clean_text(role, 40) if role else None, "source": common.clean_text(source, 20),
                "total_cost_usd": value, "unknown": value is None, "why": common.clean_text(why, 120) if why else ""}
+        if source == "estimated":
+            rec["estimated"] = True
         self._append(rec)
         return rec
 
     def acknowledge(self, run_id: str, by: str, note: str = "") -> None:
-        """A human accepts the unknown-cost entries of the run so far (`loopctl approve cost`)."""
+        """A human accepts every unknown-cost entry written so far, of any run (`loopctl approve cost`)."""
         _, bad = self.entries()
         self._append({"type": "ack", "ts": common.iso(), "runId": run_id, "by": common.clean_text(by, 60),
                       "note": common.clean_text(note, 200), "bad": bad, "usd": self.totals(run_id=run_id)["usd"]})
@@ -146,14 +150,16 @@ class Ledger(object):
         ents, bad = self.entries()
         total = _D(0)
         n = 0
-        acked_runs = {}  # type: Dict[str, int]
+        acked_until = -1                # an ack covers every entry written before it, whatever run it names (LC-3)
         acked_bad = 0
         for i, e in enumerate(ents):
             if e.get("type") == "ack":
-                acked_runs[e.get("runId")] = i
+                acked_until = i
                 if isinstance(e.get("bad"), int):
                     acked_bad = max(acked_bad, e["bad"])
         unknown = max(0, bad - acked_bad)
+        est = _D(0)
+        n_est = 0
         for i, e in enumerate(ents):
             if e.get("type") != "spend":
                 continue
@@ -166,12 +172,15 @@ class Ledger(object):
             v = e.get("total_cost_usd")
             _, why = _coerce(v) if v is not None else (None, "none")
             if e.get("unknown") or why:
-                if acked_runs.get(e.get("runId"), -1) < i:
+                if acked_until < i:
                     unknown += 1
                 continue
             total += _D(repr(float(v)))
             n += 1
-        return {"usd": float(total), "entries": n, "unknown": unknown}
+            if e.get("estimated"):
+                est += _D(repr(float(v)))
+                n_est += 1
+        return {"usd": float(total), "entries": n, "unknown": unknown, "estimated": n_est, "estimated_usd": float(est)}
 
     # -- the decision -------------------------------------------------------------------------------
     def verdict(self, cfg: Any, run_id: str, item: Optional[str] = None, today: Optional[str] = None) -> Verdict:
@@ -183,11 +192,12 @@ class Ledger(object):
         v.spent = {"run": run_t["usd"], "day": day_t["usd"]}
         if item_t is not None:
             v.spent["item"] = item_t["usd"]
-        # unknown entries anywhere in this run, or corrupt lines anywhere, park the run
-        v.unknown = run_t["unknown"]
-        if run_t["unknown"]:
+        # an unacknowledged unknown entry in ANY run (or a corrupt line) parks this run too: a new run does not start clean over an old unknown (LC-3)
+        all_unknown = self.totals()["unknown"]
+        v.unknown = all_unknown
+        if all_unknown:
             v.fail("cost_unknown", "%d spend entr%s without a usable total_cost_usd (or an unreadable ledger line): the cost is unknown, so "
-                   "the run is parked; check the field name, then `loopctl approve cost --by <you>`" % (run_t["unknown"], "y" if run_t["unknown"] == 1 else "ies"))
+                   "the run is parked; check the field name, then `loopctl approve cost --by <you>`" % (all_unknown, "y" if all_unknown == 1 else "ies"))
         caps = (("run", cfg.get("run_budget_usd"), run_t["usd"]), ("item", cfg.get("item_budget_usd"), item_t["usd"] if item_t else None),
                 ("day", cfg.get("day_budget_usd"), day_t["usd"]))
         # DEC-34: at 80% of the run budget the run parks and a human decides whether to go on (an ack records the spend it accepted)

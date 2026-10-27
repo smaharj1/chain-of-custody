@@ -11,7 +11,7 @@ from doctorlib import parallel as doctor_parallel  # noqa: F401  (registers the 
 
 from guards import g_exec
 from guards.invoke import analyze
-from kitlib import registry
+from kitlib import loopctl_table, registry
 
 from loopctl import cli
 
@@ -89,7 +89,8 @@ class Classification(unittest.TestCase):
 
     def test_the_guard_and_loopctl_agree_on_which_parallel_lines_write(self):
         t = cli.classification()
-        self.assertEqual({k: tuple(v) for k, v in t["flag_read"].items()}, g_exec.LOOPCTL_FLAG_READ)
+        self.assertEqual({k: tuple(v) for k, v in t["flag_read"].items()}, loopctl_table.FLAG_READ)
+        self.assertEqual(set(t["action_read"]["parallel"]), {"check", "status", "leases"})
         self.assertIn("parallel", t["tier1"])
         for args in self.READS:
             with self.subTest(args):

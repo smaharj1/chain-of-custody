@@ -69,7 +69,7 @@ class SourceRules(unittest.TestCase):
                 else:
                     continue
                 for n in names:
-                    self.assertTrue(n in stdlib or n in ("kitlib", "loopctl", "pr_prepare", "verify", "doctor", "doctorlib", "guards", "session_start", "notify", "intake_validate"), "%s imports %s" % (rel, n))
+                    self.assertTrue(n in stdlib or n in ("kitlib", "loopctl", "pr_prepare", "verify", "doctor", "doctorlib", "guards", "session_start", "notify", "intake_validate", "humanonly"), "%s imports %s" % (rel, n))
 
     def test_every_git_call_goes_through_kitlib_gitutil(self):
         for rel, src in sources():
@@ -205,11 +205,22 @@ class SmallCommands(LoopTestCase):
         self.assertEqual((h["reason"], h["by"]), ("pause for lunch", "Pat"))
         r = lr.ctl("resume", env={"CLAUDECODE": "1"})
         self.assertEqual(r.rc, 3, r)
-        self.assertIn("human command", r.err)
+        self.assertIn("refusing to run inside a Claude Code session", r.err)
+        self.assertTrue(lr.context().rs.is_halted())
+        for marker in ({"CLAUDECODE": ""}, {"CLAUDE_CODE_ENTRYPOINT": "cli"}, {"CLAUDE_CODE_ENTRYPOINT": ""}):       # presence counts, not value (GD-8)
+            self.assertEqual(lr.ctl("resume", env=marker).rc, 3, marker)
         self.assertTrue(lr.context().rs.is_halted())
         self.assertEqual(lr.ctl("resume").rc, 0)
         self.assertFalse(lr.context().rs.is_halted())
         self.assertIn("no HALT", lr.ctl("resume").out)
+
+    def test_reconcile_live_is_human_only_under_every_marker(self):
+        lr = self.lr()
+        lr.fast_start()
+        for marker in ({"CLAUDECODE": "1"}, {"CLAUDECODE": ""}, {"CLAUDE_CODE_ENTRYPOINT": "cli"}):
+            r = lr.ctl("reconcile", "--dry-run", "--live", env=marker)
+            self.assertEqual(r.rc, 3, (marker, r))
+            self.assertIn("refusing to run inside a Claude Code session", r.err)
 
     def test_a_deeply_nested_halt_or_run_file_does_not_crash_status(self):
         lr = self.lr()

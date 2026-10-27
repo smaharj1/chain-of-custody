@@ -2,6 +2,8 @@
 running a command the guard thinks is a read that actually writes state, or the reverse (a false deny)."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import unittest
@@ -9,7 +11,9 @@ import unittest
 from guards import g_exec, g_halt
 from guards.invoke import analyze
 
-from loopctl import cli, gates, state as sm
+from kitlib import loopctl_table
+
+from loopctl import cli, common, gates, state as sm
 
 from . import LoopTestCase, item_doc
 
@@ -45,6 +49,28 @@ WRITES = [
 ]
 
 
+def _subparsers():
+    """name -> the argparse parser each loopctl subcommand builds (captured by running `<cmd> --help` with `_parser` wrapped)."""
+    made = {}
+    real = cli._parser
+
+    def spy(prog, desc=""):
+        ap = real(prog, desc)
+        made[prog] = ap
+        return ap
+    cli._parser = spy
+    try:
+        for name, fn in cli.COMMANDS.items():
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    fn(["--help"], {}, cli.Out(io.StringIO(), io.StringIO()))
+            except (cli._Exit, common.LoopctlError, SystemExit):
+                pass
+    finally:
+        cli._parser = real
+    return made
+
+
 def inv(args):
     ana = analyze("python3 .claude/scripts/loopctl " + " ".join(args), "/tmp")
     found = [i for i in ana.invs if i.name.startswith("python")]
@@ -52,11 +78,129 @@ def inv(args):
 
 
 class Alignment(unittest.TestCase):
-    def test_the_tables_are_the_same(self):
+    def test_cli_classification_is_the_shared_table(self):
+        """`loopctl/cli.py` carries no table of its own: it is a view of kitlib/loopctl_table.py, which the guards import too."""
         t = cli.classification()
-        self.assertEqual(set(t["read"]), g_exec.LOOPCTL_READ - {"--help", "-h", "--version"})
-        self.assertEqual({k: tuple(v) for k, v in t["flag_read"].items()}, g_exec.LOOPCTL_FLAG_READ)
-        self.assertEqual(tuple(t["write_flags"]), g_exec.LOOPCTL_WRITE_FLAGS)
+        self.assertEqual(set(t["read"]), loopctl_table.READ - {"--help", "-h", "--version"})
+        self.assertEqual({k: tuple(v) for k, v in t["flag_read"].items()}, loopctl_table.FLAG_READ)
+        self.assertEqual(tuple(t["write_flags"]), loopctl_table.WRITE_FLAGS)
+        self.assertEqual({k: set(v) for k, v in t["action_read"].items()}, loopctl_table.ACTION_READ)
+        self.assertEqual({k: set(v) for k, v in t["human_only"].items()}, loopctl_table.HUMAN_ONLY)
+        self.assertIs(cli.READ_COMMANDS.__class__, tuple)
+
+    def test_the_table_agrees_with_every_subparser(self):
+        """Every `action` choice of a loopctl subcommand is classified on purpose: a new action without a table entry fails here."""
+        parsers = _subparsers()
+        for name, ap in parsers.items():
+            for act in ap._actions:
+                if act.dest != "action" or not act.choices:
+                    continue
+                for choice in act.choices:
+                    cls = loopctl_table.classify([name, choice])[0]
+                    with self.subTest("%s %s" % (name, choice)):
+                        if name in loopctl_table.HUMAN_ONLY and choice in loopctl_table.HUMAN_ONLY[name]:
+                            self.assertEqual(cls, "human")
+                        elif choice in loopctl_table.ACTION_READ.get(name, ()):
+                            self.assertEqual(cls, "read")
+                        elif name in loopctl_table.READ:
+                            self.assertEqual(cls, "read")
+                        else:
+                            self.assertEqual(cls, "write")
+        # the commands whose reads are action-based are exactly the ones whose parser has an action
+        for name in loopctl_table.ACTION_READ:
+            self.assertIn(name, parsers)
+            self.assertTrue(any(a.dest == "action" for a in parsers[name]._actions), name)
+        # every write flag in the table is a flag some parser knows (no stale entries)
+        known = {o for ap in parsers.values() for a in ap._actions for o in a.option_strings}
+        for f in loopctl_table.WRITE_FLAGS + tuple(x for fl in loopctl_table.HUMAN_FLAG.values() for x in fl) + loopctl_table.RECONCILE_FACT_FLAGS:
+            self.assertIn(f, known)
+
+    def test_every_approve_scope_and_choice(self):
+        scope_choices = [a for a in cli._approve_parser()._actions if a.dest == "scope"][0].choices
+        self.assertEqual(set(scope_choices), {"plan", "item", "checkpoint", "unblock", "env", "breaker", "cost", "demotion"})
+        choices = ("approve", "reject", "stop", "reset", "keep", "replan")
+        relay = {"checkpoint": set(choices), "item": {"reject", "stop"}, "unblock": {"keep", "replan"}}
+        for scope in scope_choices:
+            for ch in choices:
+                with self.subTest("%s %s" % (scope, ch)):
+                    want = "write" if ch in relay.get(scope, ()) else "human"
+                    self.assertEqual(loopctl_table.classify(["approve", scope, "F1", "--by", "me", "--choice", ch])[0], want)
+                    self.assertEqual(loopctl_table.classify(["approve", scope, "F1", "--by", "me", "--choice=" + ch])[0], want)
+            # no --choice means approve
+            self.assertEqual(loopctl_table.classify(["approve", scope, "F1", "--by", "me"])[0], "write" if scope == "checkpoint" else "human")
+
+    def test_odd_approve_forms_are_human(self):
+        for args in (["--cho", "stop"], ["--choice=stop", "--choice", "approve"], ["--choice", "stop", "--choice", "stop"], ["--choice"], ["--choice", "--by"],
+                     ["--chocie", "stop"], ["--c=stop"]):
+            with self.subTest(args):
+                self.assertEqual(loopctl_table.classify(["approve", "checkpoint", "F1", "--by", "me"] + args)[0], "human")
+        self.assertEqual(loopctl_table.classify(["approve", "--by", "me", "item", "F1"])[0], "human")
+        self.assertEqual(loopctl_table.classify(["approve"])[0], "human")
+        self.assertEqual(loopctl_table.classify(["approve", "bogus", "F1"])[0], "human")
+
+    def test_approve_parity_with_the_cli_parser(self):
+        """No parser differential: what the table reads as the scope and the choice is what `cmd_approve`'s own parser parses."""
+        samples = [["checkpoint", "F1", "--by", "pat", "--note", "ok"], ["item", "F1", "--by", "pat", "--choice", "reject"],
+                   ["item", "F1", "--by", "pat", "--choice=stop"], ["unblock", "F1", "--by", "pat", "--choice", "keep", "--note", "--choice reset"],
+                   ["item", "F1", "--by", "pat", "--note", "--choice stop"], ["plan", "--by", "pat"], ["unblock", "F1", "--by", "pat", "--choice", "reset"]]
+        for args in samples:
+            with self.subTest(args):
+                a = cli._approve_parser().parse_args(args)
+                cls = loopctl_table.classify(["approve"] + args)[0]
+                relay = {"checkpoint": None, "item": {"reject", "stop"}, "unblock": {"keep", "replan"}}
+                expect = "write" if a.scope in relay and (relay[a.scope] is None or a.choice in relay[a.scope]) else "human"
+                # a `--choice ...` inside a --note value is the note's text: the table may be stricter (human), never looser
+                if cls == "write":
+                    self.assertEqual(expect, "write")
+                else:
+                    self.assertIn(cls, ("human",))
+
+    def test_human_only_commands(self):
+        for args in (["resume"], ["parallel", "cleanup", "--apply"], ["parallel", "cleanup", "--appl"], ["parallel", "cascade", "A", "--apply=1"], ["migrate-plan", "--write", "--force"],
+                     ["migrate-plan", "--write", "--for"], ["reconcile", "--live", "--apply"], ["reconcile", "--live", "--dry-run"], ["reconcile", "--apply", "--prs", "x.json"],
+                     ["reconcile", "--apply", "--rule-suites", "s.json"], ["reconcile", "--apply", "--pr", "x.json"],
+                     ["remote-lock", "acquire"], ["remote-lock", "renew"], ["remote-lock", "release"], ["remote-lock", "steal", "--host-dead"],
+                     ["claim", "take", "F1"], ["claim", "release", "F1"], ["claim", "take", "F1", "--override"]):
+            with self.subTest(args):
+                self.assertEqual(loopctl_table.classify(args)[0], "human")
+        for args in (["reconcile", "--apply"], ["reconcile", "--dry-run"], ["reconcile", "--dry-run", "--prs", "p.json"], ["migrate-plan", "--write"],
+                     ["remote-lock", "status"], ["claim", "list"], ["claim", "show", "F1"]):
+            with self.subTest(args):
+                self.assertNotEqual(loopctl_table.classify(args)[0], "human")
+
+    def test_the_actions_extras_refuses_under_a_session_are_the_table_human_only_set(self):
+        """`loopctl_table.HUMAN_ONLY` is what the guard denies; the actions `extras` refuses with `CLAUDECODE` set are the same set."""
+        from loopctl import extras
+        seen = []
+        real = cli._ctx
+
+        def spy(*a, **k):
+            seen.append(1)
+            raise common.Refused("ctx reached")
+        cli._ctx = spy
+        try:
+            for cmd, fn, actions in (("remote-lock", extras.cmd_remote_lock, ("status", "acquire", "renew", "release", "steal")),
+                                     ("claim", extras.cmd_claim, ("list", "show", "take", "release"))):
+                for action in actions:
+                    for env in ({"CLAUDECODE": "1"}, {"CLAUDECODE": ""}, {"CLAUDE_CODE_ENTRYPOINT": "cli"}):
+                        del seen[:]
+                        refused = False
+                        try:
+                            fn([action, "--repo", "/nonexistent"] + (["F1"] if cmd == "claim" and action != "list" else []), env, cli.Out(io.StringIO(), io.StringIO()))
+                        except common.Refused as exc:
+                            refused = "refusing to run inside a Claude Code session" in str(exc)
+                        with self.subTest("%s %s %s" % (cmd, action, sorted(env))):
+                            human = action in loopctl_table.HUMAN_ONLY[cmd]
+                            self.assertEqual(refused, human)
+                            self.assertEqual(bool(seen), not human, "a human-only action must stop before any config, git or network access")
+                    del seen[:]       # without a marker the action goes on to read the config
+                    try:
+                        fn([action, "--repo", "/nonexistent"] + (["F1"] if cmd == "claim" and action != "list" else []), {}, cli.Out(io.StringIO(), io.StringIO()))
+                    except common.Refused:
+                        pass
+                    self.assertTrue(seen, "%s %s without a session marker must run" % (cmd, action))
+        finally:
+            cli._ctx = real
 
     def test_every_command_is_classified_exactly_once(self):
         t = cli.classification()

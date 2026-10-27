@@ -33,6 +33,7 @@ import subprocess
 import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+import humanonly
 from kitlib import gitutil, jsonio, levels, runstate, semver
 
 from . import common
@@ -105,12 +106,13 @@ def is_fake_binary(path: str) -> bool:
 
 def check_nesting(env: Mapping[str, str], binary: str) -> None:
     """Refuse to launch a child from inside a Claude Code session (CS-2). Only the test harness with the fake binary may."""
-    if not env.get("CLAUDECODE"):
+    marker = humanonly.session_marker(env)          # CLAUDECODE or CLAUDE_CODE_ENTRYPOINT, present even when empty (GD-8)
+    if marker is None:
         return
     if env.get(ENV_HARNESS) == "1" and is_fake_binary(binary):
         return
-    raise LaunchRefused("the driver refuses to run inside a Claude Code session (CLAUDECODE is set): it launches `claude`, and no agent "
-                        "may (CS-2). A human starts `loopctl run` from a plain terminal")
+    raise LaunchRefused("the driver refuses to run inside a Claude Code session (%s is set): it launches `claude`, and no agent "
+                        "may (CS-2). A human starts `loopctl run` from a plain terminal" % marker)
 
 
 def check_version(repo: str, base_sha: Optional[str], rs: Any, env: Mapping[str, str], binary: str, configured_level: int,
@@ -504,7 +506,11 @@ def _process_command(pid: int) -> str:
 
 def reap_orphans(rs: Any, my_pid: Optional[int] = None, grace_s: float = 2.0) -> List[Dict[str, Any]]:
     """Kill children whose driver is dead. A record is acted on only when its driver pid is gone AND the process at the recorded pid
-    is still a `claude` launched with that session id (so a recycled pid is never touched). Returns what was reaped."""
+    is still a `claude` launched with that session id (so a recycled pid is never touched). Returns what was reaped.
+
+    Known limit (LC-12, documented in docs/ops.md, not fixed): a child's process group is swept only while the group leader is alive; a
+    group that outlives a crashed driver and its leader is not found again, because killing a recycled group id could hit an unrelated
+    process group."""
     my_pid = os.getpid() if my_pid is None else my_pid
     d = os.path.join(rs.root, "children")
     out = []  # type: List[Dict[str, Any]]

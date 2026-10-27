@@ -75,6 +75,26 @@ class Ledger(LoopTestCase):
         led.record("run-1", "A", 2, None, {"total_cost_usd": "free"})              # a new unknown after the ack parks again
         self.assertFalse(led.verdict(Cfg(), "run-1", "A").ok)
 
+    def test_an_unknown_cost_of_one_run_parks_the_next_run_until_a_human_acknowledges(self):
+        lr, rs, led = self.led()
+        led.record("run-1", "A", 1, None, {"result": "ok"})                       # an unknown in run 1 ...
+        v = led.verdict(Cfg(), "run-2", "B")                                       # ... is still an unknown for run 2 (LC-3)
+        self.assertFalse(v.ok)
+        self.assertIn("cost_unknown", v.codes)
+        led.acknowledge("run-2", "Pat", "seen")                                    # an ack covers every unknown written before it, whatever its run
+        self.assertTrue(led.verdict(Cfg(), "run-1", "A").ok)
+        self.assertTrue(led.verdict(Cfg(), "run-2", "B").ok)
+        led.record("run-3", "C", 1, None, {"result": "ok"})                       # a new unknown after the ack parks every run again
+        self.assertFalse(led.verdict(Cfg(), "run-2", "B").ok)
+
+    def test_an_estimated_entry_is_marked_and_counted_separately(self):
+        lr, rs, led = self.led()
+        e = led.record("run-1", "A", 1, None, cost=1.5, source="estimated")
+        self.assertIs(e["estimated"], True)
+        led.record("run-1", "A", 2, None, cost=0.5)
+        t = led.totals(run_id="run-1")
+        self.assertEqual((t["usd"], t["estimated"], t["estimated_usd"]), (2.0, 1, 1.5))
+
     def test_a_tampered_ledger_parks_instead_of_proving_the_run_is_under_budget(self):
         lr, rs, led = self.led()
         led.record("run-1", "A", 1, None, cost=0.1)

@@ -214,7 +214,7 @@ class Flow(LoopTestCase):
         loop = lr.fast_start()
         loop.begin("A", lr.session)
         lr.walk("A", "design_review", "building", "verifying", "reviewing", "awaiting_human")
-        loop.approve("checkpoint", "A", "Pat", "reject", "wrong colour")
+        loop.approve("item", "A", "Pat", "reject", "wrong colour")
         rec = lr.item("A")
         self.assertEqual(rec["status"], "pending")
         self.assertEqual(rec["rework"][-1]["note"], "wrong colour")
@@ -229,6 +229,30 @@ class Flow(LoopTestCase):
         loop.advance("A", "merged", lr.session, merge_commit=lr.do_merge("A"))
         with self.assertRaises(Refused):
             loop.approve("checkpoint", "A", "Pat", "reject")
+
+    def test_approve_cost_lifts_a_spend_park_and_grants_no_item_approval(self):
+        lr = self.lr(extra_cfg="run_budget_usd: 5")
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        loop.park("A", "cost_unknown", "no usable cost", lr.session, "ledger")
+        st = lr.state()
+        self.assertEqual((st.header["runStatus"], st.header["parked"]["reason"]), ("parked", "cost_unknown"))
+        lr.context().ledger().record("run-1", "A", 1, None, {"result": "no cost"})
+        ap = loop.approve("cost", "cost", "Pat", "approve", "checked the console")
+        self.assertEqual((ap["kind"], ap["used"]), ("cost", True))
+        st = lr.state()
+        self.assertEqual((st.header["runStatus"], st.header["parked"]), ("idle", None))
+        self.assertEqual(lr.item("A")["status"], "needs_human")                    # the item still waits for `approve unblock`
+        self.assertEqual([a for a in st.d["approvals"] if a["scope"] == "item"], [])
+        self.assertTrue(lr.context().ledger().verdict(lr.context().cfg, "run-1").ok)
+
+    def test_a_breaker_park_is_not_lifted_by_approve_cost(self):
+        lr = self.lr()
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        loop.park("A", "ESCALATION_NEEDED", "x", lr.session)
+        loop.approve("cost", "cost", "Pat")
+        self.assertEqual(lr.state().header["parked"]["reason"], "ESCALATION_NEEDED")
 
     def test_clarifications_are_capped_at_two_rounds(self):
         lr = self.lr()

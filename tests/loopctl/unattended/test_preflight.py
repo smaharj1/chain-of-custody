@@ -11,7 +11,7 @@ from ..fault_injection import render_config
 
 from guards import g_exec, g_halt
 from guards.invoke import analyze
-from kitlib import config as kconfig
+from kitlib import config as kconfig, loopctl_table
 from loopctl import cli, unattended
 
 from . import EVIDENCE, UNATTENDED_CFG, UnattendedRepo
@@ -103,7 +103,7 @@ class Rows(unittest.TestCase):
             self.only_bad(unattended.rows(self.ctx, st, L4), "parked")                           # `approve breaker` first
         st.header.update({"runStatus": "parked", "parked": {"item": "A", "reason": "checkpoint", "at": "2026-10-20T00:00:00Z"}})
         self.only_bad(unattended.rows(self.ctx, st, L4), "parked")                               # a checkpoint nobody has answered
-        st.d["approvals"].append({"id": "ap-1", "scope": "checkpoint", "target": "A", "choice": "approve", "used": False})
+        st.d["approvals"].append({"id": "ap-1", "scope": "checkpoint", "kind": "checkpoint", "target": "A", "choice": "approve", "used": False})
         self.assertTrue(unattended.ready(unattended.rows(self.ctx, st, L4)))                    # answered: the driver consumes it, so the human's approve is not a dead end
         st.d["approvals"][-1]["used"] = True
         self.only_bad(unattended.rows(self.ctx, st, L4), "parked")
@@ -206,7 +206,7 @@ class Guards(unittest.TestCase):
     def test_the_guards_and_loopctl_agree_on_which_unattended_actions_write(self):
         t = cli.classification()
         self.assertIn("unattended", t["tier1"])
-        self.assertEqual(tuple(t["flag_read"]["unattended"]), g_exec.LOOPCTL_FLAG_READ["unattended"])
+        self.assertEqual(set(t["action_read"]["unattended"]), {"check", "status", "promotion", "intake"})
         for args in READS:
             with self.subTest(args):
                 self.assertIs(g_exec.loopctl_is_read(inv(args)), True)
@@ -218,7 +218,7 @@ class Guards(unittest.TestCase):
 
     def test_every_action_the_command_accepts_is_either_a_read_word_or_a_write(self):
         actions = ("check", "status", "promotion", "intake", "watch", "notify-test")
-        reads = set(g_exec.LOOPCTL_FLAG_READ["unattended"])
+        reads = set(loopctl_table.ACTION_READ["unattended"])
         self.assertEqual(reads, {"check", "status", "promotion", "intake"})
         self.assertTrue(set(actions) - reads == {"watch", "notify-test"})                          # the two that run the human's command are writes
 

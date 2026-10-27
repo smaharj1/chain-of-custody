@@ -10,6 +10,9 @@ instant). Record: `{runId, sessionId, host, worktree, driverPid, startedAt, hear
 * Stale: only when the heartbeat is older than `lock_stale_min` AND the owner is gone. The owner is gone when the driver
   pid is dead; a lock with no driver pid (the prose conductor) has no process to test, so a heartbeat that old is the
   evidence. A lock from another host is never judged from here (`--host-dead` says you know it is dead).
+* Known limits, documented in docs/ops.md and not fixed (review fixes LC-8, LC-9): a lock whose driver pid was reused by another
+  process never looks stale (a human removes it with `lock release --force` after checking `status`; a portable process-start-time
+  lookup costs a subprocess per check); the heartbeat, release and takeover are advisory and not atomic with each other.
 * Steal: an atomic rename of the stale lock out of the way (only one stealer wins), then a create-exclusive of the new one.
   It never overwrites a live lock, and it re-checks that the lock is still the one it judged stale.
 * Release: only by the owning session.
