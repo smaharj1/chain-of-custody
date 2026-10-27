@@ -90,7 +90,9 @@ class GateCase(unittest.TestCase):
     def commit(self, files: Dict[str, str], msg: str = "work") -> str:
         for path, text in files.items():
             self.lr.repo.write(path, text)
-        return self.lr.commit_all(msg)
+        self.lr.repo.git("add", "-A")
+        self.lr.repo.git("commit", "-q", "-m", msg)
+        return ""             # callers that need the sha ask for head() (one more git call that most tests do not need)
 
     def remove(self, path: str) -> str:
         self.lr.repo.git("rm", "-q", path)
