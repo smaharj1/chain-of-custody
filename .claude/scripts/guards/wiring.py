@@ -210,7 +210,7 @@ def build_templates(manifest: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 def sandbox_snippet(cwd: str) -> Dict[str, Any]:
-    """The settings fragment that denies sandboxed writes to the git directory's hooks, config, info and the session registry by absolute path.
+    """The settings fragment that denies sandboxed writes to the git directory's hooks, config, info and the session registry by absolute path, and, in a linked worktree, the `.git` pointer file.
     In a plain checkout the relative entries of the sandbox template already cover them; in a linked worktree `.git` is a file and only these do."""
     from kitlib import gitutil
     common = gitutil.common_dir(cwd)
@@ -218,8 +218,14 @@ def sandbox_snippet(cwd: str) -> Dict[str, Any]:
         raise ValueError("not inside a git repository: %s" % cwd)
     entries = [os.path.join(common, "hooks"), os.path.join(common, "config"), os.path.join(common, "info"), os.path.join(common, "loopctl", "sessions")]
     ed = ["/" + e for e in entries]       # a permission rule spells an absolute path with a leading `//` [probe]
-    return {"sandbox": {"filesystem": {"denyWrite": entries}},
-            "permissions": {"deny": ["Edit(%s)" % ed[1]] + ["Edit(%s/**)" % e for e in ed[:1] + ed[2:]]}}
+    deny = ["Edit(%s)" % ed[1]] + ["Edit(%s/**)" % e for e in ed[:1] + ed[2:]]
+    # a linked worktree: `.git` is a pointer FILE inside the project directory; rewriting it moves every hook to a git directory the agent chose (R-A-4)
+    top = gitutil.toplevel(cwd)
+    pointer = os.path.join(top, ".git") if top else ""
+    if pointer and os.path.isfile(pointer):
+        entries.append(pointer)
+        deny.append("Edit(/%s)" % pointer)
+    return {"sandbox": {"filesystem": {"denyWrite": entries}}, "permissions": {"deny": deny}}
 
 
 def dumps(obj: Any) -> str:

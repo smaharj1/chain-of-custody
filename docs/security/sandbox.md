@@ -30,6 +30,10 @@ For a linked git worktree the common git directory is outside the worktree path 
 python3 .claude/scripts/guards/wiring.py --sandbox-snippet
 ```
 
+In a linked worktree the snippet also names the `.git` pointer file itself (`<worktree>/.git`, a file inside the project directory that reads `gitdir: <common>/worktrees/x`). Without that entry a sandboxed command can rewrite it, and every hook then computes a different git directory, with a session registry the agent wrote. It cannot be in the static template: in a plain checkout `.git` is a directory, and denying the directory would break git. The doctor row `sandbox.git-pointer` warns when `.git` is a file that is not denied (a warning, not a level cap) and is skipped in a plain checkout.
+
+**Left writable on purpose, and why.** `<git-common-dir>/loopctl/heldout/` is written by the `acceptance-author` (it is `denyRead` for engineers, so they cannot see the held-out tests, but a sandboxed engineer could overwrite them; the CI half of G3 restores the store from a private branch and is the check that holds), and `locked_paths.json` is written by `loopctl` in the conductor's own sandboxed Bash, so denying either would break the loop. Both are covered by the gates that pin and compare (`g3.pinned-edited`, the CI held-out job), not by the sandbox.
+
 The `Edit(//abs/path)` spelling of an absolute path in a permission rule is a probe item (V19), like the rest of the key names.
 
 ## "Configured" is not "active" (V19)
