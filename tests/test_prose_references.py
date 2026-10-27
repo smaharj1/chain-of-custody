@@ -128,6 +128,48 @@ class NoStaleReferences(unittest.TestCase):
         self.assertIn("Do not record the model used or a tool-call count", text)
 
 
+ORCHESTRATE = [os.path.join(REPO_ROOT, ".claude", "skills", "orchestrate", n) for n in ("SKILL.md", "loop.md", "preamble.md")]
+# commands only a human runs (kitlib/loopctl_table.py): the orchestrate prose may only PRINT them, on a line that says HUMAN STEP
+HUMAN_CMD = re.compile(r"loopctl (approve (plan|env|breaker|cost|demotion)\b|resume\b|reconcile --live|remote-lock (acquire|renew|release|steal)\b|claim (take|release)\b|"
+                       r"migrate-plan --write --force|parallel \S+ --apply)")
+
+
+class HumanStepsInProse(unittest.TestCase):
+    """The conductor never runs a human-only loopctl command and never pushes (review fixes D3, D11)."""
+
+    def lines(self):
+        for path in ORCHESTRATE:
+            with open(path, encoding="utf-8") as fh:
+                for n, ln in enumerate(fh, 1):
+                    yield os.path.basename(path), n, ln
+
+    def test_human_only_commands_appear_only_on_human_step_lines(self):
+        for f, n, ln in self.lines():
+            if HUMAN_CMD.search(ln):
+                self.assertIn("HUMAN STEP", ln, "%s:%d names a human-only command outside a HUMAN STEP line" % (f, n))
+
+    def test_the_merge_approval_and_the_reset_are_human_steps_and_the_relay_forms_are_complete(self):
+        relay_seen = 0
+        for f, n, ln in self.lines():
+            for m in re.finditer(r"loopctl approve (item|unblock|checkpoint) ([^`\n]*)", ln):
+                scope, rest = m.group(1), m.group(2)
+                if "HUMAN STEP" in ln.split("loopctl approve", 1)[0] or "HUMAN STEP" in ln and ln.index("HUMAN STEP") < m.start():
+                    continue
+                relay_seen += 1
+                if scope == "item":
+                    self.assertRegex(rest, r"--choice (reject|stop)", "%s:%d: approve item without --choice reject|stop is the merge approval" % (f, n))
+                elif scope == "unblock":
+                    self.assertRegex(rest, r"--choice (keep|replan)", "%s:%d: approve unblock may be relayed only with keep or replan" % (f, n))
+                self.assertIn("--note", rest, "%s:%d: a relay form carries the human's reply in --note" % (f, n))
+                self.assertRegex(rest, r"^(<id>|<item>)", "%s:%d: the scope is followed by the item id" % (f, n))
+        self.assertGreaterEqual(relay_seen, 4)
+
+    def test_remote_lock_and_claims_are_printed_for_the_human_never_run(self):
+        text = "".join(ln for _f, _n, ln in self.lines())
+        self.assertIn("HUMAN STEP: in a plain terminal run: python3 .claude/scripts/loopctl remote-lock acquire", text)
+        self.assertIn("you never push", text)
+
+
 class ReadinessGrepContract(unittest.TestCase):
     """the orchestrate skill, preamble 6(a), greps primers for sentinels and skips the kit-rule files."""
 

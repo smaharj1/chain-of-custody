@@ -97,7 +97,8 @@ Result, schema `pr_prepare.v1` (`--json`): `ok`, `branch`, `base`, `base_sha`, `
 
 ## Limits
 
-- This is not autonomy level L2. The push is yours, with your own credentials; the agent holds none (`docs/security/credentials.md`).
+- This is not autonomy level L2. The push is yours, with your own credentials; the agent holds none (`docs/security/credentials.md`). No agent pushes, the Orchestrator included: it prints what you run (`pr_prepare.py` prints the push and PR commands, the `HUMAN STEP` lines in `/orchestrate` print the rest) and waits. The remote lock and claims (`loopctl remote-lock`, `claim`) are pushes too and are human-only.
+- A merge approval is for one head. `loopctl approve item` records the head it was given for; if the branch moves afterwards (a CI fix, a rebase) the approval is void and you approve the new head. The approval attests the item's diff, not what the integration branch becomes once other items have merged.
 - Nothing reads GitHub. CI results, review comments and revert PRs reach the Tech Lead because you paste them (or save `gh` output you ran yourself and pass it with `--prs-json`).
 - The saved verify result and the engineer reports are files in your working tree: they catch mistakes and stale work, not a determined forger. The evidence that counts is the CI check run on the PR (DEC-10); the audit block links it once the PR exists.
 - `verify.py` cannot make a test runner honest. A runner whose output it cannot read gets a `verify.test-count-unknown` warning, not a block.
