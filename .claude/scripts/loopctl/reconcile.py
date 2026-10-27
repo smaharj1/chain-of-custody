@@ -225,14 +225,11 @@ def scan(ctx: Any, st: Any, lp: Any, prs: Optional[List[Dict[str, Any]]] = None,
 
 
 def _not_recoverable(ctx: Any, st: Any, items: Dict[str, Any], iid: str, mcm: Dict[str, Any]) -> Optional[str]:
-    """Why crash recovery must not mark this merge commit's item merged, or None. A head that was judged (the item reached reviewing or later) must
-    be the merge's second parent; an item that needs a human's approval (a human gate, or it was awaiting one) needs a merge approval for this item,
-    attempt and that head in the state (LC-13). A merge a person resolved by hand keeps its second parent, so the documented remedy still works."""
+    """Why crash recovery must not mark this merge commit's item merged, or None. An item that needs a human's approval (a human gate, or it was
+    awaiting one) needs a merge approval for this item, attempt and the merge's second parent (the head) in the state (LC-13). The recorded
+    `headSha` is not compared for an ungated item: the driver commits reports on the branch after the head was recorded, so it can lag the merge."""
     r = st.items[iid]
     head = mcm["parents"][1]
-    judged = r.get("headSha")
-    if judged and r["status"] in state_mod.APPROVABLE and judged != head:
-        return "its second parent %s is not the head %s that was judged" % (head[:12], judged[:12])
     gate = r.get("humanGate") or plan_mod.item_human_gate(items[iid], ctx.cfg.get_list("always_human_paths"))
     if not (gate or r["status"] == "awaiting_human"):
         return None

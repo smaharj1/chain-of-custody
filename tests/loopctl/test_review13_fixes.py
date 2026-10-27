@@ -56,6 +56,21 @@ class RelayCannotLiftAStop(Base):
                                  ("needs_human", "security_blocked", before["counters"], before["branch"]))
                 self.assertEqual([a for a in lr.state().d["approvals"] if a["scope"] == "item"], [])
 
+    def test_the_checkpoint_scope_cannot_lift_a_stop_either(self):
+        lr = self.lr(items=[item_doc("A"), item_doc("B")])
+        loop = lr.fast_start()
+        lr.complete("A")
+
+        def stop_after_merge(st):                                    # a human revert found after the merge, while the driver's checkpoint pause stands
+            st.header["parked"] = {"item": "A", "reason": "checkpoint", "at": "2026-01-01T00:00:00Z"}
+            sm._force_status(st, "A", "needs_human", "reconcile", "reverted", "human_revert")
+        loop.store.update(stop_after_merge, "test")
+        for choice in ("reject", "stop"):
+            with self.subTest(choice):
+                with self.assertRaises(Refused):
+                    loop.approve("checkpoint", "A", "conductor", choice)
+                self.assertEqual(lr.item("A")["status"], "needs_human")
+
     def test_the_human_unblock_and_the_human_approve_still_lift_it(self):
         lr, loop = self.parked()
         loop.approve("unblock", "A", "Pat", "reset", "looked")
@@ -357,20 +372,6 @@ class CrashRecoveryRespectsHumanGates(Base):
         lr.do_merge("A")
         lr.ctl("reconcile", "--apply", "--by", "Pat")
         self.assertEqual(lr.item("A")["status"], "merged")
-
-    def test_a_merge_of_some_other_commit_than_the_judged_head_is_not_recovered(self):
-        lr = self.lr(items=[item_doc("A"), item_doc("B")])
-        loop = lr.fast_start()
-        loop.begin("A", lr.session)
-        lr.walk("A", "design_review", "building", "verifying", "reviewing")
-        br = lr.item("A")["branch"]
-        lr.repo.git("switch", "-q", br)
-        lr.repo.commit_file("src/more.txt", "after the review\n", "work added after the head was judged")
-        lr.repo.git("switch", "-q", "main")
-        lr.repo.git("merge", "--no-ff", "-q", "-m", "Merge branch '%s'\n\nLoop-Item: A\nLoop-Attempt: 1" % br, br)
-        r = lr.ctl("reconcile", "--apply", "--by", "Pat")
-        self.assertIn("recover-unapproved", r.out + r.err)
-        self.assertEqual(lr.item("A")["status"], "reviewing")
 
 
 class OrphansAreLedgered(Base):
