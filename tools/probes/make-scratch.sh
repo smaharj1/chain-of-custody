@@ -9,8 +9,9 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 
-if [ -n "${CLAUDECODE:-}" ]; then
-    echo "make-scratch: refusing to run inside a Claude Code session (CLAUDECODE is set)." >&2
+# either Claude Code session marker, even empty (the same rule as .claude/scripts/humanonly.py)
+if [ -n "${CLAUDECODE+x}" ] || [ -n "${CLAUDE_CODE_ENTRYPOINT+x}" ]; then
+    echo "make-scratch: refusing to run inside a Claude Code session (CLAUDECODE or CLAUDE_CODE_ENTRYPOINT is set)." >&2
     echo "make-scratch: open a normal terminal and run this there." >&2
     exit 3
 fi

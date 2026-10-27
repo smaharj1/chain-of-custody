@@ -81,6 +81,17 @@ class Refusals(RunBaseline):
                 self.assert_nothing_created()
         self.assert_claude_never_ran()
 
+    def test_either_session_marker_refuses_even_when_empty(self):
+        for script in (SCRIPT, PREPARE):
+            for marker in ({"CLAUDE_CODE_ENTRYPOINT": "cli"}, {"CLAUDECODE": ""}):
+                with self.subTest(script=os.path.basename(script), marker=marker):
+                    proc = self.run_script("run-1", "--dest-root", self.root, "--source", self.src.path,
+                                           env=self.env(**marker), script=script)
+                    self.assertEqual(proc.returncode, 3, proc.stderr)
+                    self.assertIn("Claude Code session", proc.stderr)
+                    self.assert_nothing_created()
+        self.assert_claude_never_ran()
+
     def test_refuses_dry_run_inside_a_session_too(self):
         proc = self.prepare("run-1", "--dry-run", env=self.env(CLAUDECODE="1"))
         self.assertEqual(proc.returncode, 3)

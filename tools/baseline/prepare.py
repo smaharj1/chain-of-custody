@@ -169,9 +169,11 @@ def plan_lines(a: argparse.Namespace, dest: str, log: str, commit: Optional[str]
 
 
 def prepare(a: argparse.Namespace) -> int:
-    if os.environ.get("CLAUDECODE"):
-        raise PrepareError("refusing to run inside a Claude Code session (CLAUDECODE is set); "
-                           "run this from a normal terminal")
+    # either Claude Code session marker, even empty (the same rule as .claude/scripts/humanonly.py)
+    marker = next((m for m in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT") if m in os.environ), None)
+    if marker:
+        raise PrepareError("refusing to run inside a Claude Code session (%s is set); "
+                           "run this from a normal terminal" % marker)
     source = os.path.realpath(a.source)
     top = gitutil.toplevel(source)
     if top is None:

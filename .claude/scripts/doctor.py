@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import humanonly  # noqa: E402
 from kitlib import gitutil, levels  # noqa: E402
 
 from doctorlib import (ci, codeowners, creds, deploy, extras, github, guardchecks, levelcalc, parallel, secrets, settings, versions)  # noqa: E402,F401
@@ -63,8 +64,10 @@ def build_context(args: argparse.Namespace, env: Optional[Dict[str, str]] = None
     top = gitutil.toplevel(repo) if os.path.isdir(repo) else None
     if top:
         repo = top
-    if args.live and "CLAUDECODE" in env:
-        raise UsageError("--live is human-only and refuses to run inside a Claude Code session (CLAUDECODE is set). Run it from a plain terminal.")
+    marker = humanonly.session_marker(env)
+    if args.live and marker:
+        raise UsageError("--live is human-only and refuses to run inside a Claude Code session (%s is set). Run it from a plain terminal."
+                         % marker)
     ghapi = None
     if args.gh_fixture:
         with open(args.gh_fixture, "r", encoding="utf-8") as fh:
@@ -75,7 +78,7 @@ def build_context(args: argparse.Namespace, env: Optional[Dict[str, str]] = None
                   reach=default_reach if args.live else None, ghapi=ghapi, claude_version=args.claude_version,
                   config_ref=args.config_ref, extra_settings=args.settings, workflow_exempt=args.human_profile,
                   configured_level=args.level if isinstance(args.level, str) else None)
-    ctx.allow_path_claude = "CLAUDECODE" not in env  # type: ignore[attr-defined]
+    ctx.allow_path_claude = marker is None  # type: ignore[attr-defined]
     return ctx
 
 

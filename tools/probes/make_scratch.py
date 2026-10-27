@@ -257,9 +257,11 @@ def plan_lines(probe: str, variant: str, scratch: str, log: str, manifest: str, 
 
 
 def build(a: argparse.Namespace) -> int:
-    if os.environ.get("CLAUDECODE"):
-        raise ProbeError("refusing to run inside a Claude Code session (CLAUDECODE is set); "
-                         "run this from a normal terminal")
+    # either Claude Code session marker, even empty (the same rule as .claude/scripts/humanonly.py)
+    marker = next((m for m in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT") if m in os.environ), None)
+    if marker:
+        raise ProbeError("refusing to run inside a Claude Code session (%s is set); "
+                         "run this from a normal terminal" % marker)
     probe = a.probe.upper()
     if probe in CLOSED:
         raise ProbeError("%s is %s" % (probe, CLOSED[probe]))

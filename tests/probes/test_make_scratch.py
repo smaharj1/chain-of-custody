@@ -78,6 +78,16 @@ class Refusals(ScratchCase):
                     self.assertEqual(os.listdir(self.root), [])
         self.assert_claude_never_ran()
 
+    def test_either_session_marker_refuses_even_when_empty(self):
+        for script in (SCRIPT, PY):
+            for marker in ({"CLAUDE_CODE_ENTRYPOINT": "cli"}, {"CLAUDECODE": ""}):
+                with self.subTest(script=os.path.basename(script), marker=marker):
+                    proc = self.make("v1", "--probe", "V1", env=self.env(**marker), script=script)
+                    self.assertEqual(proc.returncode, 3, proc.stderr)
+                    self.assertIn("Claude Code session", proc.stderr)
+                    self.assertEqual(os.listdir(self.root), [])
+        self.assert_claude_never_ran()
+
     def test_refuses_a_scratch_inside_the_kit_repo(self):
         target = os.path.join(REPO_ROOT, "zz-probe-scratch-never-created")
         proc = self.run_script(target, "--probe", "V1")

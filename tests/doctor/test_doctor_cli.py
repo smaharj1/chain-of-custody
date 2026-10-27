@@ -175,6 +175,11 @@ class SafetyAroundClaudeAndLive(BoundaryCase):
         rc, out, err = run_doctor(["--live", "--repo", repo.path, "--home", self.fake_home.path], env)
         self.assertEqual(rc, 2)
         self.assertIn("human-only", err + out)
+        for marker in ({"CLAUDE_CODE_ENTRYPOINT": "cli"}, {"CLAUDECODE": ""}):
+            with self.subTest(marker=marker):
+                rc, out, err = run_doctor(["--live", "--repo", repo.path, "--home", self.fake_home.path], self.fake_home.env(marker))
+                self.assertEqual(rc, 2)
+                self.assertIn(sorted(marker)[0] + " is set", err + out)
 
     def test_the_doctor_never_runs_claude_inside_a_session_even_if_one_is_on_the_path(self):
         d = self.tmpdir()
