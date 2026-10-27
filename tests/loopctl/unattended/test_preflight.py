@@ -11,7 +11,7 @@ from ..fault_injection import render_config
 
 from guards import g_exec, g_halt
 from guards.invoke import analyze
-from kitlib import config as kconfig
+from kitlib import config as kconfig, loopctl_table
 from loopctl import cli, unattended
 
 from . import EVIDENCE, UNATTENDED_CFG, UnattendedRepo
@@ -218,7 +218,7 @@ class Guards(unittest.TestCase):
 
     def test_every_action_the_command_accepts_is_either_a_read_word_or_a_write(self):
         actions = ("check", "status", "promotion", "intake", "watch", "notify-test")
-        reads = set(g_exec.LOOPCTL_FLAG_READ["unattended"])
+        reads = set(loopctl_table.ACTION_READ["unattended"])
         self.assertEqual(reads, {"check", "status", "promotion", "intake"})
         self.assertTrue(set(actions) - reads == {"watch", "notify-test"})                          # the two that run the human's command are writes
 

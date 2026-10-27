@@ -10,8 +10,8 @@ the contract around it:
 * the gate computes `score = killed / (killed + survived + timeout) * 100` and passes when `score >= mutation_min` (default 60).
 
 No mutants generated for changed production code is a failure (a wrapper that mutates nothing proves nothing). A change that touches no
-production code (tests and documents only) skips. The gate runs in CI (`mutation.yml`) or locally; it refuses to run until the evidence gate
-has passed. Owner metric: the surviving-mutant rate.
+production code (tests and documents only) skips. The gate runs in the driver (LAST in the verify round when `gates.g4` is `on` or `report`, so Evidence finds a recorded result; `mutation_timeout_s` bounds it) and in CI
+(`mutation.yml`); it refuses to run until the evidence gate has passed. Owner metric: the surviving-mutant rate.
 """
 from __future__ import annotations
 

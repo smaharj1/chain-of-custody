@@ -44,6 +44,13 @@ def _tree_clean(ctx: Any) -> bool:
     return lgit.is_clean(ctx.repo)
 
 
+def _is_linked_worktree(ctx: Any) -> bool:
+    """Is `ctx.repo` a linked worktree (its git dir differs from the common git dir)? Unknown counts as not linked."""
+    a = lgit.run_git(["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"], cwd=ctx.repo, isolated=True, pin_hooks=True)
+    parts = a.stdout.split() if a.returncode == 0 else []
+    return len(parts) == 2 and os.path.realpath(parts[0]) != os.path.realpath(parts[1])
+
+
 def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Dict[str, Any]]:
     """Every check `run` makes, as [{id, ok, message}]. Never raises; never writes."""
     res = []  # type: List[Dict[str, Any]]
@@ -79,6 +86,11 @@ def preflight(ctx: Any, session: Optional[str], nonce: Optional[str]) -> List[Di
     chk("halt", not halted, "HALT is not set" if not halted else "HALT is set: a human runs `loopctl resume`")
     chk("clean-tree", _tree_clean(ctx), "the working tree is clean" if _tree_clean(ctx) else
         "the working tree has uncommitted changes; the loop runs in a dedicated clean clone or worktree (L-1)")
+    if ctx.runner == "driver":
+        linked = _is_linked_worktree(ctx)         # a warning, never a refusal (LC-7)
+        chk("worktree.dedicated", True, "this is a linked worktree" if linked else
+            "WARNING: this is not a linked worktree: a discard runs `git reset --hard` and `git clean -fd` in this directory. Use a dedicated one "
+            "(`git worktree add ../<repo>-loop`), see docs/ops.md")
     if ctx.runner == "sequential":
         if session is None:
             chk("canary", False, "--session <id> --nonce <value> from the SessionStart line is required")
@@ -157,10 +169,11 @@ def handoff_text(ctx: Any, run_id: str, session: str, order: List[str], eligible
          "Every deterministic decision goes through loopctl; you keep design, briefs, conflicts and summaries:",
          "  %s status --json                       re-read the state at every stage" % base,
          "  %s begin <item> --session %s            pending -> designing" % (base, session),
-         "  %s advance <item> <stage> --session %s  designing > design_review > stubbing > building > verifying > reviewing > ..." % (base, session),
+         "  %s advance <item> <stage> --session %s [--head <sha>]  designing > ... > reviewing > ...; --head defaults to the item branch tip" % (base, session),
          "  %s fail <item> --class <c> --reason <r> --session %s   the class decides retry, park or discard" % (base, session),
          "  %s gate <name> <item> --session %s      run a gate; the base sha's toggle decides whether it blocks" % (base, session),
-         "  %s approve item <item> --by <human>     only after the human said so; never on your own" % base,
+         "  The merge approval, plan approval, resume and every other approval are HUMAN STEPS: print `HUMAN STEP: <command>` and wait.",
+         "  %s approve checkpoint|item|unblock ...  only the relay forms in the orchestrate skill (Approvals), after the human said so" % base,
          "  %s status --pending-human               what is waiting on the human" % base,
          "  %s lock release --session %s           when the run ends" % (base, session),
          "", "A step back (verify failed, review blockers, a CI fix) is `fail`, never `advance`: it counts against the right cap.",

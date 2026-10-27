@@ -21,6 +21,15 @@ class Gates(DriverTestCase):
         self.assertEqual(driver.VERIFY_GATES[0], "g5")                       # a test-integrity hit still ends the round first
 
 
+class Preflight(DriverTestCase):
+    def test_a_driver_run_started_outside_a_linked_worktree_gets_a_warning_not_a_refusal(self):
+        lr = self.dr(items=[item_doc("A", estimate=ENG)])
+        rows = {p["id"]: p for p in lr.ctl("run", "--dry-run", "--json").json["preflight"]}
+        self.assertTrue(rows["worktree.dedicated"]["ok"])
+        self.assertIn("WARNING", rows["worktree.dedicated"]["message"])
+        self.assertIn("git reset --hard", rows["worktree.dedicated"]["message"])
+
+
 class IntegrationCheck(DriverTestCase):
     def approved(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG, riskClass="high"), item_doc("B", ["A"], estimate=ENG)])

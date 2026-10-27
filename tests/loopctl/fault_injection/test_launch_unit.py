@@ -96,7 +96,9 @@ class Binary(unittest.TestCase):
         fake = bins.install_fake_claude(self.d, {}, name="fake-claude")
         real = self.real_like()
         launch.check_nesting({}, real)                                                           # not in a session: fine
-        launch.check_nesting({"CLAUDECODE": ""}, real)
+        for marker in ({"CLAUDECODE": ""}, {"CLAUDE_CODE_ENTRYPOINT": "cli"}, {"CLAUDE_CODE_ENTRYPOINT": ""}):     # presence counts, not value (GD-8)
+            with self.assertRaises(LaunchRefused):
+                launch.check_nesting(marker, real)
         with self.assertRaises(LaunchRefused) as cm:
             launch.check_nesting({"CLAUDECODE": "1"}, real)
         self.assertIn("CS-2", str(cm.exception))
