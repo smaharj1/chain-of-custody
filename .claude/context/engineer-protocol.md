@@ -82,7 +82,7 @@ If the review surfaces blockers, the conductor **resumes you by `agent_id`** (Se
 {"status": "APPROVED", "report_path": "docs/features/<slug>/reports/<your-domain>.md", "iteration": 1}
 ```
 
-A report is **malformed** (the conductor sends it back; in the loop it fails the item) if a required section is missing, `Status` is not a value from section 6, the trailer is absent, or `## Primer Delta` says `NONE` without a `checked:` line.
+A report is **malformed** (the conductor sends it back; in the loop it fails the item) if a required section is missing, `Status` is not a value from section 6, the trailer is absent, or `## Primer Delta` says `NONE` without a `checked:` line. In the loop, `report_trailers` in `.claude/loop.config.md` decides how much of that fails the item: under `block` all of it; under `warn` (the default) only what makes your decision unreadable (no `## Status`, a bad status, a missing or unsafe report file) or makes the trailer contradict the report (a different status, path or iteration, duplicate keys): the missing trailer, a missing section or a lazy `NONE` is recorded and the item goes on. Write all of it correctly anyway: the setting moves to `block` once the reports in a row are clean.
 
 ```markdown
 # <Engineer Role> Report — <feature-slug-or-quick-task-name>
