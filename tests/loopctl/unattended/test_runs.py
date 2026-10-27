@@ -22,7 +22,7 @@ class Runs(UnattendedTestCase):
 
     def test_a_finished_run_says_it_started_and_finished_and_nothing_else_reaches_the_channel(self):
         evil = "x'; touch PWNED #$(touch PWNED2)`touch PWNED3` \u202e\x1b[31m"
-        lr = self.un(timing={"stall_run_s": 0.4}, cfg={"notify_env_allow": "[TOPIC, AWS_SECRET_ACCESS_KEY]"}, milestones=["M1", "M2"],
+        lr = self.un(timing={"stall_run_s": 1.5}, cfg={"notify_env_allow": "[TOPIC, AWS_SECRET_ACCESS_KEY]"}, milestones=["M1", "M2"],
                      items=[item_doc("A", estimate=ENG, title=evil, intent=evil, slug="evil-a"), item_doc("B", ["A"], estimate=ENG, milestone="M2")])
         lr.env.update({"TOPIC": "ops", "AWS_SECRET_ACCESS_KEY": "hunter2", "GITHUB_TOKEN": "ghp_x", "ANTHROPIC_API_KEY": "sk-x"})
         lr.set_scenario(lr.happy(["A", "B"]))
@@ -32,7 +32,7 @@ class Runs(UnattendedTestCase):
         def hung_gate(ctx):
             if not hung:                         # once (item A): the driver's own thread is blocked, with no tick, no event and no child to time out
                 hung.append(1)
-                time.sleep(1.2)
+                time.sleep(3.5)
             return GateResult.passed(note="stub")
         lr.stubs.results["g0"] = hung_gate
         lr.approve()

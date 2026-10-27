@@ -33,9 +33,9 @@
   60 s the child would sleep); stall and canary limits that raced a child's start-up (children could be killed before they wrote their
   pid file) are 3-4 s where the test needs the pid, and the driver tests' default `stall_s` is 6 s; `verify` tests poll with `wait_for`
   instead of fixed loops; the fake claude installs its SIGTERM ignore before it writes the pid file (the file now means "ready").
-  Fixed spots: `test_children` (Stall x2, tool-events, quiet-after-events, no-stall-without-probe, canary wait, 6 `read_pid` waits),
+  Fixed spots: `test_children` (Stall x2, Halt tick waits for the pid file, tool-events, quiet-after-events, no-stall-without-probe, canary wait, 6 `read_pid` waits),
   `test_faults_process`, `test_faults_state`, `test_faults_lock`, `test_faults_crash`, `test_adversarial_driver`, `unattended/test_stalls`,
-  `unattended/test_notify`, `verify/test_verify` (5 polling loops, 3 elapsed-time bounds), `doctor/test_adversarial`,
+  `unattended/test_runs` (watchdog limit 0.4 s -> 1.5 s, hung gate 1.2 s -> 3.5 s), `unattended/test_notify`, `verify/test_verify` (5 polling loops, 3 elapsed-time bounds), `doctor/test_adversarial`,
   `bootstrap/test_adversarial` and `kitlib/test_redact` (CPU-time bounds), `test_helpers` (SIGTERM race in the fake).
 - Tests added: 8 (`test_gitfast`) and 2 real-process tests (`test_runs_as_a_script` in bootstrap_config and infra gate); source_policy and
   pr_prepare keep one existing test on `real=True`. Tests removed or merged: none.

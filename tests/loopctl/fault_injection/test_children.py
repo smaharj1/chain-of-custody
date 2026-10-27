@@ -169,7 +169,7 @@ class Halt(Base):
 
         def tick():
             calls.append(1)
-            return "halt" if len(calls) > 8 and os.path.exists(self.pidfile("halt-sleeper.pid")) else None
+            return "halt" if len(calls) > 8 and os.path.exists(self.pidfile("halt-sleeper.pid")) and os.path.exists(self.pidfile("halt.pid")) else None
         res = self.run_child(tick=tick)
         self.assertEqual(res.reason, "halt")
         pid, sleeper = self.read_pid(self.pidfile("halt.pid")), self.read_pid(self.pidfile("halt-sleeper.pid"))
