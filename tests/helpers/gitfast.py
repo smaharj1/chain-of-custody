@@ -18,16 +18,21 @@ Shapes: rev-parse (--verify [-q] REV with REV a full ref, HEAD or a full object 
 for-each-ref --format=%(refname) PATTERN..., merge-base A B, merge-base --is-ancestor A B, ls-tree -z [-l] [-r] [--full-tree] REV
 [-- PATH...], cat-file --batch, show REV:PATH (a blob).
 
-Never used for writes (hash-object, mktree, commit-tree, update-ref, commit, merge ...): those still run git, so objects and refs
-are written exactly as before. Environment: TESTS_GITFAST=0 turns the shim off (everything runs real git); =verify runs both and
-raises if they ever differ, which `tests/helpers/test_gitfast.py` and the conductor use to prove the shim right.
+Writes: only the three that loopctl's state commit makes, `hash-object -w --stdin`, `mktree` and `commit-tree` (a loose object is a
+pure function of its content, so there is nothing for the shim to get subtly wrong but the bytes, and those are tested). Refs are
+never written here: `update-ref`, `commit`, `merge`, `switch` ... still run git, so compare-and-swap, locks and reflogs are git's.
+Environment: TESTS_GITFAST=0 turns the shim off (everything runs real git); =verify runs both and raises if they ever differ (a
+commit-tree without a pinned date is compared apart from its clock), which `tests/test_gitfast.py` and the conductor use to prove it.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+import time
 import subprocess
 import sys
+import tempfile
 import zlib
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
@@ -223,6 +228,35 @@ class Repo(object):
         if len(body) <= _MAX_CACHED_BODY:
             _OBJ_CACHE[sha] = (typ, body)
         return typ, body
+
+    def write_object(self, typ: str, body: bytes) -> str:
+        """Store a loose object the way git does (zlib, mode 0444, written aside and renamed) and return its id."""
+        raw = ("%s %d" % (typ, len(body))).encode("ascii") + b"\0" + body
+        sha = hashlib.sha1(raw).hexdigest()
+        d = os.path.join(self.gitdir, "objects", sha[:2])
+        path = os.path.join(d, sha[2:])
+        if not os.path.exists(path):
+            os.makedirs(d, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(prefix="tmp_obj_", dir=d)           # unique: threads (and processes) may store the same object at once
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(zlib.compress(raw, 1))
+            os.chmod(tmp, 0o444)
+            try:
+                os.rename(tmp, path)
+            except OSError:
+                if not os.path.exists(path):
+                    raise
+                os.unlink(tmp)
+        if len(body) <= _MAX_CACHED_BODY:
+            _OBJ_CACHE[sha] = (typ, body)
+        return sha
+
+    def check_writable_config(self) -> None:
+        with open(os.path.join(self.gitdir, "config"), encoding="utf-8", errors="replace") as fh:
+            cfg = fh.read().lower()
+        for word in ("gpg", "signingkey", "encoding", "hooks", "sharedrepository", "compression", "fsync", "safecrlf", "autocrlf"):
+            if word in cfg:
+                raise Unsupported("config " + word)
 
     def commit(self, sha: str) -> Tuple[str, Tuple[str, ...]]:
         got = _COMMITS.get(sha)
@@ -661,6 +695,84 @@ def _show(repo: Repo, cwd: str, args: Sequence[str]) -> Out:
     return 0, repo.read_object(esha)[1]
 
 
+# -- writes: pure functions of their input (the object id is a hash of the content), so nothing else can differ ------------------
+def _hash_object(repo: Repo, cwd: str, args: Sequence[str], input_text: Optional[str]) -> Out:
+    if list(args) != ["-w", "--stdin"] or input_text is None:
+        raise Unsupported("hash-object args")
+    repo.check_writable_config()
+    return 0, _lines(repo.write_object("blob", input_text.encode("utf-8")))
+
+
+def _mktree(repo: Repo, cwd: str, args: Sequence[str], input_text: Optional[str]) -> Out:
+    if list(args) or input_text is None:
+        raise Unsupported("mktree args")
+    repo.check_writable_config()
+    entries = []  # type: List[Tuple[bytes, str, str]]
+    for line in input_text.split("\n"):
+        if not line:
+            continue
+        m = re.match(r"^(100644|100755|040000|40000) (blob|tree) ([0-9a-f]{40})\t([^\0\n/]+)\Z", line)
+        if not m:
+            raise Unsupported("mktree line")
+        mode, typ, sha, name = m.groups()
+        mode = "40000" if mode in ("040000", "40000") else mode
+        if (typ == "tree") != (mode == "40000") or repo.read_object(sha)[0] != typ or name in (".", "..", ".git"):
+            raise Unsupported("mktree entry")
+        entries.append((name.encode("utf-8"), mode, sha))
+    if len(set(e[0] for e in entries)) != len(entries):
+        raise Unsupported("duplicate names")
+    entries.sort(key=lambda e: e[0] + (b"/" if e[1] == "40000" else b""))
+    body = b"".join(m.encode("ascii") + b" " + n + b"\0" + bytes.fromhex(sha) for n, m, sha in entries)
+    return 0, _lines(repo.write_object("tree", body))
+
+
+def _git_date(value: Optional[str]) -> str:
+    if value is None:
+        now = int(time.time())
+        off = time.localtime(now).tm_gmtoff or 0
+        sign = "+" if off >= 0 else "-"
+        off = abs(off)
+        return "%d %s%02d%02d" % (now, sign, off // 3600, (off % 3600) // 60)
+    m = re.match(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)([+-])(\d\d)(\d\d)\Z", value)
+    if not m:
+        raise Unsupported("date format")
+    import calendar
+    y, mo, d, h, mi, se = (int(x) for x in m.groups()[:6])
+    off = (int(m.group(8)) * 3600 + int(m.group(9)) * 60) * (1 if m.group(7) == "+" else -1)
+    return "%d %s%s%s" % (calendar.timegm((y, mo, d, h, mi, se)) - off, m.group(7), m.group(8), m.group(9))
+
+
+def _commit_tree(repo: Repo, cwd: str, args: Sequence[str], env: Dict[str, str]) -> Out:
+    a = list(args)
+    if len(a) < 3 or a[0].startswith("-") or not _is_hex(a[0]):
+        raise Unsupported("commit-tree args")
+    tree = a.pop(0)
+    parents = []  # type: List[str]
+    message = None  # type: Optional[str]
+    while a:
+        flag = a.pop(0)
+        if flag == "-p" and a and _is_hex(a[0]):
+            parents.append(a.pop(0))
+        elif flag == "-m" and a and message is None:
+            message = a.pop(0)
+        else:
+            raise Unsupported("commit-tree flag")
+    if message is None or "\0" in message:
+        raise Unsupported("commit-tree message")
+    for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        v = env.get(k, "")
+        if not v or any(c in v for c in "<>\n\0"):
+            raise Unsupported("identity")
+    repo.check_writable_config()
+    if repo.read_object(tree)[0] != "tree" or any(repo.read_object(p)[0] != "commit" for p in parents):
+        raise Unsupported("commit-tree objects")
+    lines = ["tree " + tree] + ["parent " + p for p in parents]
+    lines.append("author %s <%s> %s" % (env["GIT_AUTHOR_NAME"], env["GIT_AUTHOR_EMAIL"], _git_date(env.get("GIT_AUTHOR_DATE"))))
+    lines.append("committer %s <%s> %s" % (env["GIT_COMMITTER_NAME"], env["GIT_COMMITTER_EMAIL"], _git_date(env.get("GIT_COMMITTER_DATE"))))
+    body = ("\n".join(lines) + "\n\n" + message + ("" if message.endswith("\n") else "\n")).encode("utf-8")
+    return 0, _lines(repo.write_object("commit", body))
+
+
 def emulate(args: Sequence[str], cwd: Optional[str], env: Dict[str, str], input_text: Optional[str] = None) -> Tuple[int, bytes]:
     """(returncode, stdout bytes) as git would produce, or raise Unsupported."""
     for k in env:
@@ -675,13 +787,21 @@ def emulate(args: Sequence[str], cwd: Optional[str], env: Dict[str, str], input_
     if cmd not in _COMMANDS:
         raise Unsupported(cmd)
     repo = Repo.find(cwd or os.getcwd())
+    here = cwd or os.getcwd()
     if cmd == "cat-file":
-        return _cat_file(repo, cwd or os.getcwd(), rest, input_text)
-    return _COMMANDS[cmd](repo, cwd or os.getcwd(), rest)
+        return _cat_file(repo, here, rest, input_text)
+    if cmd == "hash-object":
+        return _hash_object(repo, here, rest, input_text)
+    if cmd == "mktree":
+        return _mktree(repo, here, rest, input_text)
+    if cmd == "commit-tree":
+        return _commit_tree(repo, here, rest, env)
+    return _COMMANDS[cmd](repo, here, rest)
 
 
 _COMMANDS = {"rev-parse": _rev_parse, "symbolic-ref": _symbolic_ref, "show-ref": _show_ref, "for-each-ref": _for_each_ref,
-             "merge-base": _merge_base, "ls-tree": _ls_tree, "cat-file": None, "show": _show}  # type: Dict[str, Any]
+             "merge-base": _merge_base, "ls-tree": _ls_tree, "cat-file": None, "show": _show,
+             "hash-object": None, "mktree": None, "commit-tree": None}  # type: Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------------------------------------------------------------
@@ -712,7 +832,9 @@ def _fast_run_git(original: Callable[..., Any]) -> Callable[..., Any]:
                     if mode == "verify":
                         real = original(args, cwd=cwd, check=check, env=env, input_text=input_text, isolated=isolated, timeout=timeout,
                                         pin_hooks=pin_hooks, binary=binary)
-                        if real.returncode != proc.returncode or real.stdout != proc.stdout or real.stderr != proc.stderr:
+                        clocked = "commit-tree" in args and not (env or {}).get("GIT_AUTHOR_DATE")
+                        same_out = real.stdout == proc.stdout or (clocked and len(real.stdout.strip()) == len(proc.stdout.strip()))
+                        if real.returncode != proc.returncode or not same_out or real.stderr != proc.stderr:
                             sys.stderr.write("GITFAST MISMATCH %r in %r\n" % (list(args), cwd))
                             raise AssertionError("gitfast differs from git for %r (cwd %r):\nfast: %r %r\ngit : %r %r %r" % (
                                 list(args), cwd, proc.returncode, proc.stdout[:400], real.returncode, real.stdout[:400], real.stderr[:200]))

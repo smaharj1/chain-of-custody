@@ -149,6 +149,45 @@ class Gitfast(unittest.TestCase):
             gitfast.emulate(args, path, env)                       # raises Unsupported if the shim declines
         gitfast.emulate(["cat-file", "--batch"], path, env, s["main"] + "\n" + s["main"] + ":src/a.txt\n")
 
+    def test_the_objects_it_writes_are_the_ones_git_writes(self):
+        parent = tempfile.mkdtemp(prefix="gitfast-w-")
+        self.addCleanup(shutil.rmtree, parent, True)
+        path = os.path.join(parent, "repo")
+        shutil.copytree(self.fx.repo.path, path, symlinks=True)
+        s = self.fx.shas
+        env = dict(git_test_env())
+        for text in ("", "x\n", "{\"a\": 1}\n" * 50, "caf\u00e9 \u2713\n", "no newline"):
+            want = real_git(["hash-object", "--stdin"], path, text)
+            got = gitfast.emulate(["hash-object", "-w", "--stdin"], path, env, text)
+            self.assertEqual(got, want)
+            self.assertEqual(real_git(["cat-file", "blob", got[1].decode().strip()], path)[1], text.encode("utf-8"))
+        blob = s["blob"]
+        lines = ["100644 blob %s\tstate.json\n" % blob, "100644 blob %s\ta.txt\n100755 blob %s\tb\n" % (blob, blob),
+                 "100644 blob %s\tz\n040000 tree %s\tz.d\n100644 blob %s\tz.e\n" % (blob, s["tree"], blob),
+                 "100644 blob %s\ta\n040000 tree %s\ta-b\n040000 tree %s\ta0\n" % (blob, s["tree"], s["tree"]), ""]
+        for text in lines:
+            self.assertEqual(gitfast.emulate(["mktree"], path, env, text), real_git(["mktree"], path, text), text)
+            tree = real_git(["mktree"], path, text)[1].decode().strip()
+            self.assertEqual(real_git(["cat-file", "-t", tree], path), (0, b"tree\n"))
+            self.assertEqual(real_git(["ls-tree", tree], path)[0], 0)
+        tree = real_git(["mktree"], path, lines[0])[1].decode().strip()
+        for date in ("2026-01-01T00:00:00+0000", "2026-03-04T05:06:07-0700", "2026-12-31T23:59:59+0545", "2020-02-29T12:00:00+0100"):
+            wenv = dict(env, GIT_AUTHOR_DATE=date, GIT_COMMITTER_DATE=date, GIT_AUTHOR_NAME="loopctl", GIT_AUTHOR_EMAIL="loopctl@localhost.invalid",
+                        GIT_COMMITTER_NAME="loopctl", GIT_COMMITTER_EMAIL="loopctl@localhost.invalid")
+            for args in (["commit-tree", tree, "-m", "approve plan demo by Pat [seq 1]"], ["commit-tree", tree, "-p", s["main"], "-m", "advance A -> building"],
+                         ["commit-tree", tree, "-p", s["main"], "-p", s["side"], "-m", "two parents\nand a body\n"], ["commit-tree", tree, "-m", "caf\u00e9"]):
+                want = subprocess.run(["git"] + args, cwd=path, env=wenv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                got = gitfast.emulate(args, path, wenv)
+                self.assertEqual(got, (want.returncode, want.stdout), " ".join(args))
+                self.assertEqual(real_git(["cat-file", "-t", got[1].decode().strip()], path)[1], b"commit\n")
+        # and a commit made without a pinned date is a well-formed commit stamped now
+        now_env = dict(env, GIT_AUTHOR_NAME="n", GIT_AUTHOR_EMAIL="e@x.invalid", GIT_COMMITTER_NAME="n", GIT_COMMITTER_EMAIL="e@x.invalid")
+        for k in ("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE"):
+            now_env.pop(k)
+        sha = gitfast.emulate(["commit-tree", tree, "-m", "now"], path, now_env)[1].decode().strip()
+        self.assertEqual(real_git(["cat-file", "-t", sha], path), (0, b"commit\n"))
+        self.assertIn(b"author n <e@x.invalid> ", real_git(["cat-file", "commit", sha], path)[1])
+
     def test_it_declines_instead_of_guessing(self):
         env = dict(git_test_env())
         path = self.fx.repo.path
