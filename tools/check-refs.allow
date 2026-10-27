@@ -7,6 +7,7 @@
 .claude/metrics.jsonl
 .claude/orchestrate.lock
 .claude/settings.local.json
+.claude/worktrees/
 
 # Files that live in a user's project, not in the kit (the docs tell the user to create them).
 docs/tech_spec.md
