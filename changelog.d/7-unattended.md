@@ -16,7 +16,7 @@
 - `.claude/templates/notify/notify-hooks.settings.json`: the interactive-only hook snippet (not in the manifest, so it is never in a driver child's profile).
 - `docs/unattended.md`; schema `kitlib/schema/7-unattended.json` (10 keys) and the regenerated `.claude/loop.config.md` and `examples/loop.config.md`.
 - Evals: `S-injection-intake` (case, transcript and its entry in `tools/evals/make_synthetic.py`).
-- Tests: `tests/loopctl/unattended/` (7 modules, 64 tests, about 12 CPU-seconds on a quiet machine: the real driver runs in six of them, three launching fake children; the rest are in-process) and 19 rows in `tests/guards/corpus/loopctl.json`.
+- Tests: `tests/loopctl/unattended/` (7 modules, 65 tests, about 12 CPU-seconds even on a loaded machine: the real driver runs in six of them, three launching fake children; the rest are in-process) and 19 rows in `tests/guards/corpus/loopctl.json`.
 
 Fault-injection and adversarial cases (each has a test):
 
