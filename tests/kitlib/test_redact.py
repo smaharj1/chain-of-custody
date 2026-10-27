@@ -45,6 +45,23 @@ TABLE = [
     ("stripe live key", STRIPE, [STRIPE], ["[REDACTED:stripe-key]"]),
     ("google api key", "AIza" + "S" * 35, ["AIza" + "S" * 35], ["[REDACTED:google-api-key]"]),
     ("npm token", "npm_" + "a" * 36, ["npm_" + "a" * 36], ["[REDACTED:npm-token]"]),
+    # UN-2: a key name is an identifier, not a word (`\\b` missed every compound name)
+    ("env style password", "DB_PASSWORD=hunter2hunter2", ["hunter2hunter2"], ["DB_PASSWORD="]),
+    ("env style secret", "API_SECRET=abc12345xyz", ["abc12345xyz"], ["API_SECRET="]),
+    ("stripe secret key name", "STRIPE_SECRET_KEY=zzzzzzzzzzzzzz", ["zzzzzzzzzzzzzz"], ["STRIPE_SECRET_KEY="]),
+    ("lower snake password", "db_password=hunter2xx", ["hunter2xx"], ["db_password="]),
+    ("camelCase secret", "apiSecret=abc123456", ["abc123456"], ["apiSecret="]),
+    ("camelCase quoted", "dbPassword: 'abc123456'", ["abc123456"], ["dbPassword:"]),
+    ("prefixed json field", '{"client_secret_id": "abcd1234"}', ["abcd1234"], ["client_secret_id"]),
+    ("glued lower-case names", "clientsecret=abcdefgh1 dbpassword: abcdefgh2 SECRETKEY=abcdefgh3", ["abcdefgh1", "abcdefgh2", "abcdefgh3"], ["clientsecret=", "SECRETKEY="]),
+    ("cli flag", "--token=abc12345", ["abc12345"], ["--token="]),
+    # UN-3: token prefixes
+    ("anthropic key", "k " + "sk-" + "ant-" + "api03-" + "abcdefghijklmnopqrstuvwx", ["abcdefghijklmnopqrstuvwx"], ["[REDACTED:anthropic-key]"]),
+    ("openai project key", "OPENAI_API_KEY=" + "sk-" + "proj-" + "abcdefghijklmnopqrstuv", ["abcdefghijklmnopqrstuv"], ["[REDACTED:openai-key]"]),
+    ("gitlab token", "glp" + "at-" + "abcdefghijklmnopqrst", ["abcdefghijklmnopqrst"], ["[REDACTED:gitlab-token]"]),
+    ("stripe webhook secret", "whs" + "ec_" + "abcdefghijklmnop0123", ["abcdefghijklmnop0123"], ["[REDACTED:stripe-webhook-secret]"]),
+    ("pypi token", "pypi-" + "AgEIcHlwaS5vcmc" + "abcdefghijklmnopqrstuvwx", ["abcdefghijklmnopqrstuvwx"], ["[REDACTED:pypi-token]"]),
+    ("azure account key", "Account" + "Key=" + "abcdEFGH0123456789abcdEFGH0123456789ab==", ["abcdEFGH0123456789"], ["AccountKey=", "[REDACTED:azure-account-key]"]),
     ("several in one line", "%s and %s" % (AWS_ID, GHP), [AWS_ID, GHP], ["and"]),
 ]
 
@@ -58,6 +75,13 @@ UNCHANGED = [
     "https://example.com/path?x=1",
     "git commit -m 'fix auth token refresh'",
     "AKIA-short",
+    "max_tokens=4000",
+    "input_tokens: 1200",
+    "auth: required",
+    "passwordless=true",
+    "token_count = 5",
+    "maxtoken=500",
+    "secretary: Pat",
     "ghp_short",
     "",
 ]
@@ -121,6 +145,11 @@ class RedactObj(unittest.TestCase):
         self.assertEqual(out["api-key"], "[REDACTED:secret-key]")
         self.assertEqual(out["password"], "")
         self.assertEqual(out["title"], "x")
+
+    def test_camel_case_and_env_style_keys(self):
+        out = redact.redact_obj({"dbPassword": "x", "apiSecret": "y", "DB_PASSWORD": "z", "inputTokens": "n", "tokenBudget": "b"})
+        self.assertEqual([out[k] for k in ("dbPassword", "apiSecret", "DB_PASSWORD")], ["[REDACTED:secret-key]"] * 3)
+        self.assertEqual((out["inputTokens"], out["tokenBudget"]), ("n", "b"))
 
     def test_idempotent(self):
         once = redact.redact_obj({"token": "abc", "x": ["password=zzzzzz"]})
