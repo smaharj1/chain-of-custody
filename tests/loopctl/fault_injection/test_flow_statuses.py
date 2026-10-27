@@ -18,7 +18,7 @@ ENG = {"loc": 100, "engineers": ["backend-engineer"]}
 
 class EngineerStatuses(DriverTestCase):
     def test_partial_then_clarification_then_a_bad_trailer_then_a_deviation_all_lead_to_a_merge(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG)])
+        lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"report_trailers": "block"})          # warn (the default since Phase 10) lets a missing trailer through
         lr.set_scenario(lr.happy(by_role={"backend-engineer": [
             lr.eng_run("A", status="PARTIAL"), lr.eng_run("A", status="NEEDS_CLARIFICATION", iteration=2), lr.eng_run("A", result="Done.", iteration=3),
             lr.eng_run("A", status="CONTRACT_DEVIATION", iteration=4)]}))
@@ -101,7 +101,7 @@ class EngineerStatuses(DriverTestCase):
 
     def test_the_engineer_report_checks_that_decide_a_status(self):
         """Every way a report can be wrong is `malformed_report`: an item failure, never an approval (engineer-protocol 7)."""
-        lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"max_retries_per_item": "50"})
+        lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"max_retries_per_item": "50", "report_trailers": "block"})        # block: every form problem fails (warn: tests/loopctl/learning)
         drv = lr.driver_at("A", "design_review", "building")
         rel = "docs/features/slice-a/reports/backend.md"
         good = {"status": "APPROVED", "report_path": rel, "iteration": 1}

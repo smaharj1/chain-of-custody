@@ -21,6 +21,9 @@ READS = [
     ["render"], ["render", "--format", "mermaid"], ["audit", "render", "A"], ["report", "check", "docs/features/x/reports/backend.md"],
     ["help"], ["version"], ["lock", "status"], ["evidence", "--check"], ["cost", "--projection"], ["reconcile", "--dry-run"],
     ["migrate-plan", "--check"], ["migrate-plan", "--dry-run"], ["run", "--dry-run"], ["abort", "--dry-run"], ["abort", "--dry-run", "--rollback-to", SHA],
+    # Phase 10: the learning loop's reads
+    ["retro"], ["retro", "--json"], ["retro", "--milestone", "M1"], ["harness"], ["harness", "--json"], ["gaps"], ["gaps", "--json", "--min", "1"],
+    ["calibration", "report"], ["calibration", "scan"], ["calibration", "report", "--json"], ["report", "scan"], ["report", "scan", "--json"],
 ]
 # commands (with typical arguments) the table calls writes
 WRITES = [
@@ -29,6 +32,9 @@ WRITES = [
     ["run", "--session", "s", "--nonce", "n"], ["abort", "--by", "Pat"], ["abort", "--rollback-to", SHA, "--by", "Pat"], ["reconcile", "--apply"],
     ["migrate-plan", "--write"], ["lock", "acquire", "--session", "s"], ["lock", "release", "--session", "s"], ["lock", "steal"], ["halt"], ["resume"],
     ["migrate-plan", "--check", "--write"], ["reconcile", "--dry-run", "--apply"], ["abort", "--dry-run", "--force"], ["evidence"], ["cost"],
+    ["gaps", "--write"], ["gaps", "--min", "1", "--write"], ["calibration", "scan", "--write"], ["calibration", "report", "--write"],
+    ["calibration", "record", "--blocker", "bk-000000000000", "--outcome", "fixed", "--by", "Pat"], ["calibration"], ["calibration", "frobnicate"],
+    ["retro", "--write"], ["harness", "--apply"], ["gaps", "--force"],
 ]
 
 

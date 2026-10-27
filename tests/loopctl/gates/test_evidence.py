@@ -113,23 +113,23 @@ class Discovery(GateCase):
     ITEMS = [g3_item("A")]
 
     def test_every_gate_of_the_phase_is_installed_with_the_contract(self):
-        self.assertEqual(gates.installed(), ["evidence", "g0", "g1", "g11", "g2", "g3", "g4", "g5", "g6", "g7", "g9"])
+        self.assertEqual(gates.installed(), ["docs", "evidence", "g0", "g1", "g11", "g2", "g3", "g4", "g5", "g6", "g7", "g9"])
         for name in gates.installed():
             mod = gates.get(name)
             self.assertTrue(callable(mod.run))
             self.assertTrue(mod.OWNER_METRIC)
             self.assertEqual(mod.NAME, name)
 
-    def test_g4_is_the_only_off_by_default_evidence_gated_gate(self):
+    def test_g4_is_the_only_evidence_gated_gate_and_docs_the_only_report_by_default_one(self):
         for name in gates.installed():
             mod = gates.get(name)
             self.assertEqual(getattr(mod, "EVIDENCE_GATED", False), name == "g4", name)
-            self.assertEqual(getattr(mod, "DEFAULT_MODE", "on"), "off" if name == "g4" else "on", name)
+            self.assertEqual(getattr(mod, "DEFAULT_MODE", "on"), {"g4": "off", "docs": "report"}.get(name, "on"), name)       # docs (Phase 10) runs and records, never blocks, until a person turns it on
 
     def test_required_transitions(self):
         want = {"g0": [("designing", "design_review")], "g2": [("design_review", "building"), ("stubbing", "building")],
                 "g1": [("verifying", "reviewing")], "g3": [("verifying", "reviewing")], "g5": [("verifying", "reviewing")],
-                "g6": [("verifying", "reviewing")], "g9": [("verifying", "reviewing")], "g11": [("verifying", "reviewing")]}
+                "g6": [("verifying", "reviewing")], "g9": [("verifying", "reviewing")], "g11": [("verifying", "reviewing")], "docs": [("verifying", "reviewing")]}
         for name, trans in want.items():
             self.assertEqual(list(gates.get(name).REQUIRED_FOR), trans, name)
         self.assertIn(("reviewing", "pr_open"), gates.get("g7").REQUIRED_FOR)

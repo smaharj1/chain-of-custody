@@ -62,7 +62,7 @@ SCHEMA = "loopctl.driver.v1"
 ENGINEER_ORDER = ("infra-engineer", "database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer")
 PRE_GATES = ("g0",)
 STUB_GATES = ("g2",)
-VERIFY_GATES = ("g5", "g1", "g3", "g6", "g9", "g11")      # g5 first: a test-integrity hit makes the rest pointless
+VERIFY_GATES = ("g5", "g1", "g3", "g6", "g9", "g11", "docs")      # g5 first: a test-integrity hit makes the rest pointless; docs (Phase 10) is `report` by default
 REVIEW_GATES = ("g7",)
 MAX_ITERATIONS = 200                                      # per item: a runaway backstop, not a tuning knob
 
@@ -816,7 +816,8 @@ class Driver(object):
                 gctx.base_sha = self.item_base[iid]              # the item's own diff; cfg stays the run's anchor (CO-11)
             res = gates.run_gate(name, gctx)
             out.append((name, res))
-            self.ev("gate", item=iid, gate=name, status=res["status"], mode=res["mode"], blocking=res["blocking"])
+            ids = [str(f.get("id"))[:40] for f in res.get("findings") or [] if isinstance(f, dict) and f.get("id") and f.get("severity") in ("error", "warn")][:6]
+            self.ev("gate", item=iid, gate=name, status=res["status"], mode=res["mode"], blocking=res["blocking"], **({"ids": ids} if ids else {}))
             if res["blocking"] and name in stop_on:
                 break
         # one compare-and-swap for the round; an `off` gate says nothing, so it writes nothing
@@ -1187,9 +1188,14 @@ class Driver(object):
         rel = self.report_path(iid, role)
         final = str((o.parsed or {}).get("result") or "")
         rep = report_mod.read_report(self.repo, rel, final_message=final, slug=item["slug"], require_trailer=True)
-        if rep.malformed:
-            self.fail(iid, failure.ITEM, "malformed_report", (), "building", "; ".join(rep.problems[:3]))
+        mode = self.report_mode()
+        blocking = rep.blocking(mode)
+        if blocking:
+            self.fail(iid, failure.ITEM, "malformed_report", (), "building", "; ".join(blocking[:3]))
             return False
+        soft = rep.warnings(mode)
+        if soft:                                              # report_trailers: warn: the form is wrong, the decision is readable (Phase 10)
+            self.ev("report_warning", item=iid, role=role, mode=mode, kinds=sorted({i["kind"] for i in soft})[:8], count=len(soft))
         st = rep.status
         self.ev("engineer_report", item=iid, role=role, status=st)
         if st in ("APPROVED", "CONTRACT_DEVIATION", "DESIGN_DEVIATION"):
@@ -1214,6 +1220,11 @@ class Driver(object):
             return False
         self.park(iid, "ESCALATION_NEEDED", "%s returned %s" % (role, st))
         return False
+
+    def report_mode(self) -> str:
+        """`report_trailers` from the base sha's config: `warn` (the default) or `block`. Anything else reads as `block` (fail closed)."""
+        v = self.cfg.get("report_trailers")
+        return v if v in report_mod.MODES else "block"
 
     def answer_clarification(self, iid: str, role: str, n: int) -> None:
         """The driver can answer only from the plan: it records that in the brief's Clarifications section (custody) and runs the

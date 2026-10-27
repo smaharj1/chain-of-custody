@@ -3,7 +3,7 @@
 A gate is a module in this package that defines:
 
     NAME           the toggle name: `gates.<NAME>: on | report | off` in loop.config (g0, g1, g2, g3, g4, g5, g6, g7, g9,
-                   g10, g11, evidence). `g8` is a view, not a gate.
+                   g10, g11, evidence, docs). `g8` is a view, not a gate.
     OWNER_METRIC   the metric that justifies the gate (CS-34); a gate whose metric never moves is a candidate for removal
     run(ctx)       -> GateResult, given a GateContext
 
@@ -39,7 +39,7 @@ from .. import common, failure
 __all__ = ["KNOWN_GATES", "STATUSES", "GateResult", "GateContext", "GateNotInstalled", "discover", "register", "unregister",
            "installed", "get", "mode_for", "run_gate", "required_for"]
 
-KNOWN_GATES = ("g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g9", "g10", "g11", "evidence")
+KNOWN_GATES = ("g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g9", "g10", "g11", "evidence", "docs")
 STATUSES = ("pass", "fail", "error", "skipped")
 _FAILURE_CLASSES = ("none",) + failure.CLASSES
 _registered = {}  # type: Dict[str, Any]
