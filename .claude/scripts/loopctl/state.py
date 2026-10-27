@@ -270,6 +270,7 @@ class StateStore(object):
         self.remote = remote or ""
         self.max_tries = 8
         self._before_cas = None  # type: Optional[Callable[[], None]]   # test hook: race injection
+        self._parsed = {}  # type: Dict[str, Dict[str, Any]]            # the last state document read or written, by commit id
 
     # -- git plumbing ----------------------------------------------------------------------------------------
     def _git(self, args: Sequence[str], input_text: Optional[str] = None, env: Optional[Dict[str, str]] = None):
@@ -284,6 +285,18 @@ class StateStore(object):
         return self._git(["show-ref", "--verify", "-q", self.ref]).returncode == 0
 
     def _read_commit(self, sha: str) -> State:
+        """The state a commit holds. A commit id names its content, so a parsed document is cached by id for the life of this store (a
+        deep copy is handed out: callers may not corrupt the cache). The driver does about ten writes per item and each one read the state
+        it was replacing with three git calls."""
+        hit = self._parsed.get(sha)
+        if hit is not None:
+            return State(copy.deepcopy(hit))
+        st = self._read_commit_uncached(sha)
+        self._parsed.clear()
+        self._parsed[sha] = copy.deepcopy(st.d)
+        return st
+
+    def _read_commit_uncached(self, sha: str) -> State:
         from . import gitio
         # `sha` came from rev-parse <ref>^{commit}, so it is a commit. Its tree must be exactly state.json.
         try:
@@ -433,6 +446,8 @@ class StateStore(object):
                     continue
             res = gitutil.update_ref_cas(self.ref, new, head, self.repo, isolated=True)
             if res:
+                self._parsed.clear()
+                self._parsed[new] = copy.deepcopy(work.d)          # the next read of this ref (ours, unless someone wrote) is a hit
                 return work, result
             last = "update-ref lost: " + common.clean_text(res.stderr, 100)
             time.sleep(0.01 * (attempt + 1))
@@ -865,29 +880,49 @@ class Loop(object):
         acs = set(plan_mod.ac_ids(self.plan.items[iid]))
 
         def mutate(st: State) -> Dict[str, Any]:
-            r = st.item(iid)
-            ev = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
-            slim = {"status": result.get("status"), "mode": result.get("mode"), "blocking": bool(result.get("blocking")),
-                    "at": common.iso(), "head": result.get("head"), "failure_class": result.get("failure_class"),
-                    "findings": [{"id": common.clean_text(f.get("id"), 40), "severity": f.get("severity"),
-                                  "message": common.clean_text(f.get("message"), 160)}
-                                 for f in (result.get("findings") or [])[:20] if isinstance(f, dict)],
-                    "summary": common.clean_text(ev.get("summary", ""), 160)}
-            r["gates"][name] = slim
-            for acid, cell in (ev.get("ac_results") or {}).items() if isinstance(ev.get("ac_results"), dict) else []:
-                if acid not in acs or not isinstance(cell, dict) or cell.get("result") not in ("pass", "fail"):
-                    continue
-                r["ac"].setdefault(acid, {})[name] = {"result": cell["result"], "evidence": common.clean_text(cell.get("evidence", ""), 120),
-                                                      "at": common.iso()}
-            rv = ev.get("review")
-            if isinstance(rv, dict):
-                for k in ("code", "security", "design"):
-                    if isinstance(rv.get(k), str):
-                        r["review"][k] = common.clean_text(rv[k], 40)
-            st.log(iid, r["status"], r["status"], "gate:" + name, "%s %s" % (name, slim["status"]))
-            return slim
+            return self._fold_gate(st, iid, name, result, acs)
 
         _, slim = self.store.update(mutate, "gate %s %s" % (name, iid))
+        return slim
+
+    def record_gates(self, iid: str, results: Sequence[Tuple[str, Dict[str, Any]]], session_id: Optional[str]) -> List[Dict[str, Any]]:
+        """`record_gate` for a whole round of gates in ONE compare-and-swap: the results of a round appear together or not at all (Phase 4c;
+        the serial driver runs six gates per item and one commit each was most of its state traffic)."""
+        self._need_plan_item(iid)
+        names = [n for n, _r in results]
+        for name in names:
+            if not re.match(r"^[a-z][a-z0-9_]{0,15}\Z", name):
+                raise UsageError("bad gate name")
+        self._check_lock(session_id, need=False)
+        acs = set(plan_mod.ac_ids(self.plan.items[iid]))
+
+        def mutate(st: State) -> List[Dict[str, Any]]:
+            return [self._fold_gate(st, iid, name, result, acs) for name, result in results]
+
+        _, slims = self.store.update(mutate, "gates %s %s" % (",".join(names), iid))
+        return slims
+
+    def _fold_gate(self, st: State, iid: str, name: str, result: Dict[str, Any], acs: set) -> Dict[str, Any]:
+        r = st.item(iid)
+        ev = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+        slim = {"status": result.get("status"), "mode": result.get("mode"), "blocking": bool(result.get("blocking")),
+                "at": common.iso(), "head": result.get("head"), "failure_class": result.get("failure_class"),
+                "findings": [{"id": common.clean_text(f.get("id"), 40), "severity": f.get("severity"),
+                              "message": common.clean_text(f.get("message"), 160)}
+                             for f in (result.get("findings") or [])[:20] if isinstance(f, dict)],
+                "summary": common.clean_text(ev.get("summary", ""), 160)}
+        r["gates"][name] = slim
+        for acid, cell in (ev.get("ac_results") or {}).items() if isinstance(ev.get("ac_results"), dict) else []:
+            if acid not in acs or not isinstance(cell, dict) or cell.get("result") not in ("pass", "fail"):
+                continue
+            r["ac"].setdefault(acid, {})[name] = {"result": cell["result"], "evidence": common.clean_text(cell.get("evidence", ""), 120),
+                                                  "at": common.iso()}
+        rv = ev.get("review")
+        if isinstance(rv, dict):
+            for k in ("code", "security", "design"):
+                if isinstance(rv.get(k), str):
+                    r["review"][k] = common.clean_text(rv[k], 40)
+        st.log(iid, r["status"], r["status"], "gate:" + name, "%s %s" % (name, slim["status"]))
         return slim
 
     # -- approvals (L-10) ---------------------------------------------------------------------------------------------------------------

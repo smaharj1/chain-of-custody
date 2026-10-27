@@ -21,6 +21,8 @@
     {"id": "session-start-canary", "event": "SessionStart", "matcher": "startup|resume|clear|compact",
      "script": "session_start.py", "blocking": false, "timeout": 10},
     {"id": "session-start-selftest", "event": "SessionStart", "matcher": "startup|resume|clear|compact",
-     "guards": ["selftest"], "blocking": false, "timeout": 10}
+     "guards": ["selftest"], "blocking": false, "timeout": 10},
+    {"id": "session-start-compact", "event": "SessionStart", "matcher": "compact",
+     "script": "loopctl/compact_hook.py", "blocking": false, "timeout": 10}
   ]
 }

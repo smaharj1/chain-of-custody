@@ -25,7 +25,7 @@ from kitlib import runstate
 from . import common
 from .common import Refused
 
-__all__ = ["RunLock", "is_stale"]
+__all__ = ["RunLock", "is_stale", "owner_dead"]
 
 
 def is_stale(record: Dict[str, Any], now: float, minutes: float, host_dead: bool = False) -> bool:
@@ -41,6 +41,17 @@ def is_stale(record: Dict[str, Any], now: float, minutes: float, host_dead: bool
     if pid is not None and runstate.pid_alive(pid) and (not host or host == socket.gethostname()):
         return False
     return True
+
+
+def owner_dead(record: Dict[str, Any]) -> bool:
+    """A lock taken by a DRIVER (it records its own pid) whose process is gone, on this host. Nothing can be stamping its heartbeat any
+    more, so there is nothing to wait for; a recycled pid reads as alive, which errs on the side of leaving the lock alone. A lock with
+    no driver pid (a conductor session) or from another host is never judged here."""
+    pid = record.get("driverPid")
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    host = record.get("host")
+    return bool(host) and host == socket.gethostname() and not runstate.pid_alive(pid)
 
 
 class RunLock(object):
@@ -123,6 +134,20 @@ class RunLock(object):
 
     def heartbeat(self, session_id: str) -> bool:
         return self.rs.heartbeat(session_id)
+
+    def takeover(self, new_run_id: str, session_id: str, worktree: str, driver_pid: int, plan_rev: str = "") -> Dict[str, Any]:
+        """Take the lock of a driver that died (Phase 4c: crash recovery). Only for `owner_dead`: the heartbeat's age is irrelevant when
+        the process that stamped it no longer exists. Atomic like `steal` (a rename, then a create-exclusive), and it re-checks that the
+        lock is still the one it judged."""
+        kind, cur = self._read()
+        if kind != "ok" or not owner_dead(cur or {}):
+            raise Refused("the run lock does not belong to a dead driver on this host; use `lock status`")
+        rec = self._record(new_run_id, session_id, worktree, driver_pid, plan_rev)
+        if not self.rs.steal_lock({"runId": cur.get("runId"), "heartbeat": cur.get("heartbeat")}, rec):
+            raise Refused("another process changed the lock first (compare-and-swap lost); look at `lock status` and retry")
+        self.rs.append_event("loopctl", {"event": "lock_taken_over", "from": cur.get("runId"), "deadDriverPid": cur.get("driverPid"),
+                                         "runId": new_run_id, "sessionId": session_id})
+        return rec
 
     def steal(self, new_run_id: str, session_id: str, worktree: str, after_min: Optional[float] = None,
               host_dead: bool = False, corrupt: bool = False, driver_pid: Optional[int] = None,
