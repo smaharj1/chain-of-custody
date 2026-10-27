@@ -118,11 +118,25 @@ class CommandHostile(unittest.TestCase):
         self.assertIn("starting with @", self.refused("%s @/etc/passwd" % ok))
         self.assertIn("starting with @", self.refused("%s -d @x" % ok))
         for arg in ("~/.aws/credentials", self.home + "/.ssh/id_ed25519", ".aws/credentials", "--file=" + self.home + "/.config/gh/hosts.yml",
-                    "f=@" + self.home + "/.netrc", "file://" + self.home + "/.kube/config", self.repo + "/secrets.txt"):
+                    "f:" + self.home + "/.netrc", "file://" + self.home + "/.kube/config", self.repo + "/secrets.txt"):
             self.assertIn("points inside", self.refused("%s %s" % (ok, arg)), arg)
         os.symlink(os.path.join(self.home, ".aws"), os.path.join(self.fake.dir, "innocent-dir"))   # a link to a credential directory
         os.makedirs(os.path.join(self.home, ".aws"))
         self.assertIn("points inside", self.refused("%s %s/credentials" % (ok, os.path.join(self.fake.dir, "innocent-dir"))))
+
+    def test_adversarial_variants_of_the_same_attacks(self):
+        ok = self.fake.path
+        for arg in ("--data-binary=@x", "f=a,b=@x", "-d=@" + self.home + "/.aws/credentials"):
+            self.assertIn("@", self.refused("%s %s" % (ok, arg)), arg)                            # a piece after = , : that starts with @
+        for arg in ("~/.AWS/credentials", self.home + "/.SSH/id_rsa", "--cfg=" + self.home + "/.Config/GH/hosts.yml",   # a case-insensitive volume
+                    self.home + "/x/../.aws/credentials", "file:///" + self.home.lstrip("/") + "/.docker/config.json", ".gnupg/pubring.kbx"):
+            self.assertIn("points inside", self.refused("%s %s" % (ok, arg)), arg)
+        for prog in ("python3.12", "perl5.34.0", "ruby3.2", "php8.1", "node18", "Bash", "pypy3", "lua5.4"):
+            link = os.path.join(self.fake.dir, prog)
+            with open(link, "w") as fh:
+                fh.write("#!/bin/sh\n")
+            os.chmod(link, 0o755)
+            self.assertIn("shell, interpreter", self.refused(link), prog)
 
     def test_plain_arguments_still_pass(self):
         argv = notify.parse_command("%s --topic ops --url https://ntfy.example/x -m hi" % self.fake.path, None, [self.repo], home=self.home)

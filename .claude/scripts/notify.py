@@ -136,7 +136,8 @@ def _inside(path: str, root: str) -> bool:
 
 def _denied_program(path: str) -> bool:
     base = os.path.basename(path).lower()
-    return base in _DENY_PROGRAMS or base.startswith(_DENY_PREFIXES)
+    stem = re.sub(r"[0-9._-]+$", "", base)                                                    # python3.12, perl5.34.0, ruby3.2, php8.1, node18
+    return base in _DENY_PROGRAMS or stem in _DENY_PROGRAMS or base.startswith(_DENY_PREFIXES)
 
 
 def _arg_candidates(arg: str) -> List[str]:
@@ -147,7 +148,10 @@ def _arg_candidates(arg: str) -> List[str]:
         out.append(piece)
     res = []  # type: List[str]
     for c in out:
-        c = c.lstrip("@<")
+        if c.startswith("@"):
+            raise NotifyError("notify_command: an argument with a piece starting with @ (%s) can make a program read a file; name the file in your own "
+                              "script" % clean(arg, 60))
+        c = c.lstrip("<")
         if c.startswith("//"):
             c = "/" + c.lstrip("/")
         if c:
@@ -167,7 +171,7 @@ def _check_args(args: Sequence[str], forbid: Sequence[str], home: str) -> None:
             if not os.path.isabs(path):
                 path = os.path.join(home, path)                                              # the program runs with HOME as its directory
             for root in roots:
-                if _inside(path, root):
+                if _inside(path.lower(), root.lower()) or _inside(path, root):                    # a case-insensitive volume reaches ~/.AWS too
                     raise NotifyError("notify_command: the argument %s points inside the repository or a credential directory; "
                                       "arguments may not name those places" % clean(arg, 80))
 

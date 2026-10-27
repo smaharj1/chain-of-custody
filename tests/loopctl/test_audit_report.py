@@ -270,6 +270,14 @@ class Audit(LoopTestCase):
         self.assertNotIn("<script", text)
         self.assertIn("&lt;img src=http://evil.example/p.png&gt;", text)
 
+    def test_a_review_verdict_with_html_cannot_open_markup_in_the_design_cell(self):
+        lr, loop, head = self.built()
+        loop.record_gate("A", "g3", {"status": "pass", "mode": "on", "blocking": False, "head": head, "failure_class": "none", "findings": [],
+                                     "evidence": {"review": {"design": "DESIGN_APPROVED <img src=http://evil.example/x> | forged"}}}, lr.session)
+        text = self.body(lr)
+        self.assertNotIn("<img", text)
+        self.assertEqual(text.count("<!-- audit:end"), 1)
+
     def test_a_checked_line_with_html_is_escaped_too(self):
         hostile = REPORT.replace("NONE\nchecked: layering, error handling", "NONE\nchecked: <img src=http://evil.example/x>")
         lr = self.lr()

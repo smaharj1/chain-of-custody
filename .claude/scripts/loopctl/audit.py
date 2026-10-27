@@ -165,7 +165,8 @@ def render_body(ctx: Any, st: Any, iid: str, lane: str = "full") -> str:
     verify = ("PASS: g6 passed for %s" % (g6.get("head") or "")[:12]) if g6 and g6.get("status") == "pass" else _fill("PASS, then the verify.py run")
     sec = rec.get("review", {}).get("security")
     review = rec.get("review", {})
-    design = review.get("design") or (_fill("DESIGN_APPROVED (round N), or N/A (quick lane)") if lane == "full" else "N/A (quick lane)")
+    design = (common.md_cell(review.get("design"), 60) if review.get("design")
+              else (_fill("DESIGN_APPROVED (round N), or N/A (quick lane)") if lane == "full" else "N/A (quick lane)"))
     if lane == "quick":
         design = "N/A (quick lane)"
     gated = rec.get("humanGate") or []
