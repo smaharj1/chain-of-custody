@@ -1,6 +1,7 @@
 """Test helpers shared by every phase (IMP-10, IMP-14).
 
     gitrepo   TempRepo (temp git repo factory), make_bare_remote, make_repo_with_remote
+    gitfast   read-only git questions answered from the repo's files instead of a process (BaseTestCase.fast_git())
     fakehome  FakeHome: a temp HOME that can plant fake credentials; clean_env()
     bins      install_fake_claude / install_fake_gh (scriptable executables for PATH or KIT_CLAUDE_BIN)
     procs     ProcessTracker: start processes in their own session, kill the group in tearDown
@@ -19,6 +20,7 @@ from typing import List, Optional
 from .. import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (re-exported for convenience)
 from .bins import install_fake_claude, install_fake_gh, read_jsonl  # noqa: F401
 from .fakehome import FakeHome, clean_env  # noqa: F401
+from . import gitfast  # noqa: F401
 from .gitrepo import BareRemote, TempRepo, make_bare_remote, make_repo_with_remote  # noqa: F401
 from .procs import ProcessTracker  # noqa: F401
 
@@ -58,6 +60,12 @@ class BaseTestCase(unittest.TestCase):
         r, b = make_repo_with_remote()
         self._repos.extend([r, b])
         return r, b
+
+    def fast_git(self) -> None:
+        """Answer the kit's read-only git questions from the repo's files for the rest of this test (tests/helpers/gitfast.py). Opt in
+        in tests that are not about git itself and whose subject calls `kitlib.gitutil.run_git` in-process."""
+        gitfast.install()
+        self.addCleanup(gitfast.uninstall)
 
     def home(self) -> FakeHome:
         return FakeHome(self.tmpdir("kit-home-"))

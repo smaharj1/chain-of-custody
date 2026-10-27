@@ -6,6 +6,7 @@ not depend on the machine. Tests push only to a bare repo created here, never to
 """
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
 import subprocess
@@ -48,19 +49,63 @@ def run(args, cwd, check=True, env=None, input_text=None):
     return proc.returncode, out, err
 
 
+# Speed (task 13a): the suite is dominated by process creation (every `git` costs ~4 ms of CPU on a Mac), so a repo is
+# built once per test process and later `TempRepo()` calls copy it. The copy is byte-for-byte what `git init` + the
+# initial commit would have produced (fixed identity and dates, so even the commit id is the same). Sample hooks are not
+# copied and `maintenance.auto`/`gc.auto` are off in the repo's own config (a commit would otherwise start a second
+# `git maintenance` process); nothing in the repo depends on either.
+_REPO_CONFIG_TAIL = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n"
+_SCRATCH = []  # type: list
+
+
+def scratch_root() -> str:
+    """A per-process directory for caches (templates, snapshots); removed when the process exits."""
+    if not _SCRATCH:
+        d = os.path.realpath(tempfile.mkdtemp(prefix="kit-cache-"))
+        _SCRATCH.append(d)
+        atexit.register(shutil.rmtree, d, True)
+    return _SCRATCH[0]
+
+
+def copy_tree(src: str, dst: str) -> None:
+    """Copy a repo (or any tree) the cheap way: symlinks kept, sample hooks skipped, no metadata beyond mtimes."""
+    shutil.copytree(src, dst, symlinks=True, ignore=shutil.ignore_patterns("*.sample"))
+
+
+_TEMPLATES = {}  # type: dict
+
+
+def _template_repo(branch: str, initial_commit: bool) -> str:
+    key = (branch, initial_commit)
+    if key not in _TEMPLATES:
+        d = tempfile.mkdtemp(prefix="repo-%s-%d-" % (branch.replace("/", "_"), int(initial_commit)), dir=scratch_root())
+        path = os.path.join(d, "repo")
+        os.makedirs(path)
+        run(["init", "-q", "-b", branch], path)
+        with open(os.path.join(path, ".git", "config"), "a", encoding="utf-8") as fh:
+            fh.write(_REPO_CONFIG_TAIL)
+        if initial_commit:
+            with open(os.path.join(path, "README.md"), "w", encoding="utf-8") as fh:
+                fh.write("# temp repo\n")
+            env = git_test_env()
+            run(["add", "--", "README.md"], path, env=env)
+            run(["commit", "-q", "-m", "initial commit"], path, env=env)
+        _TEMPLATES[key] = path
+    return _TEMPLATES[key]
+
+
 class TempRepo(object):
-    """A fresh repo on branch `main`, with one commit unless `initial_commit=False`."""
+    """A fresh repo on branch `main`, with one commit unless `initial_commit=False`.
+
+    `clone_from` (a directory holding an existing repo, e.g. a snapshot) makes the new repo a copy of it instead."""
 
     def __init__(self, parent: Optional[str] = None, name: str = "repo", branch: str = "main",
-                 initial_commit: bool = True) -> None:
+                 initial_commit: bool = True, clone_from: Optional[str] = None) -> None:
         self._owns_parent = parent is None
         self.parent = os.path.realpath(parent or tempfile.mkdtemp(prefix="kit-repo-"))
         self.path = os.path.join(self.parent, name)
-        os.makedirs(self.path)
-        run(["init", "-q", "-b", branch], self.path)
         self.env = git_test_env()
-        if initial_commit:
-            self.commit_file("README.md", "# temp repo\n", "initial commit")
+        copy_tree(clone_from or _template_repo(branch, initial_commit), self.path)
 
     def git(self, *args, **kw) -> str:
         """Run git, return stdout (stripped). Raises AssertionError on failure unless check=False."""
@@ -87,7 +132,30 @@ class TempRepo(object):
         return self.head()
 
     def head(self) -> str:
-        return self.git("rev-parse", "HEAD")
+        """HEAD's commit id. Read from the repo's files when that is unambiguous (no process), else from git."""
+        sha = self._read_head()
+        return sha if sha else self.git("rev-parse", "HEAD")
+
+    def _read_head(self) -> Optional[str]:
+        gitdir = os.path.join(self.path, ".git")
+        try:
+            with open(os.path.join(gitdir, "HEAD"), encoding="utf-8") as fh:
+                head = fh.read().strip()
+            if not head.startswith("ref: "):
+                return head if len(head) == 40 and all(c in "0123456789abcdef" for c in head) else None
+            ref = head[5:]
+            try:
+                with open(os.path.join(gitdir, *ref.split("/")), encoding="utf-8") as fh:
+                    sha = fh.read().strip()
+            except FileNotFoundError:
+                sha = ""
+                with open(os.path.join(gitdir, "packed-refs"), encoding="utf-8") as fh:
+                    for line in fh:
+                        if line.rstrip("\n").endswith(" " + ref) and not line.startswith(("#", "^")):
+                            sha = line.split(" ", 1)[0]
+            return sha if len(sha) == 40 and all(c in "0123456789abcdef" for c in sha) else None
+        except OSError:
+            return None
 
     def common_dir(self) -> str:
         return os.path.realpath(os.path.join(self.path, self.git("rev-parse", "--git-common-dir")))
