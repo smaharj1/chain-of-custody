@@ -20,8 +20,23 @@ Package C of the review-fix batch (decisions: D2 to D7, D11 and D3 loopctl side,
 - **Prose and docs**: the orchestrate skill (`SKILL.md`, `loop.md`, `preamble.md`) has an "Approvals" section (relay forms with the scope first and `--note`; a HUMAN STEP table), prints the remote-lock lines for the human and never pushes; specs `loopctl.md` (who may run what, approvals, heads, spend), `loopctl-driver.md`, `loopctl-parallel.md`, `loopctl-gates.md` (G4, verdict-merge rule, new finding ids, GT-10 note), `loopctl-extras.md`; docs `loopctl-extras.md`, `delivery.md`, `ops.md`, `parallel.md`, `unattended.md`.
 - Tests: new `test_approvals.py`, `test_branches.py`, `parallel/test_rebase_reverify.py` (real `REQUIRED_FOR`, real Evidence), `extras/test_human_only.py`, `fault_injection/test_review_fixes.py`, additions to the alignment, ledger, failure, status, machine, cli, prose and launch tests. Existing tests changed: `LoopRepo.walk/complete/do_merge` build a real branch and pass its head (a step into reviewing needs one); the fault tests that read `lastFailure` after an unknown cost now read the `budget_stop` event; the SIGTERM test acknowledges the killed child's unknown cost before the next run.
 
+### Second review (R-LC-1 to R-LC-14, R-A-5)
+
+- **`approve item`** (R-LC-1, 2, 9, 11). `reject` and `stop` on a `needs_human` item are refused with a pointer to the human-only `approve unblock ITEM --choice reset|keep|replan` (they no longer un-park it; the same for the checkpoint scope). `stop` voids an unused merge approval of the item. New optional `--head PREFIX` (7 or more lowercase hex characters): refused when the recorded head does not start with it; the `HUMAN STEP` line for a merge approval now ends `--head <12 chars>`. An `unblock --choice reset` and a `reject` reset the `platform` counter too (only `discards` is kept).
+- **Merge commit shape** (R-LC-3). Under `delivery: local`, `advance merged` needs exactly two parents, the judged head as the second, and a tree equal to `git merge-tree --write-tree <first> <second>`: an evil merge (`--no-commit` plus a file) or an octopus merge is refused. Needs git 2.38 or newer; an older git cannot run the check, and the merge is then refused, never accepted unchecked.
+- **`loopctl run` inside a Claude Code session** (R-LC-4). With `runner: driver` it is refused before the run lock, the remote lock or any push (`startrun.nesting_problem`; preflight row `nesting`, shown by `run --dry-run`).
+- **Orphans are ledgered** (R-LC-6). `Driver.ledger_orphans`: every child record of a dead driver (killed now, or already gone) gets an unknown spend entry (`source: orphan`), so the run parks until `approve cost` and the day budget cannot undercount silently.
+- **Next steps that work** (R-LC-7). Every `cost_unknown`, `merge_refused`, `security_blocked`, `platform_outage` and demotion line now says `approve unblock ITEM --by NAME --choice reset`; a test parses every printed `approve` command with the real parser.
+- **`gate --head`** (R-LC-8). A gate records the HEAD of the checkout (or `--worktree`) it ran in; a `--head` that is not that HEAD (7+ characters of it) is refused.
+- **Prose and stale answers** (R-LC-10). The skill and `loop.md` no longer offer `approve checkpoint --choice reject` (loopctl always refuses it: the item is merged); `approve breaker` and an abort void unused checkpoint answers (`void_checkpoint_approvals`).
+- **Abort** (R-LC-12, table change in package A). Documented: `abort --rollback-to` is a `HUMAN STEP`; plain `abort` and `abort --dry-run` are unchanged. `SKILL.md` and `.claude/spec/loopctl.md` say so.
+- **Crash recovery** (R-LC-13). `reconcile` recovers a merge lost to a crash only when the merge's second parent is the judged head (once the item reached reviewing or later) and, for a human-gated item or one awaiting a human, a merge approval for that head stands (finding `reconcile.recover-unapproved`).
+- **Tests** (R-LC-14, R-A-5): new `tests/loopctl/test_review13_fixes.py`; `test_guard_alignment` puts the positional item before the options (Python 3.9's argparse); `test_run` restores the real `loopctl.driver` module instead of popping it from `sys.modules` (the polluter of the order-dependent `unattended/test_runs` failure: the later import made a second module object, so the test's patch of `Driver.run_items` missed the one `run` used); `test_status` and the SIGKILL crash test follow the new `--head` line and the orphan's unknown spend.
+
 ## Upgrade impact
 
+- An orphaned child of a crashed driver now parks the next run (unknown spend) until `loopctl approve cost`; a SIGKILLed unattended run is no longer silently continued.
+- A `HUMAN STEP` approve line printed before this change has no `--head`; it still works (the head is optional).
 - Open approvals written before this change carry no `kind` and no `headSha`: they no longer merge. The human approves again (`status --pending-human` shows the line with the head).
 - `loopctl advance` without `--head` now uses the branch tip, and refuses when the branch is missing: pass `--head`.
 - An unknown spend entry from an earlier run now parks the next run until `loopctl approve cost` (it used to be forgotten by a new run id).
@@ -35,7 +50,7 @@ None.
 
 ## Pending-human actions
 
-- Read `docs/ops.md` ("The loop worktree, a stale lock and parked work"): run `loopctl run` from a dedicated linked worktree; remove a stale lock whose pid was reused with `loopctl lock release --force`.
+- Read `docs/ops.md` ("The loop worktree, a stale lock and parked work"): run `loopctl run` from a dedicated linked worktree; if a lock's pid was reused and the lock never looks stale, a person deletes `<git-common-dir>/loopctl/lock` by hand after `loopctl lock status` shows no run is alive (no command releases a lock that looks alive; there is no `lock release --force`).
 - Re-approve any item that was waiting for a merge approval across this upgrade.
 
 ## Docs impact
@@ -53,9 +68,18 @@ Hot files get pointers below. Edited here: the orchestrate skill, `.claude/spec/
 - `approve cost` with no run record acknowledges under run id `none`.
 - `worktree.dedicated` is a preflight row with ok=true and a WARNING text (the rows have no warn level).
 - GT-9 state side: the stale rule is in `Loop._check_forward` (local `PRE_BUILD = (g0, g2)` copy; B owns the Evidence copy).
+- R-LC-1: `reject` and `stop` on a `needs_human` item are refused (not turned into an acknowledgement), so the conductor's relay cannot even leave a record that looks like a decision about a stop.
+- R-LC-3: a merge that git cannot recreate cleanly (conflicts) is refused by `advance`; a conflict a person resolved is recorded through `reconcile`. No git 2.38 means refuse, not accept.
+- R-LC-6: an orphan's spend is written as unknown, not estimated: nothing measured it.
+- R-LC-8: `--head` is accepted as a prefix of at least 7 characters of the checkout's HEAD, and the full HEAD is what is recorded.
+- R-LC-5: no new command (decision of the conductor); the remedy is the human deleting the lock file.
 
 ### Known gaps
 
+- R-LC-3 checks the merge commit's shape only under `delivery: local`; under other deliveries the judged head must be in the merge commit's history and a squash merge is recorded by `reconcile` (as before). `reconcile`'s `merged-recovered` and `pr-merged` do not compare the tree, because a conflict a person resolved by hand legitimately differs from a plain merge (`merge_conflict` says to resolve it and run `reconcile --apply`); an ungated item's hand-made merge of its judged head is still accepted there.
+- R-LC-8: `gate --worktree` is not checked to be a worktree of this repository, and a gate on a dirty tree records that checkout's HEAD.
+- R-LC-9: the head assertion is optional; a person who omits `--head` approves whatever head is recorded.
+- R-LC-6: the orphan's real cost is never known to loopctl; the unknown entry only forces the human to look. A killed child's estimate for an unattended run is unchanged.
 - `--by` is recorded, not authenticated; a human who pastes a conductor-printed command without reading it is outside the kit's reach. The guard is the only boundary for `approve` (no marker check in the CLI).
 - `reconcile.scan`'s `pr-merged` trusts any integration-branch commit named by the PR facts; acceptable only because those facts are now human-supplied (`--live`).
 - Under other deliveries than local, `advance merged` requires the judged head in the merge commit's history, so a squash merge is recorded by `reconcile`, not by `advance`.
@@ -65,7 +89,7 @@ Hot files get pointers below. Edited here: the orchestrate skill, `.claude/spec/
 
 ### Findings
 
-fixed: LC-1, LC-2, LC-3, LC-4, LC-5, LC-6, LC-10, LC-11, LC-13, LC-14, GT-1, GT-3 (extras side), GT-4, GT-7, GT-8, GT-9 (state side), GT-11, UN-9, UN-14, GD-5 and GD-8 (loopctl side); LC-7 fixed as a WARNING row + doc; documented: LC-7 (doc), LC-8, LC-9, LC-12; no change: none. LC-14 `park` keeps `need=False` by design (documented).
+second review: fixed R-LC-1, 2, 3, 4, 6, 7, 8 (head from the checkout), 9, 10 (prose and stale answers), 11, 13, 14 and R-A-5; documented R-LC-5 (hand-delete the lock file; no new command, per decision), R-LC-12 (the table change is package A's); gaps above. First round: fixed: LC-1, LC-2, LC-3, LC-4, LC-5, LC-6, LC-10, LC-11, LC-13, LC-14, GT-1, GT-3 (extras side), GT-4, GT-7, GT-8, GT-9 (state side), GT-11, UN-9, UN-14, GD-5 and GD-8 (loopctl side); LC-7 fixed as a WARNING row + doc; documented: LC-7 (doc), LC-8, LC-9, LC-12; no change: none. LC-14 `park` keeps `need=False` by design (documented).
 
 ## Conductor: pointers to add
 
@@ -74,3 +98,7 @@ fixed: LC-1, LC-2, LC-3, LC-4, LC-5, LC-6, LC-10, LC-11, LC-13, LC-14, GT-1, GT-
 - `.claude/context/delivery.md` (not owned): if it says the conductor takes the remote lock or pushes at delivery, change it to the HUMAN STEP wording of `SKILL.md`.
 - Regenerate `plugin/`, `dist/`, `.claude/KIT_MANIFEST` (shipped sources changed: skills, scripts, specs, docs).
 - Package A: `guards/g_exec.py` consumes `kitlib.loopctl_table` (done by A); the corpus flips listed in D11 are A's.
+- `docs/getting-started.md` (line 75) and `GLOSSARY.md`: at a checkpoint, `reject` is the prose loop's (`runner: sequential`) un-ship; with `runner: driver`, `loopctl approve checkpoint` takes `approve|stop` only, and a reject is the human's own revert or `abort --rollback-to`. A merge approval's printed line now ends with `--head <12 chars>`.
+- `docs/v2-pending-human.md`: after a driver crash, `loopctl approve cost` is needed once more (the orphan's spend is unknown).
+- Package A: `abort --rollback-to` must be human-only in `kitlib/loopctl_table.py` (R-LC-12); `SKILL.md` and `.claude/spec/loopctl.md` already say so.
+- Regenerate `plugin/`, `dist/`, `.claude/KIT_MANIFEST` again (skills, scripts, specs and docs changed).
