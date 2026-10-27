@@ -12,8 +12,12 @@ in plan order, and this is the ONLY code in a parallel run that writes the integ
     4. MIGRATION ORDER: a migration the item added must sort after every migration already on the integration branch (migrations are ordered by name).
        If one does not, the item goes back to its engineer (`item/migration_order`) to regenerate it: the tooling that numbers migrations is the
        engineer's, and the schema mutex means this only happens when someone committed a migration by hand;
-    5. RE-VERIFY: a rebased head is code nobody has verified, so the gates run again on it, in the item's worktree: `g6` (verify), then whatever the
-       merge transition requires. A failure is an ordinary item failure (retry with the engineer, or discard);
+    5. RE-VERIFY: a rebased head is code nobody has verified, and Evidence wants every gate that is `on` fresh for the head it judges, so ALL the
+       deterministic gates run again on it, in the item's worktree: every `driver.VERIFY_GATES` gate (g5 g1 g3 g6 g9 g11 docs g10 g4) and `g7` (a read of
+       the committed review files, fresh across a rebase), `off` gates skipped, a blocking g5 ending the round. The LLM reviews are not re-run (the
+       rebase did not change the item's own diff; a conflicting rebase already parked). Then whatever the merge transition still requires (Evidence).
+       A failure is an ordinary item failure (retry with the engineer, or discard). Only LINEAR history is rebased: an item branch that holds a merge
+       commit is parked (`ESCALATION_NEEDED`) instead, because a rebase would silently drop the resolution inside it (GT-11);
     6. the lease check, then the merge itself (`Driver.merge_branch`: `--no-ff`, the Loop-Item trailer, the record), then the worktree and the branch go.
 
 What a lease lost at step 6 means: before the merge, nothing was changed and the item stays `reviewing` (`lost`); the scheduler tries again with a new
@@ -34,7 +38,7 @@ from .. import common, failure, lgit
 from ..common import LoopctlError, Refused
 from . import footprint, mutex
 
-__all__ = ["integrate", "changed_paths", "rebase", "migration_order_problem", "HOOKS"]
+__all__ = ["integrate", "changed_paths", "has_merge_commits", "rebase", "migration_order_problem", "HOOKS"]
 
 # Test seams (the way driver.SLEEP is one): HOOKS["before_merge"](driver, slot) runs after every check and just before the merge.
 HOOKS = {}  # type: Dict[str, Callable[..., None]]
@@ -58,6 +62,12 @@ def rebase(worktree: str, onto: str) -> bool:
         return True
     lgit.run_git(["rebase", "--abort"], cwd=worktree, isolated=True, pin_hooks=True)
     return False
+
+
+def has_merge_commits(repo: str, base: str, head: str) -> bool:
+    """Does `base..head` hold a merge commit? (isolated git; an unreadable range counts as yes: fail closed)"""
+    proc = lgit.run_git(["rev-list", "--merges", "--max-count=1", "%s..%s" % (base, head)], cwd=repo, isolated=True, pin_hooks=True)
+    return proc.returncode != 0 or bool(proc.stdout.strip())
 
 
 def migration_order_problem(drv: Any, item: Dict[str, Any], head: str, tip: str) -> Optional[str]:
@@ -124,6 +134,9 @@ def _integrate(drv: Any, slot: Any, lease: Any) -> str:
         return "parked"
     rebased = False
     if not gitutil.is_ancestor(tip, head, slot.path, isolated=True):
+        if has_merge_commits(slot.path, base or tip, head):
+            w.park(iid, "ESCALATION_NEEDED", "item branch contains merge commits; the parallel integrator rebases linear history only")
+            return "parked"
         if not rebase(slot.path, tip):
             drv.ev("rebase_conflict", item=iid, onto=tip[:12])
             w.park(iid, "merge_conflict", "rebasing %s onto %s conflicts; a human resolves it" % (slot.branch, drv.ib))
@@ -140,7 +153,8 @@ def _integrate(drv: Any, slot: Any, lease: Any) -> str:
         return "retry"
     # 5. re-verify what was rebased
     if rebased:
-        res = w.run_gates(iid, ("g6",))
+        from ..driver import REVIEW_GATES, VERIFY_GATES
+        res = w.run_gates(iid, tuple(VERIFY_GATES) + tuple(REVIEW_GATES))
         if w.gate_failure(iid, res, "verifying"):
             drv.settle_failed(slot)
             return "retry"

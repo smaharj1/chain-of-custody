@@ -214,7 +214,7 @@ class Flow(LoopTestCase):
         loop = lr.fast_start()
         loop.begin("A", lr.session)
         lr.walk("A", "design_review", "building", "verifying", "reviewing", "awaiting_human")
-        loop.approve("checkpoint", "A", "Pat", "reject", "wrong colour")
+        loop.approve("item", "A", "Pat", "reject", "wrong colour")
         rec = lr.item("A")
         self.assertEqual(rec["status"], "pending")
         self.assertEqual(rec["rework"][-1]["note"], "wrong colour")

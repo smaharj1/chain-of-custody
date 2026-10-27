@@ -289,9 +289,9 @@ class ForgedAuxFiles(LoopTestCase):
         led = lr.context().ledger()
         led.record("run-1", "A", 1, None, cost=2.0)
         with open(led.path, "a") as fh:
+            fh.write(json.dumps({"type": "ack", "runId": "run-OTHER", "by": "x"}) + "\n")         # an ack covers what was written BEFORE it, whatever run it names
             fh.write(json.dumps({"type": "spend", "runId": "run-1", "item": "A", "day": common.iso()[:10], "total_cost_usd": -1000.0, "unknown": False}) + "\n")
             fh.write(json.dumps({"type": "spend", "runId": "run-1", "item": "A", "day": common.iso()[:10], "total_cost_usd": 0.1, "unknown": False, "extra": "x"}) + "\n")
-            fh.write(json.dumps({"type": "ack", "runId": "run-OTHER", "by": "x"}) + "\n")
         t = led.totals(run_id="run-1")
         self.assertEqual(t["usd"], 2.1)                                   # the negative line counted for nothing, the other for its face value
         self.assertGreaterEqual(t["unknown"], 1)                          # and the negative one is an unknown, so the run is parked

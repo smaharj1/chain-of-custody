@@ -91,11 +91,12 @@ class Machinery(UnattendedTestCase):
         self.assertIsNone(sup.child_cost(res({"total_cost_usd": -1}, 10.0), 3.0))              # a hostile cost is not measured and not priced
         self.assertEqual(sup.measured, [(10.0, 0.5)])
         out = sup.child_cost(res(None, 20.0, "stall"), 100.0)
-        self.assertEqual(out, ({"total_cost_usd": 1.25}, "estimated"))                          # 0.05 $/s x 20 s x 1.25
+        self.assertEqual(out, ({"total_cost_usd": 50.0}, "estimated"))                          # 0.05 $/s x 20 s x 1.25 = 1.25, but at least half the allowance (LC-4)
         self.assertEqual(sup.child_cost(res(None, 20.0, "timeout"), 0.5), ({"total_cost_usd": 0.5}, "estimated"))   # capped by the allowance
+        self.assertEqual(sup.child_cost(res(None, 20.0, "stall"), 2.0), ({"total_cost_usd": 1.25}, "estimated"))    # the measured rate when it is above the floor
         for why in ("halt", "lock_lost", "interrupted"):
             self.assertIsNone(sup.child_cost(res(None, 20.0, why), 100.0), why)                # the run is ending anyway: stays unknown
-        self.assertAlmostEqual(sup.estimated_usd, 1.75)
+        self.assertAlmostEqual(sup.estimated_usd, 50.0 + 0.5 + 1.25)
 
     def test_stop_reasons_come_in_order_and_only_once(self):
         lr = self.un()
@@ -181,7 +182,9 @@ class Watch(UnattendedTestCase):
         est = unattended.estimate_killed_cost
         self.assertIsNone(est([], 100, 5))                                                      # nothing measured: unknown, so the run parks
         self.assertIsNone(est([(0.001, 5.0)], 100, 5))                                          # a measurement too short to give a rate
-        self.assertEqual(est([(10, 1.0), (10, 0.2)], 20, 100), 2.5)                             # the highest rate (0.1/s) x 20 s x 1.25
+        self.assertEqual(est([(10, 1.0), (10, 0.2)], 20, 4), 2.5)                               # the highest rate (0.1/s) x 20 s x 1.25
+        self.assertEqual(est([(10, 1.0), (10, 0.2)], 20, 100), 50.0)                            # ... but never below half the allowance (LC-4): a long run at a tiny rate is not cheap
+        self.assertEqual(est([(1000, 0.001)], 5000, 10), 5.0)                                   # a tiny measured rate and a long duration: charged half the allowance
         self.assertEqual(est([(10, 1.0)], 1000, 3), 3.0)                                        # never more than the child's own allowance
         self.assertIsNone(est([(10, 1.0)], 0, 3))
         self.assertIsNone(est([(10, 1.0)], 10, 0))

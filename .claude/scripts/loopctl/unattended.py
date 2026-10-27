@@ -25,8 +25,8 @@ WHAT IT ADDS TO THE SERIAL DRIVER (the driver is otherwise unchanged; it calls t
                          with `loopctl approve demotion --by <name>`. Promotion is the human's: `loopctl unattended promotion` only reads facts.
   KILLED CHILD COST      a child the driver killed (stall, timeout) or that crashed prints no result, so its cost is unknown, and an unknown
                          cost parks the run. When this run has already measured children, the cost is ESTIMATED from the highest measured
-                         dollars per second, times 1.25, capped by the child's own allowance (the `--max-budget-usd` it was started with),
-                         and recorded as `source: estimated`. With no measured child yet it stays unknown and parks (never a guess from nothing).
+                         dollars per second, times 1.25, but at least half the child's own allowance (the `--max-budget-usd` it was started with,
+                         the smaller of the item and run budget left) and at most the allowance, and recorded as `source: estimated`. With no measured child yet it stays unknown and parks (never a guess from nothing).
   EVENT RESUME           `loopctl unattended check` exits 0 only when a run could start and make progress now; a scheduler runs
                          `loopctl unattended check --quiet && loopctl run` after a human approves, merges or unblocks.
 
@@ -57,6 +57,7 @@ WATCH_FILE = "unattended.watch.json"
 DEMOTION_REASONS = ("revert", "security_block", "integrity_flag", "stall_storm")
 DEMOTED_TO = "L3"
 ESTIMATE_MARGIN = 1.25
+ESTIMATE_FLOOR = 0.5            # a killed child is charged at least this share of its allowance: over-charging can only stop a run earlier (LC-4)
 RENOTIFY_S = 3600.0
 WATCH_FRESH_S = 900.0
 TIMING_ENV = "KIT_DRIVER_TEST_TIMING"
@@ -64,7 +65,9 @@ TIMING_ENV = "KIT_DRIVER_TEST_TIMING"
 # outcome (Driver.outcome) -> (notification kind, level)
 _WAITING = ("awaiting_human", "checkpoint", "stopped_by_human", "delivery", "claimed")
 _NEXT = {
-    "cost_unknown": "check the cost field, then run loopctl approve cost --by NAME",
+    "cost_unknown": "check the cost field, then run loopctl approve cost --by NAME, then loopctl approve unblock ITEM --by NAME",
+    "integration_red": "the integration branch is red after a merge: fix or revert it, then run loopctl approve breaker --by NAME",
+    "merge_refused": "read why the merge was refused, then run loopctl approve unblock ITEM --by NAME",
     "budget_run_80": "run loopctl approve cost --by NAME to accept the rest",
     "budget_run": "raise run_budget_usd in a reviewed config change",
     "budget_day": "wait for tomorrow, or raise day_budget_usd in a reviewed config change",
@@ -207,7 +210,7 @@ def rows(ctx: Any, state: Any = None, level_fn: Optional[Callable[[Any], Optiona
         order = plan_mod.topo_order(ctx.plan.items, [m for m in ctx.plan.plan.get("milestones", []) if isinstance(m, str)])
         deps = {i: [d for d in ctx.plan.items[i].get("dependsOn", []) if isinstance(d, str)] for i in ctx.plan.items}
         eligible = state.eligible(order, deps)
-        approved = [i for i in state.by_status("awaiting_human") if state_mod._find_approval(state, i, state.items[i]["attempt"]) is not None]
+        approved = [i for i in state.by_status("awaiting_human") if state_mod._find_approval(state, i, state.items[i]["attempt"], state.items[i].get("headSha")) is not None]
         waiting = [i for i in state.by_status("awaiting_human", "pr_open") if i not in approved]
         inflight = state.by_status(*state_mod.ACTIVE)             # a driver that died mid-item: the next start's recovery puts it back to pending
         if eligible or approved or inflight:
@@ -227,7 +230,7 @@ def _parked_row(state: Any) -> Dict[str, Any]:
         return _row("parked", False, "the run is %s (%s): a human clears it with `loopctl approve breaker --by <name>`" % (rs, common.clean_text((hdr.get("parked") or {}).get("reason"), 40)))
     p = hdr.get("parked")
     if rs == "parked" and isinstance(p, dict) and p.get("reason") == "checkpoint":
-        answered = any(a.get("target") == p.get("item") and a.get("scope") == "checkpoint" and not a.get("used") and a.get("choice") in ("approve", "stop")
+        answered = any(a.get("target") == p.get("item") and a.get("scope") == "checkpoint" and a.get("kind") == "checkpoint" and not a.get("used") and a.get("choice") in ("approve", "stop")
                        for a in state.d["approvals"])
         if not answered:
             return _row("parked", False, "the run waits at a checkpoint after %s: `loopctl approve checkpoint %s --by <name>`" % (common.clean_text(p.get("item"), 24), common.clean_text(p.get("item"), 24)))
@@ -347,11 +350,13 @@ def watch_once(ctx: Any, now: Optional[float] = None, sender: Callable[..., Dict
 
 def estimate_killed_cost(measured: Sequence[Tuple[float, float]], duration_s: float, allowance: float) -> Optional[float]:
     """Dollars for a child that was killed or crashed without a result: the highest measured dollars per second of this run's children, times
-    ESTIMATE_MARGIN, times how long it ran, never more than its own allowance. None when nothing was measured (then the cost stays unknown)."""
+    ESTIMATE_MARGIN, times how long it ran, but never less than ESTIMATE_FLOOR of its allowance (a child that died early may have spent most of
+    it) and never more than the allowance. None when nothing was measured (then the cost stays unknown)."""
     rates = [usd / dur for dur, usd in measured if dur > 0.01 and usd >= 0]
     if not rates or duration_s <= 0 or allowance <= 0:
         return None
-    return round(min(max(rates) * duration_s * ESTIMATE_MARGIN, float(allowance)), 4)
+    allowance = float(allowance)
+    return round(min(max(max(rates) * duration_s * ESTIMATE_MARGIN, ESTIMATE_FLOOR * allowance), allowance), 4)
 
 
 # -- the supervisor the driver carries ------------------------------------------------------------------------------------------------------
@@ -558,7 +563,7 @@ class Supervisor(object):
         if est is None:
             return None
         self.estimated_usd += est
-        self.drv.ev("cost_estimated", usd=est, basis="highest measured $/s of this run x%.2f, capped by the allowance" % ESTIMATE_MARGIN, reason=res.reason or "crash")
+        self.drv.ev("cost_estimated", usd=est, basis="highest measured $/s of this run x%.2f, at least %.0f%% of the allowance, at most the allowance" % (ESTIMATE_MARGIN, ESTIMATE_FLOOR * 100), reason=res.reason or "crash")
         return {"total_cost_usd": est}, "estimated"
 
     # -- the end ----------------------------------------------------------------------------------------------------------------------------

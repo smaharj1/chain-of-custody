@@ -69,8 +69,10 @@ def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = N
     """Everything waiting on a human, each with the command to answer it and a link when there is one."""
     out = []  # type: List[Dict[str, Any]]
 
-    def add(kind: str, item: Optional[str], why: str, cmd: str, link: Optional[str] = None) -> None:
-        out.append({"kind": kind, "item": item, "why": common.clean_text(why, 220), "command": cmd, "link": link})
+    def add(kind: str, item: Optional[str], why: str, cmd: str, link: Optional[str] = None, human: Optional[str] = None) -> None:
+        # `human`: the exact copy-paste command of a HUMAN-ONLY step (kitlib/loopctl_table.py: the guard denies it to every agent, the conductor included)
+        out.append({"kind": kind, "item": item, "why": common.clean_text(why, 220), "command": cmd, "link": link,
+                    "human_step": ("HUMAN STEP: python3 .claude/scripts/loopctl " + human) if human else None})
 
     if doc_state_error:
         add("state-unreadable", None, doc_state_error, "inspect refs/loopctl/state/%s with git; do not continue on it" % (lp.name or "<plan>"))
@@ -81,35 +83,40 @@ def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = N
         halted = True
     if halted:
         h = ctx.rs.read_halt() or {}
-        add("halt", None, "HALT is set: %s (by %s)" % (h.get("reason", "no reason recorded"), h.get("by", "?")), "loopctl resume   (from a plain terminal)")
+        add("halt", None, "HALT is set: %s (by %s)" % (h.get("reason", "no reason recorded"), h.get("by", "?")), "loopctl resume   (from a plain terminal)", human="resume")
     if st is None:
         if lp.plan is not None:
             add("approve-plan", None, "the plan is not approved yet (H1): its acceptance criteria are what you approve",
-                "loopctl approve plan --by <you>")
+                "loopctl approve plan --by <you>", human="approve plan --by <you>")
         return out
     ap = st.header.get("approvedPlan")
     cur = plan_mod.plan_digest(lp) if lp.plan is not None and lp.items else None
     if ap and cur and ap["digest"] != cur:
         add("approve-plan", None, "the plan changed since you approved it (approved %s, now %s) (H2)" % (ap["digest"][:12], cur[:12]),
-            "loopctl approve plan --by <you>")
+            "loopctl approve plan --by <you>", human="approve plan --by <you>")
     elif not ap:
-        add("approve-plan", None, "the plan is not approved yet (H1)", "loopctl approve plan --by <you>")
+        add("approve-plan", None, "the plan is not approved yet (H1)", "loopctl approve plan --by <you>", human="approve plan --by <you>")
     for iid in st.by_status("awaiting_human"):
         r = st.items[iid]
         gate = r.get("humanGate") or []
         add("approve-item", iid, "item %s is waiting for your review%s" % (iid, (" (human gate: " + "; ".join(gate[:2]) + ")") if gate else ""),
-            "loopctl approve item %s --by <you>   (or --choice reject --note ...)" % iid, r.get("prUrl"))
+            "loopctl approve item %s --by <you>   (or --choice reject --note ...)" % iid, r.get("prUrl"),
+            human="approve item %s --by <you>   (head %s)" % (iid, str(r.get("headSha") or "?")[:12]))
     for iid in st.by_status("needs_human", "blocked"):
         r = st.items[iid]
         add("unblock", iid, "item %s is %s: %s" % (iid, r["status"], r.get("blockReason")),
-            "loopctl approve unblock %s --choice reset --by <you>   (or fix it, or `keep`, or `replan`)" % iid, r.get("prUrl"))
+            "loopctl approve unblock %s --choice reset --by <you>   (or fix it, or `keep`, or `replan`)" % iid, r.get("prUrl"),
+            human="approve unblock %s --choice reset --by <you>" % iid)
+    if str(ctx.cfg.get("delivery") or "local") != "local" and st.by_status("pr_open", "awaiting_human"):
+        add("reconcile-live", None, "delivery is %s: the PR and check facts come from GitHub, which only you read (a file the conductor wrote is not trusted)" % ctx.cfg.get("delivery"),
+            "loopctl reconcile --live --apply --by <you>", human="reconcile --live --apply --by <you>")
     if st.header.get("levelCap"):
         lc = st.header["levelCap"]
         add("env", lc.get("item"), "the effective level is capped to %s: %s" % (lc.get("level"), lc.get("reason")),
-            "fix the environment, run `loopctl doctor`, then `loopctl approve env --by <you>`")
+            "fix the environment, run `loopctl doctor`, then `loopctl approve env --by <you>`", human="approve env --by <you>")
     if st.header.get("runStatus") == "stopped":
         add("breaker", None, "the circuit breaker tripped after %d consecutive blocked items" % st.header.get("breaker", 0),
-            "loopctl approve breaker --by <you>")
+            "loopctl approve breaker --by <you>", human="approve breaker --by <you>")
     verdict = None
     run = None
     try:
@@ -125,7 +132,7 @@ def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = N
             verdict.fail("cost_unknown", "%d spend entries have no usable cost" % tot["unknown"])
     if verdict is not None and not verdict.ok:
         add("cost", None, "; ".join(verdict.reasons), "check total_cost_usd in the child result, then `loopctl approve cost --by <you>`; "
-            "raise the budget in loop.config (H6) if it is a ceiling")
+            "raise the budget in loop.config (H6) if it is a ceiling", human="approve cost --by <you>")
     today = common.iso()[:10]
     for iid in lp.ids():
         for w in lp.items[iid].get("waivers") or []:
@@ -290,6 +297,8 @@ def format_pending(items: List[Dict[str, Any]]) -> str:
         if p.get("link"):
             L.append("   link: %s" % common.clean_text(p["link"], 200))
         L.append("   do:   %s" % p["command"])
+        if p.get("human_step"):
+            L.append("   %s" % p["human_step"])
     return "\n".join(L) + "\n"
 
 

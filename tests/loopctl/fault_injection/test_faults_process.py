@@ -142,8 +142,10 @@ class Stall(DriverTestCase):
             self.assertTrue(wait_for(lambda: not runstate.pid_alive(pid), 3), "%s survived" % f)    # the child AND what it leaked into its process group
         it = lr.item("A")
         self.assertEqual((it["status"], it["blockReason"]), ("needs_human", "cost_unknown"))
-        self.assertEqual((it["lastFailure"]["class"], it["lastFailure"]["reason"]), ("transient", "stall"))
-        self.assertEqual(it["counters"]["transient"], 1)
+        self.assertIsNone(it["lastFailure"])                                                    # the ledger is judged first (LC-6); the cause is on the budget_stop event
+        stops = [e for e in lr.rs.read_events("loopctl") if e.get("event") == "budget_stop"]
+        self.assertEqual(len(stops), 1)
+        self.assertIn("transient/stall", stops[0]["cause"])
         self.assertEqual(self.slept, [])
         self.assertEqual(lr.children_left(), [])
         self.assertEqual(os.listdir(lr.rs.sessions_dir), [lr.session + ".json"])                # only the test's own registration is left

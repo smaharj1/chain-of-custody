@@ -35,8 +35,12 @@ class Cost(DriverTestCase):
         drv, out, stop = self.child(lr, {"behavior": "malformed"})
         self.assertEqual((out, stop.outcome), (None, "budget"))
         it = lr.item("A")
-        self.assertEqual((it["status"], it["blockReason"], it["lastFailure"]["reason"]), ("needs_human", "cost_unknown", "cli_crash"))
-        self.assertEqual(it["counters"]["platform"], 1)
+        self.assertEqual((it["status"], it["blockReason"]), ("needs_human", "cost_unknown"))
+        self.assertIsNone(it["lastFailure"])                                                   # the ledger is judged BEFORE the failure: nothing is counted (LC-6)
+        self.assertEqual(it["counters"]["platform"], 0)
+        stops = [e for e in lr.rs.read_events("loopctl") if e.get("event") == "budget_stop"]
+        self.assertEqual([e["code"] for e in stops], ["cost_unknown"])                         # always an event, and it keeps what the child did
+        self.assertIn("cli_crash", stops[0]["cause"])
         t = self.totals(lr)
         self.assertEqual((t["usd"], t["unknown"]), (0.0, 1))
         self.assertEqual(self.slept, [])                                                      # no point sleeping before a park
@@ -50,8 +54,7 @@ class Cost(DriverTestCase):
         r = lr.run()
         self.assertEqual(r.rc, 0, r)
         self.assertEqual((lr.item("A")["status"], lr.item("A")["attempt"]), ("merged", 1))
-        self.assertEqual(len(self.slept), 1)                                                  # the platform backoff recorded before the park is waited out, not skipped
-        self.assertGreater(self.slept[0], 1)
+        self.assertEqual(self.slept, [])                                                      # the failure was never counted, so there is no backoff to wait out
 
     def test_a_cost_field_that_was_renamed_parks_even_though_the_child_succeeded(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)])
@@ -102,7 +105,7 @@ class Cost(DriverTestCase):
         drv, out, stop = self.child(lr, lr.eng_run("A", cost=0.0))
         self.assertIsNone(stop)
         self.assertIsNotNone(out)
-        self.assertEqual(self.totals(lr), {"usd": 0.0, "entries": 1, "unknown": 0})
+        self.assertEqual({k: self.totals(lr)[k] for k in ("usd", "entries", "unknown")}, {"usd": 0.0, "entries": 1, "unknown": 0})
 
     def test_no_ceiling_at_all_refuses_to_start_a_driver_run(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"run_budget_usd": "0"})
