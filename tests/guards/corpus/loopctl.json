@@ -125,7 +125,8 @@
 "repo": "feat",
 "cmd": "loopctl abort --rollback-to 0123456789abcdef0123456789abcdef01234567 --by me",
 "expect": "deny",
-"rule": "guard-exec:loopctl-write"
+"rule": "guard-exec:loopctl-human-only",
+"why": "R-LC-12: abort --rollback-to rolls the integration branch back; a human step (abort --dry-run and a plain abort are unchanged)"
 },
 {
 "id": "loopctl-017",
@@ -453,7 +454,8 @@
 "repo": "feat",
 "cmd": "loopctl abort --rollback-to 0123456789abcdef0123456789abcdef01234567 --by me",
 "expect": "deny",
-"rule": "guard-exec:loopctl-write"
+"rule": "guard-exec:loopctl-human-only",
+"why": "R-LC-12: abort --rollback-to rolls the integration branch back; a human step (abort --dry-run and a plain abort are unchanged)"
 },
 {
 "id": "loopctl-058",
@@ -2668,8 +2670,8 @@
 "repo": "feat",
 "cmd": "loopctl remote-lock --owner status steal",
 "expect": "deny",
-"rule": "guard-exec:loopctl-write",
-"why": "GD-1: the option value was counted as the action; the shared table reads the action position only"
+"rule": "guard-exec:loopctl-human-only",
+"why": "GD-1 / R-A-1: an option before the action of a push command is a human step (the shared table only lets a plain status/list/show first word through)"
 },
 {
 "id": "loopctl-312",
@@ -2677,8 +2679,8 @@
 "repo": "feat",
 "cmd": "loopctl claim --by list take X",
 "expect": "deny",
-"rule": "guard-exec:loopctl-write",
-"why": "GD-1: the option value was counted as the action; the shared table reads the action position only"
+"rule": "guard-exec:loopctl-human-only",
+"why": "GD-1 / R-A-1: an option before the action of a push command is a human step (the shared table only lets a plain status/list/show first word through)"
 },
 {
 "id": "loopctl-313",
@@ -2809,8 +2811,8 @@
 "repo": "feat",
 "cmd": "loopctl remote-lock --owner status steal",
 "expect": "deny",
-"rule": "guard-exec:loopctl-write",
-"why": "GD-1: the option value was counted as the action; the shared table reads the action position only"
+"rule": "guard-exec:loopctl-human-only",
+"why": "GD-1 / R-A-1: an option before the action of a push command is a human step (the shared table only lets a plain status/list/show first word through)"
 },
 {
 "id": "loopctl-329",
@@ -2818,8 +2820,8 @@
 "repo": "feat",
 "cmd": "loopctl claim --by list take X",
 "expect": "deny",
-"rule": "guard-exec:loopctl-write",
-"why": "GD-1: the option value was counted as the action; the shared table reads the action position only"
+"rule": "guard-exec:loopctl-human-only",
+"why": "GD-1 / R-A-1: an option before the action of a push command is a human step (the shared table only lets a plain status/list/show first word through)"
 },
 {
 "id": "loopctl-330",
