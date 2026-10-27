@@ -195,6 +195,10 @@ def _lint(ctx: Any, rows: List[Any], langs: List[str], findings: List[Dict[str, 
             findings.append(_lib.finding("g5.lint.test-env-detection", sev, "%s detects the test environment (PYTEST_CURRENT_TEST, JEST_WORKER_ID, "
                                          "NODE_ENV === 'test'); production code must not behave differently under test%s" % (path, suffix), path=path, **low))
             counts["flags"] += 1
+        if not _lib.is_test_path(path) and name == "python" and _astscan.imports_test_framework(text_head) and not _astscan.imports_test_framework(text_base):
+            findings.append(_lib.finding("g5.lint.test-framework-in-production", sev, "%s imports the test framework from production code: a module the tests import "
+                                         "can patch assertEqual and make every assertion pass" % path, path=path))
+            counts["flags"] += 1
         if _lib.is_test_path(path):
             new = _astscan.mock_targets(path, text_head) - _astscan.mock_targets(path, text_base)
             hit = sorted(t for t in new if _lib.match_any(foot, t))

@@ -35,6 +35,7 @@ OWNER_METRIC = "new dependencies per item; dependencies blocked"
 REQUIRED_FOR = (("verifying", "reviewing"),)
 
 MAX_CHECKED = 20
+_NAME_OK = re.compile(r"^[@A-Za-z0-9][A-Za-z0-9._/@+~-]{0,213}\Z")        # what may reach dep_check_cmd's environment
 _LIFECYCLE = ("preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly", "prepack", "postpack")
 _LOCKS = {"npm": ("package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"),
           "pypi": ("poetry.lock", "Pipfile.lock", "uv.lock", "pdm.lock"), "go": ("go.sum",), "cargo": ("Cargo.lock",), "ruby": ("Gemfile.lock",)}
@@ -282,6 +283,9 @@ def run(ctx: Any) -> GateResult:
     allowed_lic = [str(x).lower() for x in (ctx.cfg.get("license_allowlist") or [])]
     for rec in new_deps[:MAX_CHECKED]:
         eco, name = rec["ecosystem"], rec["name"]
+        if not _NAME_OK.match(name):
+            findings.append(_lib.finding("g9.bad-name", "error", "new dependency %s is not a plausible package name; it was not passed to dep_check_cmd" % ascii(name)[:60], dependency=name))
+            continue
         look = lookalike(name, eco)
         info = _dep_check(ctx, cmd, eco, name) if cmd else None
         verified = bool(info and info.get("exists") is True)

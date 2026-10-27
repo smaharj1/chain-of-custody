@@ -36,7 +36,7 @@ def pkg(**kw):
 class Supply(GateCase):
     ITEMS = [item_doc("A", acs=1), item_doc("D", acs=1, slug="slice-d", touches={"domains": ["backend"], "paths": ["package.json"], "schema": False, "deps_change": True}),
              item_doc("P", acs=1, slug="slice-p", touches={"domains": ["backend"], "paths": ["package.json"], "schema": False, "deps_change": True},
-                      ext={"g9": {"allow": ["lodsh", "git+https://example.invalid/x.git"]}})]
+                      ext={"g9": {"allow": ["lodsh", "mypkg"]}})]
     BASE_FILES = {"package.json": pkg(), "package-lock.json": "{}\n", "requirements.txt": "flask==2.0.1\n", "scripts/depcheck.py": DEPCHECK,
                   "pyproject.toml": '[project]\nname = "x"\ndependencies = ["requests>=2"]\n', "go.mod": "module x\n\nrequire (\n\tgithub.com/a/b v1.0.0\n)\n",
                   "Cargo.toml": '[package]\nname = "x"\n\n[dependencies]\nserde = "1"\n'}
@@ -77,7 +77,7 @@ class Supply(GateCase):
             self.assertFails(self.run_gate("g9", "D"), "g9.non-registry-source")
 
     def test_the_plan_can_allow_a_named_non_registry_source(self):
-        self.commit({"package.json": pkg(dependencies={"git+https://example.invalid/x.git": "git+https://example.invalid/x.git"}), "package-lock.json": "{ }\n"}, "git dep")
+        self.commit({"package.json": pkg(dependencies={"mypkg": "git+https://example.invalid/x.git"}), "package-lock.json": "{ }\n"}, "git dep")
         res = self.run_gate("g9", "P")
         self.assertEqual(res["status"], "pass", res["findings"])
 
@@ -140,6 +140,13 @@ class SupplyChecked(GateCase):
         self.assertPass(res)
         self.assertTrue(res["evidence"]["new_dependencies"][0]["checked"])
         self.assertNotIn("(unchecked)", res["evidence"]["summary"])
+
+    def test_a_name_that_could_carry_shell_syntax_never_reaches_the_command(self):
+        marker = os.path.join(self.lr.path, "pwned")
+        self.add(**{"x; touch pwned": "1.0.0"})
+        res = self.run_gate("g9", "D")
+        self.assertFails(res, "g9.bad-name")
+        self.assertFalse(os.path.exists(marker))
 
     def test_a_package_that_does_not_exist_is_a_hallucinated_name(self):
         self.add(ghostlib="1.0.0")

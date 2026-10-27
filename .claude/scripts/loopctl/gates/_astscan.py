@@ -12,7 +12,7 @@ import re
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 
-__all__ = ["language", "skip_markers", "test_names", "py_test_functions", "js_assertion_problems", "env_detection_count", "mock_targets",
+__all__ = ["imports_test_framework", "language", "skip_markers", "test_names", "py_test_functions", "js_assertion_problems", "env_detection_count", "mock_targets",
            "update_snapshot_flags", "ENV_DETECT_RE"]
 
 _JS_EXT = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts")
@@ -232,6 +232,15 @@ def js_assertion_problems(source: str) -> Dict[str, int]:
 
 
 # -- G5 lint helpers -------------------------------------------------------------------------------------------------------------------
+
+_FRAMEWORK_IMPORT_RE = re.compile(r"(?m)^\s*(?:import|from)\s+(?:unittest|pytest|_pytest|nose2?|doctest)\b")
+
+
+def imports_test_framework(source: str) -> bool:
+    """Whether a (production) Python file imports the test framework: the way to make every assertion in a test pass is to patch
+    `unittest.TestCase.assertEqual` from a module the tests import."""
+    return bool(_FRAMEWORK_IMPORT_RE.search(source))
+
 
 ENV_DETECT_RE = re.compile(r"PYTEST_CURRENT_TEST|JEST_WORKER_ID|VITEST_WORKER_ID|NODE_ENV\s*[!=]==?\s*['\"]test['\"]|"
                            r"['\"](?:pytest|unittest|_pytest)['\"]\s+(?:not\s+)?in\s+sys\.modules|sys\.modules\.get\(\s*['\"](?:pytest|unittest)|"

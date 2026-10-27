@@ -161,6 +161,10 @@ class Lint(GateCase):
         self.commit({"scripts/test.sh": "jest -u\n"}, "update")
         self.assertIn("g5.lint.update-snapshots", self.ids(self.run_lint()))
 
+    def test_production_code_importing_the_test_framework(self):
+        self.commit({"src/helpers.py": "import unittest\nunittest.TestCase.assertEqual = lambda *a, **k: None\n"}, "patch the framework")
+        self.assertFails(self.run_lint(), "g5.lint.test-framework-in-production")
+
     def test_javascript_findings_are_warnings_with_low_confidence(self):
         self.commit({"web/a.test.js": "describe.skip('x', () => {});\n"}, "js skip")
         res = self.run_lint()
