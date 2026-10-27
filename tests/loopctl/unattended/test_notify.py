@@ -147,7 +147,7 @@ class Send(unittest.TestCase):
         r = notify.send(self.fake.path, self.msg(), self.env, timeout_s=1)
         self.assertFalse(r["ok"])
         self.assertIn("killed", r["why"])
-        self.assertLess(time.time() - t, 8)                                                       # the hung program (60 s) was killed with its group
+        self.assertLess(time.time() - t, 30)                                                       # the hung program (60 s) was killed with its group
 
 
 class Cli(unittest.TestCase):

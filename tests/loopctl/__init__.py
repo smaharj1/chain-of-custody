@@ -17,9 +17,12 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from .. import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (puts .claude/scripts on sys.path)
 from ..helpers import TempRepo, clean_env
-from ..helpers.gitrepo import git_test_env
+from ..helpers import gitfast
+from ..helpers.gitrepo import copy_tree, git_test_env, scratch_root
 
 from loopctl import cli, common  # noqa: E402
+
+_PLAN_TEMPLATES = {}  # (items, config, plan name, milestones) -> a directory holding that repo, built once per process
 
 CONFIG_TEMPLATE = """# Loop Config
 
@@ -65,8 +68,43 @@ class LoopRepo(object):
         self._real_gates = real_gates
         if not real_gates:
             _gates._discovered = {}
-        self.repo = TempRepo()
-        self.path = self.repo.path
+        self.items = items if items is not None else [item_doc("A"), item_doc("B", ["A"]), item_doc("C", ["B"])]
+        self.plan_name = plan_name
+        self.cfg_text = CONFIG_TEMPLATE % {"tier2": "true" if tier2 else "false", "extra": extra_cfg}
+        self.milestones = milestones or ["M1"]
+        self.session = "sess-1"
+        self._real_gates = real_gates
+        self._loop = None
+        self._new_home()
+        self._fast_git()
+        # A committed plan + config is the same bytes for every test that asks for the same one, so it is built once per
+        # process and copied (task 13a: process creation is the suite's cost).
+        key = (json.dumps(self.items, sort_keys=True), self.cfg_text, self.plan_name, tuple(self.milestones))
+        if not commit:
+            self.repo = TempRepo()
+            self.path = self.repo.path
+        elif key in _PLAN_TEMPLATES:
+            self.repo = TempRepo(clone_from=_PLAN_TEMPLATES[key])
+            self.path = self.repo.path
+        else:
+            self.repo = TempRepo()
+            self.path = self.repo.path
+            self.write_plan(self.items)
+            self.repo.write(".claude/loop.config.md", self.cfg_text)
+            self.repo.write(".gitignore", "")
+            self.repo.git("add", "-A")
+            self.repo.git("commit", "-q", "-m", "plan and config")
+            tmpl = os.path.join(scratch_root(), "plan-%d" % len(_PLAN_TEMPLATES))
+            copy_tree(self.path, tmpl)
+            _PLAN_TEMPLATES[key] = tmpl
+        self.base = self.repo.head()
+
+    def _fast_git(self) -> None:
+        """Read-only git questions are answered from the repo's files while a LoopRepo is alive (tests/helpers/gitfast.py)."""
+        self._gitfast = True
+        gitfast.install()
+
+    def _new_home(self) -> None:
         self.home = tempfile.mkdtemp(prefix="loopctl-home-")
         self.env = clean_env(home=self.home)
         self.env.pop("CLAUDECODE", None)
@@ -74,18 +112,56 @@ class LoopRepo(object):
         # may start the real binary, so the version is given explicitly and the binary override points at a path that does not exist.
         self.env["KIT_CLAUDE_VERSION"] = "2.1.302"
         self.env["KIT_CLAUDE_BIN"] = os.path.join(self.home, "no-such-claude")
-        self.items = items if items is not None else [item_doc("A"), item_doc("B", ["A"]), item_doc("C", ["B"])]
-        self.plan_name = plan_name
-        self.cfg_text = CONFIG_TEMPLATE % {"tier2": "true" if tier2 else "false", "extra": extra_cfg}
-        self.milestones = milestones or ["M1"]
-        self.session = "sess-1"
-        if commit:
-            self.write_plan(self.items)
-            self.repo.write(".claude/loop.config.md", self.cfg_text)
-            self.repo.write(".gitignore", "")
-            self.repo.git("add", "-A")
-            self.repo.git("commit", "-q", "-m", "plan and config")
-        self.base = self.repo.head()
+
+    # -- snapshots: build an expensive fixture once per process, hand every test its own copy -----------------------------
+    def snapshot(self) -> str:
+        """Copy the repo and the temp HOME to a cache directory; `LoopRepo.restore(path)` makes an independent LoopRepo from it.
+        Everything the loop keeps lives under the repo's .git (state ref, run record, lock, sessions, events), so a copy is a complete
+        fixture. Only the two files that record the repo's own path (run record and lock) are rewritten when it is restored."""
+        snap = tempfile.mkdtemp(prefix="loopsnap-", dir=scratch_root())
+        copy_tree(self.path, os.path.join(snap, "repo"))
+        copy_tree(self.home, os.path.join(snap, "home"))
+        meta = {"items": self.items, "plan_name": self.plan_name, "cfg_text": self.cfg_text, "milestones": self.milestones,
+                "session": self.session, "real_gates": self._real_gates, "base": self.base, "path": self.path, "home": self.home}
+        with open(os.path.join(snap, "meta.json"), "w", encoding="utf-8") as fh:
+            json.dump(meta, fh)
+        return snap
+
+    @classmethod
+    def restore(cls, snap: str) -> "LoopRepo":
+        with open(os.path.join(snap, "meta.json"), encoding="utf-8") as fh:
+            meta = json.load(fh)
+        from loopctl import gates as _gates
+        if not meta["real_gates"]:
+            _gates._discovered = {}
+        self = cls.__new__(cls)
+        self._real_gates = meta["real_gates"]
+        self.items, self.plan_name, self.cfg_text = meta["items"], meta["plan_name"], meta["cfg_text"]
+        self.milestones, self.session, self.base, self._loop = meta["milestones"], meta["session"], meta["base"], None
+        self._fast_git()
+        self.repo = TempRepo(clone_from=os.path.join(snap, "repo"))
+        self.path = self.repo.path
+        self._new_home()
+        for fn in os.listdir(os.path.join(snap, "home")):
+            src = os.path.join(snap, "home", fn)
+            (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, os.path.join(self.home, fn))
+        swaps = [(meta["path"], self.path), (meta["home"], self.home)]
+        ldir = os.path.join(self.path, ".git", "loopctl")
+        for dp, _dn, fns in os.walk(ldir):
+            for fn in fns:
+                fp = os.path.join(dp, fn)
+                try:
+                    with open(fp, encoding="utf-8") as fh:
+                        text = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                new = text
+                for old, repl in swaps:
+                    new = new.replace(old, repl)
+                if new != text:
+                    with open(fp, "w", encoding="utf-8") as fh:
+                        fh.write(new)
+        return self
 
     def write_plan(self, items: List[Dict[str, Any]]) -> None:
         self.repo.write("plan/plan.json", json.dumps({"schema": "loopctl.plan.v1", "name": self.plan_name, "goal": "Build the demo.",
@@ -218,6 +294,9 @@ class LoopRepo(object):
             _gates._discovered = None
         self.repo.cleanup()
         shutil.rmtree(self.home, ignore_errors=True)
+        if getattr(self, "_gitfast", False):
+            self._gitfast = False
+            gitfast.uninstall()
 
 
 class LoopTestCase(unittest.TestCase):

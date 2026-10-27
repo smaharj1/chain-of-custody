@@ -8,7 +8,7 @@ import sys
 
 from infra import gate
 
-from tests.helpers import BaseTestCase
+from tests.helpers import BaseTestCase, inproc
 
 from .helpers import GATE
 
@@ -228,7 +228,12 @@ class RunApproval(BaseTestCase):
 
 class Cli(BaseTestCase):
     def run_gate(self, *args):
-        return subprocess.run([sys.executable, GATE] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        return inproc.run_script(GATE, list(args))
+
+    def test_runs_as_a_script(self):
+        p = subprocess.run([sys.executable, GATE, "authorize", "--actor", "alice", "--approvers", "alice", "--bot", "robot"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual((p.returncode, p.stderr), (0, ""))
 
     def test_authorize_exit_codes(self):
         ok = self.run_gate("authorize", "--actor", "alice", "--approvers", "alice", "--bot", "robot")

@@ -13,7 +13,7 @@ from doctorlib import (ci, codeowners, creds, deploy, github, levelcalc, secrets
 from doctorlib.model import Context, Result, default_run, run_checks
 
 from tests import REPO_ROOT
-from tests.helpers import BaseTestCase, TempRepo
+from tests.helpers import BaseTestCase, TempRepo, inproc
 
 DOCTOR = os.path.join(REPO_ROOT, ".claude", "scripts", "doctor.py")
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
@@ -165,6 +165,11 @@ def load_fixture(name: str) -> Any:
         return json.load(fh)
 
 
-def run_doctor(args: List[str], env: Mapping[str, str], cwd: Optional[str] = None, timeout: int = 60):
-    p = subprocess.run([sys.executable, DOCTOR] + args, env=dict(env), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
+def run_doctor(args: List[str], env: Mapping[str, str], cwd: Optional[str] = None, timeout: int = 60, real: bool = False):
+    """doctor.py's exit code, stdout and stderr. In this process unless `real` (tests/helpers/inproc.py: starting Python is most of the
+    cost); the few tests about running it as a program from a directory, or under a timeout, pass real=True."""
+    if not real:
+        p = inproc.run_script(DOCTOR, args, env=dict(env), cwd=cwd, text=False)
+    else:
+        p = subprocess.run([sys.executable, DOCTOR] + args, env=dict(env), cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")

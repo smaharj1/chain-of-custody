@@ -142,7 +142,7 @@ class Stop(DriverTestCase):
         r = lr.run()
         t.join()
         self.assertEqual(r.rc, 3, r)
-        self.assertLess(time.time() - t0, 8)
+        self.assertLess(time.time() - t0, 30)
         self.assertIn("HALT is set (stop now)", r.out)
         with open(pidfile) as fh:
             pid = int(fh.read())

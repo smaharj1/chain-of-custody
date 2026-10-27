@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from tests.baseline import BASELINE_DIR, load_tool
-from tests.helpers import BaseTestCase
+from tests.helpers import BaseTestCase, inproc
 from kitlib import evidence
 from . import REPO_ROOT
 
@@ -61,9 +61,7 @@ class SummarizeCase(BaseTestCase):
         return d
 
     def run_cli(self, d, *args):
-        proc = subprocess.run([sys.executable, SUMMARIZE, "--results", d] + list(args),
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        return proc
+        return inproc.run_script(SUMMARIZE, ["--results", d] + list(args))
 
     def evaluate(self, *records):
         d = self.results_dir(*records)

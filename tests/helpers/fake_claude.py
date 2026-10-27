@@ -259,14 +259,14 @@ def main(argv):
             time.sleep(5)
         return int(run.get("exit_code", 1))
     if behavior == "stall":
+        if run.get("ignore_sigterm"):                    # before the pid file: the file means "ready", and a test may signal as soon as it sees it
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
         if run.get("pidfile"):
             with open(run["pidfile"], "w") as fh:
                 fh.write(str(os.getpid()))
         if run.get("after_output"):
             sys.stdout.write(run["after_output"])
             sys.stdout.flush()
-        if run.get("ignore_sigterm"):
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
         end = time.time() + float(run.get("seconds", 3600))
         while time.time() < end:
             time.sleep(0.1)
