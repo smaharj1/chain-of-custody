@@ -87,6 +87,8 @@ class Fixtures(object):
         r.write(".claude/agents/backend-engineer.md", "---\nname: backend-engineer\n---\n")
         r.write(".claude/context/backend.md", "# backend primer\n")
         r.write(".claude/scripts/guards/run.py", "# guards\n")
+        r.write(".claude/scripts/loopctl/__main__.py", "# loopctl\n")
+        r.write(".claude/scripts/github/labels.py", "# labels\n")
         r.write(".github/workflows/ci.yml", "name: ci\n")
         r.write(".github/CODEOWNERS", "* @owner\n")
         r.write(".mcp.json", "{}\n")
@@ -102,6 +104,7 @@ class Fixtures(object):
         r.write("scripts/ok.sh", "#!/bin/sh\necho fine\nnpm test\n")
         r.write("scripts/tracked_deploy.py", "import subprocess\nsubprocess.run(['terraform', 'apply'])\n")
         r.write("scripts/tracked_registry.py", "from kitlib.runstate import RunState\nRunState('.git').register_session('s', 'conductor')\n")
+        r.write("scripts/lc_copy.py", "import sys\nfrom loopctl.cli import main\n\nif __name__ == '__main__':\n    sys.exit(main(sys.argv[1:]))\n")     # a renamed copy of loopctl's entry point
         r.write("scripts/tracked_uses_kitlib.py", "import kitlib\nprint(kitlib.__name__)\n")
         r.git("add", "-A")
         r.git("commit", "-q", "-m", "fixtures")
@@ -116,6 +119,9 @@ class Fixtures(object):
         r.write("scripts/untracked_via_helper.py", "import reg_helper\nreg_helper.go()\n")
         r.write("scripts/reg_helper.py", "import deep_helper\n\ndef go():\n    deep_helper.go()\n")
         r.write("scripts/deep_helper.py", "def go():\n    from kitlib.runstate import RunState\n    RunState('.git').register_session('s', 'conductor')\n")
+        r.write("scripts/untracked_app_locks.py", "sessions_dir = '/var/app/sessions'\n\n\ndef acquire_lock(name):\n    return name\n\n\ndef release_lock(name):\n    return None\n\n\n"
+                "def write_run(x):\n    return x\n\n\nprint(acquire_lock('a'), sessions_dir)\n")
+        r.write("scripts/untracked_lock_by_importlib.py", "import importlib\nmod = importlib.import_module('run' + 'state')\nmod.acquire_lock('x')\n")
         r.write("scripts/untracked_calls_loopctl.py", "from loopctl import cli\ncli.main(['approve', 'plan', '--by', 'x'])\n")
         self._archives(r)
         return r

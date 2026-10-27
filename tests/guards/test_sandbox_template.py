@@ -102,6 +102,29 @@ class SandboxTemplate(unittest.TestCase):
         self.assertTrue(all(r.startswith("Edit(//") for r in snip["permissions"]["deny"]), "an absolute permission path starts with //")
 
 
+class SandboxSnippetInAWorktree(unittest.TestCase):
+    """R-A-4: in a linked worktree `.git` is a pointer file; the snippet denies writes to it, a plain checkout does not get the entry (`.git` is a directory there)."""
+
+    def test_snippet_has_the_pointer_file_in_a_linked_worktree_only(self):
+        from tests.helpers.gitrepo import TempRepo
+        import shutil
+        import tempfile
+        root = os.path.realpath(tempfile.mkdtemp(prefix="kit-snippet-"))
+        try:
+            main = TempRepo(parent=root, name="main", branch="main")
+            main.write("a.txt", "x\n")
+            main.git("add", "-A")
+            main.git("commit", "-q", "-m", "x")
+            wt = main.add_worktree("wt", "feat/wt")
+            plain = wiring.sandbox_snippet(main.path)["sandbox"]["filesystem"]["denyWrite"]
+            self.assertNotIn(os.path.join(main.path, ".git"), plain)
+            snip = wiring.sandbox_snippet(wt)
+            self.assertIn(os.path.join(os.path.realpath(wt), ".git"), snip["sandbox"]["filesystem"]["denyWrite"])
+            self.assertIn("Edit(//%s)" % os.path.join(os.path.realpath(wt), ".git").lstrip("/"), snip["permissions"]["deny"])
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+
 class McpDenyLists(unittest.TestCase):
     """IN-10: the lockdown snippet, the infra deploy-deny snippet and the shared deny block are one list."""
 

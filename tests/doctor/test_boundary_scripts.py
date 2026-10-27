@@ -338,6 +338,32 @@ class SandboxRegistryPath(BoundaryCase):
             r = self.by_id(self.results(ctx_for()), "sandbox.registry-path")[0]
             self.assertEqual(r.status, "pass", r.message)
 
+    def test_git_pointer_file_of_a_linked_worktree_must_be_denied(self):
+        """R-A-4: `.git` in a linked worktree is a file inside the project directory; rewriting it moves the hooks to another git directory."""
+        main = self.kit_repo(config={"runner": "driver"}, commit=True)
+        wt = main.add_worktree("wt-ptr", "feat/ptr")
+        ctx_for = lambda: self.ctx(type("R", (), {"path": wt})())
+        common = main.common_dir()
+        base = _template()
+        base["sandbox"]["filesystem"]["denyWrite"].append(os.path.join(common, "loopctl", "sessions"))
+        with open(os.path.join(wt, ".claude", "settings.json"), "w") as fh:
+            json.dump(base, fh)
+        r = self.by_id(self.results(ctx_for()), "sandbox.git-pointer")[0]
+        self.assertEqual((r.status, r.severity), ("fail", "warn"), r.message)
+        self.assertIn(os.path.join(wt, ".git"), r.remediation)
+        for spelling in (os.path.join(wt, ".git"), ".git"):
+            ok = json.loads(json.dumps(base))
+            ok["sandbox"]["filesystem"]["denyWrite"].append(spelling)
+            with open(os.path.join(wt, ".claude", "settings.json"), "w") as fh:
+                json.dump(ok, fh)
+            r = self.by_id(self.results(ctx_for()), "sandbox.git-pointer")[0]
+            self.assertEqual(r.status, "pass", "%s: %s" % (spelling, r.message))
+
+    def test_git_pointer_row_is_skipped_in_a_plain_checkout(self):
+        repo = self.kit_repo()
+        r = self.row(repo, _template(), "sandbox.git-pointer")
+        self.assertEqual(r.status, "skipped", r.message)
+
     def test_not_a_git_repository_is_skipped(self):
         repo = self.kit_repo()
         import shutil

@@ -25,11 +25,13 @@ WHY_OTHER_CHOICE = {"item": "the merge approval and the un-park of a parked item
 def render() -> str:
     human = []   # type: list
     for sub in sorted(t.HUMAN_ONLY):
-        human.append(("`loopctl %s %s`" % (sub, ", ".join(sorted(t.HUMAN_ONLY[sub]))), "pushes a ref from this session (D3); `status`, `list`, `show` stay reads"))
+        human.append(("`loopctl %s %s`" % (sub, ", ".join(sorted(t.HUMAN_ONLY[sub]))), "pushes a ref from this session (D3); only `status`, `list`, `show` as the first word stay reads, so an option before the action is a human step too"))
     for sub in sorted(t.HUMAN_SUB):
         human.append(("`loopctl %s`" % sub, "lifts a stop"))
     for sub in sorted(t.HUMAN_FLAG):
         human.append(("`loopctl %s ... %s`" % (sub, " or ".join(t.HUMAN_FLAG[sub])), "acts on other items or replaces a human-written plan"))
+    for sub in sorted(t.HUMAN_UNLESS_DRY_RUN):
+        human.append(("`loopctl %s ... %s` (not with `--dry-run`)" % (sub, " or ".join(t.HUMAN_UNLESS_DRY_RUN[sub])), "rolls the integration branch back to a commit"))
     human.append(("`loopctl reconcile ... --live`", "reads GitHub with the human's credential"))
     human.append(("`loopctl reconcile ... --apply` with `%s`" % "` or `".join(t.RECONCILE_FACT_FLAGS), "forces items to merged from a fact file the agent could have written"))
     scopes = sorted(t.APPROVE_RELAY)
