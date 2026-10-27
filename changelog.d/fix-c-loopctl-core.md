@@ -52,7 +52,6 @@ Hot files get pointers below. Edited here: the orchestrate skill, `.claude/spec/
 - UN-14: the review prompt is not fenced (it embeds no diff); the saved review gets an untrusted marker line instead of a fence so g7's heading parser is unaffected.
 - `approve cost` with no run record acknowledges under run id `none`.
 - `worktree.dedicated` is a preflight row with ok=true and a WARNING text (the rows have no warn level).
-- Preflight for a rebased-and-parked flow is unchanged; no new config keys.
 - GT-9 state side: the stale rule is in `Loop._check_forward` (local `PRE_BUILD = (g0, g2)` copy; B owns the Evidence copy).
 
 ### Known gaps
