@@ -384,6 +384,10 @@
    "class": "kit",
    "sha256": "7ffd5ba90f753ea517525048670c3b4eb2d91d363d88de2ff1aeded2ae4d8735"
   },
+  ".claude/scripts/kitlib/loopctl_table.py": {
+   "class": "kit",
+   "sha256": "0054eef75e7c490dda56b881575b05c68fc184954753780cadf7afaa63a65c88"
+  },
   ".claude/scripts/kitlib/miniyaml.py": {
    "class": "kit",
    "sha256": "39068ac1a3debbfe2f4ccc45f562743bb19caa4c16aeac13f7bacefa948ae467"
