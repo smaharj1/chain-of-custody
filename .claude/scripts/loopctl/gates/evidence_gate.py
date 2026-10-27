@@ -4,8 +4,8 @@
 gate." So this gate does three things:
 
 1. **Completeness.** Every other gate whose mode is `on` (read at the base sha) has a recorded PASS. Gates that judge the code (everything
-   after building) must have passed for THIS head: a pass for an older commit is stale unless the only change since is a saved report or
-   review under `docs/features/<slug>/reports/`. The pre-build gates (G0, G2) judged the start of the
+   after building) must have passed for THIS head: a pass for an older commit, or a pass that records no head at all, is stale unless the
+   only change since is a saved report or review under `docs/features/<slug>/reports/`. The pre-build gates (G0, G2) judged the start of the
    item and only need to have passed.
 2. **The local evidence file**, written for the human and the audit block: `<git-common-dir>/loopctl/evidence/<item>-a<n>.json` with the
    per-gate result, the AC x evidence matrix, the base and head shas and a digest. It is a convenience; nothing trusts it.
@@ -52,7 +52,11 @@ def run(ctx: Any) -> GateResult:
             findings.append(_lib.finding("evidence.gate-missing", "error", "gate %s is on but has no recorded pass for this item (%s)" % (
                 name, "status " + str(rec.get("status")) if isinstance(rec, dict) else "never run")))
             continue
-        if name not in PRE_BUILD and rec.get("head") and not _lib.same_code(ctx, rec["head"], head):
+        if name not in PRE_BUILD and not rec.get("head"):
+            # a recorded pass that names no head cannot be tied to this code: stale outside the pre-build gates (GT-9)
+            findings.append(_lib.finding("evidence.stale", "error", "gate %s has a recorded pass with no head: it cannot be tied to HEAD %s, so its evidence is stale" % (name, head[:10])))
+            continue
+        if name not in PRE_BUILD and not _lib.same_code(ctx, rec["head"], head):
             findings.append(_lib.finding("evidence.stale", "error", "gate %s passed for %s, not for HEAD %s: its evidence is stale" % (name, str(rec["head"])[:10], head[:10])))
             continue
         summary[name] = {"status": rec.get("status"), "head": rec.get("head"), "at": rec.get("at")}
