@@ -126,6 +126,9 @@ class Reviews(GateCase):
         globs = locked.read(_lib.runstate_of(self.ctx()))["globs"]
         for n in ("code-review.md", "security-review.md", "design-review.md"):
             self.assertIn(REPORTS + n, globs)
+        from guards import paths as gpaths
+        self.assertTrue(gpaths.match_rel(REPORTS + "code-review.md", globs))            # the file guard's own matcher
+        self.assertFalse(gpaths.match_rel(REPORTS + "backend-engineer.md", globs))      # the engineer's own report stays writable
 
     def test_a_design_review_that_needs_revision_blocks(self):
         put(self, extra={REPORTS + "design-review.md": "## Verdict\nDESIGN_NEEDS_REVISION\n"})

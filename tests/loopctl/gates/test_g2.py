@@ -26,6 +26,10 @@ class G2(GateCase):
         self.assertNotIn("ac_results", res["evidence"])            # red on a stub is not an executed passing test: the matrix must not count it
         rs = self.ctx().__dict__["paths"]["runstate"]
         self.assertIn("tests/acceptance/**", locked.read(_acrun._lib.runstate_of(self.ctx()))["sources"]["g3"])
+        from guards import lib as glib, paths as gpaths
+        globs = glib.locked_paths(self.ctx_rs())
+        self.assertTrue(gpaths.match_rel("tests/acceptance/test_a.py", globs))           # the file guard's own matcher denies an engineer's write to it
+        self.assertFalse(gpaths.match_rel("src/calc.py", globs))
         pin = _acrun.read_pin(self.ctx())
         self.assertEqual(sorted(pin), ["tests/acceptance/__init__.py", "tests/acceptance/test_a.py"])
         self.assertTrue(os.path.isdir(rs))

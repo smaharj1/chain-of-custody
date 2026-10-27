@@ -108,6 +108,10 @@ class GateCase(unittest.TestCase):
         _acrun.write_pin(ctx, {p: o for p, o in ents.items() if _lib.match_any(spec["visible"], p)}, auth)
         locked.add_gate_globs(_lib.runstate_of(ctx), "g3", spec["visible"])
 
+    def ctx_rs(self) -> Any:
+        from kitlib import runstate
+        return runstate.RunState.for_path(self.lr.path)
+
     def head(self) -> str:
         return self.lr.repo.head()
 
