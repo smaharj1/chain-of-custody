@@ -230,8 +230,9 @@ class Expander(object):
         return self._read(base + "/action.yml") or self._read(base + "/action.yaml")
 
 
-def _job_deploys(job: workflows.Job, wf_by_path: Dict[str, workflows.Workflow], depth: int = 0, exp: Optional[Expander] = None) -> List[str]:
-    labels = list(workflows.deploy_labels("\n".join(s.run for s in job.steps)))
+def _job_deploys(job: workflows.Job, wf_by_path: Dict[str, workflows.Workflow], depth: int = 0, exp: Optional[Expander] = None,
+                 wf_permissions: Any = None) -> List[str]:
+    labels = list(workflows.deploy_labels("\n".join(workflows.step_command_text(s) for s in job.steps)))
     for s in job.steps:
         lab = workflows.deploy_uses_label(s)
         if lab is None and s.uses and not s.uses.startswith(("./", "docker://", "actions/")) and s.uses.split("@")[0].lower() not in _SETUP_ACTIONS \
@@ -249,11 +250,15 @@ def _job_deploys(job: workflows.Job, wf_by_path: Dict[str, workflows.Workflow], 
         target = wf_by_path.get(job.uses[2:].split("@")[0])
         if target is not None:
             for j in target.jobs.values():
-                for lab in _job_deploys(j, wf_by_path, depth + 1, exp):
+                for lab in _job_deploys(j, wf_by_path, depth + 1, exp, target.permissions):
                     if lab not in labels:
                         labels.append(lab)
-    elif job.uses and not job.uses.startswith("./") and _EXTERNAL_DEPLOY_NAME.search(job.uses):
-        labels.append("external reusable workflow %s (cannot be inspected)" % job.uses.split("@")[0])
+    elif job.uses and not job.uses.startswith("./"):
+        # IN-7: a remote reusable workflow that receives secrets, or runs under a token that can mint OIDC credentials, is a deploy surface
+        # whatever it is called; the name heuristic stays as an extra signal.
+        perms = job.permissions if job.permissions is not None else wf_permissions
+        if job.secrets is not None or workflows.perm_level(perms, "id-token") == "write" or _EXTERNAL_DEPLOY_NAME.search(job.uses):
+            labels.append("external reusable workflow %s (cannot be inspected)" % job.uses.split("@")[0])
     return labels
 
 
@@ -267,11 +272,15 @@ def classify_workflow(rel: str, text: str, wf_by_path: Optional[Dict[str, workfl
         return {"file": rel, "parsed": False, "error": str(exc), "deploys": bool(labels), "labels": labels, "fires_on": ["push:branches"] if labels else [],
                 "jobs": [], "environment_all": False, "release_automation": any("release" in l for l in labels)}
     jobs = []  # type: List[Dict[str, Any]]
+    fires = fires_on(wf)
+    # IN-1: a job that holds cloud credentials on a push to a branch the bot can create (or a tag) can deploy by whatever it runs
+    cred_fires = [f for f in fires if f in ("push:branches", "tag")]
     for jid, job in wf.jobs.items():
-        labels = _job_deploys(job, wf_by_path or {}, 0, exp)
+        labels = _job_deploys(job, wf_by_path or {}, 0, exp, wf.permissions)
+        if cred_fires and workflows.job_credentialed(wf, job):
+            labels.append("cloud credentials on a bot-pushable trigger (%s)" % ", ".join(cred_fires))
         if labels:
             jobs.append({"job": jid, "labels": labels, "environment": job.environment})
-    fires = fires_on(wf)
     all_labels = sorted({l for j in jobs for l in j["labels"]})
     return {"file": rel, "parsed": True, "error": "", "deploys": bool(jobs), "labels": all_labels, "fires_on": fires, "jobs": jobs,
             "environment_all": bool(jobs) and all(j["environment"] for j in jobs),
@@ -512,6 +521,27 @@ def level_caps(ctx: Context, surface: Dict[str, Any], ev: Dict[str, Any]) -> Lis
     return caps
 
 
+# --- apply jobs and their Environments (IN-4, IN-11) ----------------------------------------------------------
+
+def apply_jobs(ctx: Context) -> List[Dict[str, Any]]:
+    """Every apply-class job (terraform/tofu apply, cdk deploy, pulumi up, ...) in the repository's workflows, found with the same rules `ci_lint.py`
+    uses: {"file", "job", "environment" (the static name or None), "dynamic" (the name is a `${{ }}` expression)}."""
+    from infra import ci_rules
+    out = []  # type: List[Dict[str, Any]]
+    for rel in sorted(r for r in ctx.fact("repo_files") if r.startswith(".github/workflows/") and r.endswith((".yml", ".yaml")) and r.count("/") == 2):
+        text = safeio.read_text(os.path.join(ctx.repo, rel), 1 << 20)
+        try:
+            wf = workflows.parse(text or "", rel)
+        except workflows.Unparsed:
+            continue
+        for jid, job in wf.jobs.items():
+            if any(ci_rules.apply_calls(st) for st in job.steps):
+                env = job.environment
+                dynamic = bool(env) and "${{" in env
+                out.append({"file": rel, "job": jid, "environment": None if (not env or dynamic) else env, "dynamic": dynamic})
+    return out
+
+
 # --- checks -------------------------------------------------------------------------------------------------
 
 @check("deploy.attestation", "deploy-surface", emits=("deploy.attestation-schema",))
@@ -591,3 +621,26 @@ def check_iac(ctx: Context) -> Result:
     if not iac:
         return skipped("deploy.iac", "no infrastructure-as-code found")
     return passed("deploy.iac", "infrastructure as code: %s. Apply is H4: it needs an Environment with required reviewers or a human-only dispatch" % ", ".join(iac))
+
+
+@check("deploy.environment-branch-policy", "deploy-surface")
+def check_environment_branch_policy(ctx: Context) -> Result:
+    """IN-11: an Environment that gates an apply should also restrict which branches may deploy to it. Best effort: it reads the recorded GitHub data."""
+    names = sorted({j["environment"] for j in apply_jobs(ctx) if j["environment"]})
+    if not names:
+        return skipped("deploy.environment-branch-policy", "no apply job names a static Environment")
+    gh = ctx.fact("gh")
+    envs = gh.get("environments") if isinstance(gh, dict) else None
+    if envs is None:
+        return skipped("deploy.environment-branch-policy", "no GitHub Environment data: the deployment branch policy of %s is not checked (best effort)" % ", ".join(names))
+    by_name = {e.get("name"): e for e in envs if isinstance(e, dict)}
+    missing = [n for n in names if n in by_name and not by_name[n].get("deployment_branch_policy")]
+    absent = [n for n in names if n not in by_name]
+    if missing or absent:
+        why = []  # type: List[str]
+        if missing:
+            why.append("Environment(s) %s have no deployment branch policy: any branch's workflow run can ask to deploy there" % ", ".join(missing))
+        if absent:
+            why.append("Environment(s) %s do not exist yet (GitHub creates one with no protection the first time a workflow names it)" % ", ".join(absent))
+        return failed("deploy.environment-branch-policy", "; ".join(why), "restrict each apply Environment to the main branch (Settings, Environments, Deployment branches)", severity=WARN)
+    return passed("deploy.environment-branch-policy", "every apply Environment (%s) has a deployment branch policy" % ", ".join(names))

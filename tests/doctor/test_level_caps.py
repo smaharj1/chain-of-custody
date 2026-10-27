@@ -293,6 +293,33 @@ class OneThingBroken(Ready):
         self.assertIn("IaC apply gate", [c for c in eff.caps if c.name == "prerequisites"][0].reason)
 
 
+class SandboxListsEndToEnd(Ready):
+    """GT-12 through the real `sandbox.deny-paths` check: lists that miss the kit's paths cap the level at L3; no lists at all do not."""
+
+    def with_lists(self, deny_read, deny_write):
+        sandbox = dict(SETTINGS["sandbox"], filesystem={"denyRead": deny_read, "denyWrite": deny_write})
+        return {".claude/settings.json": json.dumps(dict(SETTINGS, sandbox=sandbox))}
+
+    def test_lists_that_miss_the_paths_cap_at_l3(self):
+        repo, ctx = self.ready(files_edit=self.with_lists(["~/.ssh"], [".git/hooks"]))
+        eff, res = self.level(ctx)
+        self.assertEqual([r.status for r in res if r.id == "sandbox.deny-paths"], ["fail"])
+        self.assertEqual(self.binding(eff).get("sandbox"), 3, eff.explain())
+        self.assertEqual(eff.effective, 3)
+
+    def test_complete_lists_do_not_cap(self):
+        repo, ctx = self.ready(files_edit=self.with_lists(["~/.aws", "~/.ssh", "~/.config/gh", "~/.kube", ".env.production"], [".git/hooks", ".git/config", ".git/info"]))
+        eff, res = self.level(ctx)
+        self.assertEqual([r.status for r in res if r.id == "sandbox.deny-paths"], ["pass"])
+        self.assertEqual(eff.effective, 5, eff.explain())
+
+    def test_no_lists_at_all_is_unknown_and_does_not_cap(self):
+        repo, ctx = self.ready()
+        eff, res = self.level(ctx)
+        self.assertEqual([r.status for r in res if r.id == "sandbox.deny-paths"], ["unknown"])
+        self.assertEqual(eff.effective, 5, eff.explain())
+
+
 class DeployOnMergeRefusesL5(Ready):
     """Report §15 item 9 'Deploy by side effect': a repo that deploys on merge to main refuses L5 auto-merge."""
 
@@ -379,6 +406,49 @@ class ConfigRef(Ready):
         hit = self.assertFails(res, "config.load")
         self.assertIn("did you mean", hit[0].message)
 
+
+class SandboxDenyListsCap(BoundaryCase):
+    """GT-12: a sandbox that is on and attested, but whose deny lists miss the kit's protected paths, is not an L4/L5 sandbox.
+    Stub rows stand in for the `sandbox.*` checks, so these hold whatever the settings checks themselves report."""
+
+    def rows(self, **status):
+        from doctorlib.model import failed, passed, unknown
+        out = [passed(i, "ok") for i in ("sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands", "sandbox.excludedCommands",
+                                         "sandbox.attestation")]
+        for rid in ("sandbox.deny-paths", "sandbox.registry-path"):
+            st = status.get(rid.split(".")[1].replace("-", "_"), "pass")
+            out.append(passed(rid, "ok") if st == "pass" else failed(rid, "lists miss the protected paths", severity="warn") if st == "fail" else unknown(rid, "no lists found"))
+        return out
+
+    def cap(self, **status):
+        ctx = self.ctx(self.kit_repo())
+        return levelcalc.cap_sandbox(ctx, levelcalc.R(self.rows(**status)))
+
+    def test_all_rows_passing_is_l5(self):
+        self.assertEqual(self.cap().level, 5)
+
+    def test_a_failing_deny_paths_row_caps_at_l3(self):
+        cap = self.cap(deny_paths="fail")
+        self.assertEqual(cap.level, 3)
+        self.assertIn("sandbox.deny-paths", cap.reason)
+
+    def test_a_failing_registry_path_row_caps_at_l3(self):
+        cap = self.cap(registry_path="fail")
+        self.assertEqual(cap.level, 3)
+        self.assertIn("sandbox.registry-path", cap.reason)
+
+    def test_unknown_does_not_cap(self):
+        self.assertEqual(self.cap(deny_paths="unknown", registry_path="unknown").level, 5)
+
+    def test_without_the_attestation_the_cap_is_still_l1_and_names_the_deny_row(self):
+        ctx = self.ctx(self.kit_repo())
+        rows = [r for r in self.rows(deny_paths="fail") if r.id != "sandbox.attestation"]
+        cap = levelcalc.cap_sandbox(ctx, levelcalc.R(rows))
+        self.assertEqual(cap.level, 1)
+
+    def test_a_container_attested_by_the_human_is_not_judged_by_the_settings_lists(self):
+        ctx = self.ctx(self.kit_repo(config={"agent_isolation": "container"}))
+        self.assertEqual(levelcalc.cap_sandbox(ctx, levelcalc.R(self.rows(deny_paths="fail"))).level, 5)
 
 if __name__ == "__main__":
     unittest.main()
