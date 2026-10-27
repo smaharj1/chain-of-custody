@@ -26,7 +26,7 @@ An engineer ends its final message with a JSON trailer and writes its own report
 
 ## 2. The retro
 
-`loopctl retro [--milestone M]` prints one document (`--json` for `loopctl.retro.v1`): flow, failures by class and reason, rescues, gate runs and the finding ids that repeat, spend, report form and brief gaps by domain, critic precision, unattended stops, parallel events and cascades, and the empty-Primer-Delta streak. Every number is a count over a closed vocabulary; **no log text appears in it**. `/retro` (`.claude/commands/retro.md`) is the mode that walks a person through it.
+`loopctl retro [--milestone M]` prints one document (`--json` for `loopctl.retro.v1`): flow, failures by class and reason, rescues, gate runs and the finding ids that repeat, spend, report form and brief gaps by domain, critic precision, unattended stops, parallel events and cascades, and the empty-Primer-Delta streak. Every number is a count over a closed vocabulary; **no log text appears in it**. `/retro` (`.claude/skills/retro/SKILL.md`) is the mode that walks a person through it.
 
 The numbers to read first:
 

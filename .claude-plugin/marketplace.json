@@ -1,0 +1,25 @@
+{
+  "name": "chain-of-custody",
+  "owner": {
+    "name": "Sujil Maharjan"
+  },
+  "metadata": {
+    "description": "The Chain of Custody kit, as a Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "chain-of-custody",
+      "source": "./plugin",
+      "description": "A role-based engineering workflow for Claude Code: a product manager, architect and tech lead mode, engineer and reviewer subagents, hook-enforced guards, and an optional plan-driven build loop.",
+      "version": "1.2.0",
+      "license": "MIT",
+      "keywords": [
+        "workflow",
+        "agents",
+        "code-review",
+        "guards",
+        "planning"
+      ]
+    }
+  ]
+}

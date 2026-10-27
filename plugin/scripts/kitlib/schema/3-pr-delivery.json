@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "phase": "3-pr-delivery",
+  "sections": [
+    {
+      "id": "delivery",
+      "title": "Delivery (interactive PR lane; see .claude/context/delivery.md)",
+      "comment": [
+        "Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the",
+        "work and prints the exact commands; the human runs them (IMP-25)."
+      ],
+      "example_title": "Delivery"
+    }
+  ],
+  "keys": [
+    {
+      "name": "delivery",
+      "type": "enum",
+      "choices": [
+        "local",
+        "push-branch",
+        "draft-pr"
+      ],
+      "default": "local",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "delivery",
+      "doc": [
+        "local | push-branch | draft-pr   (report R5, DEC-1). How finished work leaves the machine.",
+        "  local       = the human merges the feature branch into the local main; nothing is pushed (default)",
+        "  push-branch = pr_prepare prints the push command for the feature branch",
+        "  draft-pr    = pr_prepare prints the push command and `gh pr create --draft --body-file ...`",
+        "Pushing is always the human's act. The doctor suggests draft-pr once the ruleset checks pass."
+      ],
+      "example": {
+        "value": "draft-pr",
+        "doc": [
+          "branch, verify, then pr_prepare prints the push and draft-PR commands for me to run"
+        ]
+      }
+    },
+    {
+      "name": "git_autonomy",
+      "type": "enum",
+      "choices": [
+        "none",
+        "branch",
+        "branch+commit"
+      ],
+      "default": "none",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "delivery",
+      "doc": [
+        "none | branch | branch+commit   (DEC-22). What the interactive conductor may do with git itself.",
+        "  none          = it asks you to create the branch and to commit (v1 behaviour, default)",
+        "  branch        = it creates and switches to `feat/<slug>` itself",
+        "  branch+commit = it also makes one WIP commit per engineer so reviewers see `prev..sha`",
+        "Never push, merge, rebase or reset: those stay yours at every setting. Recommended with delivery: draft-pr."
+      ],
+      "example": {
+        "value": "branch+commit",
+        "doc": [
+          "the conductor branches and makes the WIP commits; I push"
+        ]
+      }
+    },
+    {
+      "name": "max_ci_fix_attempts",
+      "type": "int",
+      "default": 2,
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "delivery",
+      "doc": [
+        "CI-fix commits allowed on one PR (report F-28). While fixing CI, edits to `.github/workflows/**`,",
+        "acceptance tests and lockfiles are refused; each fix commit carries a `CI-Fix-Of: <sha>` trailer.",
+        "Still red after the last attempt: stop and hand it to a human."
+      ],
+      "example": {
+        "value": 2,
+        "doc": [
+          "CI-fix attempts per PR"
+        ]
+      }
+    },
+    {
+      "name": "always_human_paths",
+      "type": "list",
+      "default": [],
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "delivery",
+      "doc": [
+        "Extra path globs a human must review on top of the kit's built-in list (report H3): migrations, auth,",
+        "payments, infra, .github/, .claude/, lockfiles, test and CI config, deploy files. pr_prepare lists",
+        "every changed path that matches and refuses a PR body that says \"none\" when the diff touches one.",
+        "  - src/auth/**",
+        "  - src/payments/**"
+      ],
+      "example": {
+        "value": [
+          "src/auth/**",
+          "src/payments/**"
+        ],
+        "doc": [
+          "project paths a human always reviews (the kit's own list always applies)"
+        ]
+      }
+    },
+    {
+      "name": "verify_build",
+      "type": "command",
+      "default": "",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Optional G6 stages, run by `python3 .claude/scripts/verify.py` before the tests, in this order:",
+        "verify_build, verify_lint, verify_typecheck. Empty = the stage does not run (see verify_require)."
+      ],
+      "example": {
+        "value": "pnpm build",
+        "doc": [
+          "production build"
+        ]
+      }
+    },
+    {
+      "name": "verify_lint",
+      "type": "command",
+      "default": "",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "lint command; must exit 0"
+      ],
+      "example": {
+        "value": "pnpm lint",
+        "doc": [
+          "lint"
+        ]
+      }
+    },
+    {
+      "name": "verify_typecheck",
+      "type": "command",
+      "default": "",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "typecheck command; must exit 0"
+      ],
+      "example": {
+        "value": "pnpm typecheck",
+        "doc": [
+          "typecheck"
+        ]
+      }
+    },
+    {
+      "name": "verify_require",
+      "type": "list",
+      "default": [
+        "tests"
+      ],
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Stages verify.py refuses to skip: build | lint | typecheck | tests | smoke. A required stage with no",
+        "command is a configuration error, never a silent pass. `tests` always runs when verify_tests is set."
+      ],
+      "example": {
+        "value": [
+          "tests",
+          "lint",
+          "typecheck",
+          "smoke"
+        ],
+        "doc": [
+          "none of these may be left unconfigured"
+        ]
+      }
+    },
+    {
+      "name": "verify_ports",
+      "type": "list",
+      "default": [],
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Dedicated verify ports (not the dev-server defaults, L-27). Checked free before the smoke stage; a busy",
+        "port is an `env` failure, never a retry. Checked again after it: a port still bound means the dev server leaked.",
+        "With verify_dev the first port is where verify.py polls and sends the smoke requests."
+      ],
+      "example": {
+        "value": [
+          5183,
+          3011
+        ],
+        "doc": [
+          "web and API verify ports"
+        ]
+      }
+    },
+    {
+      "name": "verify_dev",
+      "type": "command",
+      "default": "",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Optional. A dev-server command that never exits. verify.py starts it in its own process group, polls",
+        "http://127.0.0.1:<first verify port><verify_ready_path> until it answers or verify_run_timeout_s passes,",
+        "requests the item's demo route, then kills the whole group. Takes the place of verify_run for the smoke stage.",
+        "Gets VERIFY_PORT (the first verify port) in its environment."
+      ]
+    },
+    {
+      "name": "verify_ready_path",
+      "type": "string",
+      "default": "/",
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Path polled for readiness when verify_dev is set. Any status below 400 counts as ready."
+      ]
+    },
+    {
+      "name": "verify_timeout_s",
+      "type": "int",
+      "default": 600,
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Seconds each build, lint, typecheck and test stage may run. On expiry the stage's process group is killed."
+      ],
+      "example": {
+        "value": 600,
+        "doc": [
+          "per-stage timeout (seconds)"
+        ]
+      }
+    },
+    {
+      "name": "verify_run_timeout_s",
+      "type": "int",
+      "default": 120,
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Seconds the smoke stage may run (boot, readiness, requests, teardown) before its process group is killed."
+      ],
+      "example": {
+        "value": 120,
+        "doc": [
+          "smoke-stage timeout (seconds)"
+        ]
+      }
+    },
+    {
+      "name": "verify_env_allow",
+      "type": "list",
+      "default": [],
+      "owner_phase": "3-pr-delivery",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "verify",
+      "doc": [
+        "Names of extra environment variables verify.py passes through. Everything else is dropped: it runs the",
+        "stages under an allowlisted environment (PATH, HOME, locale, toolchain locators), so no token or cloud",
+        "credential of the calling shell reaches test code. Names only; never put a value or a secret here."
+      ],
+      "example": {
+        "value": [
+          "NODE_OPTIONS"
+        ],
+        "doc": [
+          "extra variables the toolchain needs"
+        ]
+      }
+    }
+  ]
+}

@@ -18,7 +18,7 @@ from tests.bootstrap import plain_env
 from tests.helpers import BaseTestCase
 from tests.test_frontmatter import split_frontmatter
 
-CMD = os.path.join(REPO_ROOT, ".claude", "commands", "bootstrap.md")
+CMD = os.path.join(REPO_ROOT, ".claude", "skills", "bootstrap", "SKILL.md")
 SKILL = os.path.join(REPO_ROOT, ".claude", "templates", "launch-app-skill.md")
 
 
@@ -34,18 +34,18 @@ class Command(unittest.TestCase):
         self.assertTrue(body.lstrip().startswith("# Bootstrap Mode Activated"))
 
     def test_the_never_list_names_the_dangerous_things(self):
-        text = read(".claude", "commands", "bootstrap.md")
+        text = read(".claude", "skills", "bootstrap", "SKILL.md")
         never = text.split("## What you never do")[1].split("## The receipt")[0]
         for must in ("gh", "loop.config.md", ".github/**", "CODEOWNERS", ".claude/skills/**", "ANTHROPIC_API_KEY", "--go", "verify.py", "Merge, tag, release or deploy", "data"):
             self.assertIn(must, never)
 
     def test_child_sessions_are_refused(self):
-        text = read(".claude", "commands", "bootstrap.md")
+        text = read(".claude", "skills", "bootstrap", "SKILL.md")
         self.assertIn("role prompt", text)
         self.assertIn("refuse", text)
 
     def test_receipt_ids_and_finish_agree(self):
-        text = read(".claude", "commands", "bootstrap.md")
+        text = read(".claude", "skills", "bootstrap", "SKILL.md")
         for i in ("detect", "config-plan", "setup-script", "doctor", "ci-lint"):
             self.assertIn("`%s`" % i, text)
         self.assertIn("`finish`", text)
@@ -75,12 +75,12 @@ class Command(unittest.TestCase):
         self.assertIn("setup.sh", text)
 
     def test_the_command_does_not_promise_what_is_design_only(self):
-        text = read(".claude", "commands", "bootstrap.md")
+        text = read(".claude", "skills", "bootstrap", "SKILL.md")
         self.assertIn("Not built yet, on purpose", text)
         self.assertNotIn("creates the UAT", text)
 
     def test_every_script_path_in_the_prose_exists(self):
-        for doc in (os.path.join(".claude", "commands", "bootstrap.md"), os.path.join("docs", "bootstrap.md"), os.path.join("docs", "ops.md"), os.path.join("docs", "release-automation.md")):
+        for doc in (os.path.join(".claude", "skills", "bootstrap", "SKILL.md"), os.path.join("docs", "bootstrap.md"), os.path.join("docs", "ops.md"), os.path.join("docs", "release-automation.md")):
             for m in re.finditer(r"\.claude/(?:scripts|templates|context)/[A-Za-z0-9_./-]+", read(doc)):
                 path = m.group(0).rstrip(".,:;)")
                 if path.endswith("/") or path.endswith("scripts/loopctl"):

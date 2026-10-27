@@ -1,0 +1,16 @@
+{
+  "schema": "labels.v1",
+  "comment": "The labels the factory intake and ops workflows use (report 19.7, Q4, RC-20). Applied by .claude/scripts/github/apply-labels.sh (dry run by default). approver_only labels are removed by label-guard.yml when anyone outside factory_approvers applies them.",
+  "labels": [
+    {"name": "factory:feature", "color": "1d76db", "description": "Intake type: a new feature", "approver_only": true},
+    {"name": "factory:bug", "color": "d73a4a", "description": "Intake type: a defect (reproduce first)", "approver_only": true},
+    {"name": "factory:deps", "color": "0e8a16", "description": "Intake type: a dependency change", "approver_only": true},
+    {"name": "factory:chore", "color": "cfd3d7", "description": "Intake type: maintenance with no behaviour change", "approver_only": true},
+    {"name": "factory:go", "color": "5319e7", "description": "An approver says: triage this and queue it", "approver_only": true},
+    {"name": "factory:requested", "color": "fbca04", "description": "Waiting for an approver to apply factory:go", "approver_only": false},
+    {"name": "factory:running", "color": "006b75", "description": "The loop has claimed this issue", "approver_only": true},
+    {"name": "factory:halt", "color": "b60205", "description": "Stop the loop (HALT): every agent is read-only while this is set", "approver_only": true},
+    {"name": "plan-ok", "color": "bfdadc", "description": "A human approves a preview infrastructure plan", "approver_only": true},
+    {"name": "preview", "color": "c5def5", "description": "A human approves a preview deploy for this pull request", "approver_only": true}
+  ]
+}

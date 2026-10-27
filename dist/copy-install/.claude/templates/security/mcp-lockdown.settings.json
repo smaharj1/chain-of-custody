@@ -1,0 +1,7 @@
+{
+  "enableAllProjectMcpServers": false,
+  "enabledMcpjsonServers": [],
+  "permissions": {
+    "deny": ["mcp__*__run_script", "mcp__*deploy*"]
+  }
+}

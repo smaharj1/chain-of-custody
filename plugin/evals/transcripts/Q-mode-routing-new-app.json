@@ -1,0 +1,38 @@
+{
+  "case": "Q-mode-routing-new-app",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "That is a whole app, so use the loop: start with /planner to turn the idea into an approved plan, then /orchestrate to build it item by item.",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "That is a whole app, so use the loop: start with /planner to turn the idea into an approved plan, then /orchestrate to build it item by item.",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "That is a whole app, so use the loop: start with /planner to turn the idea into an approved plan, then /orchestrate to build it item by item.",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "Sure, I will start coding the booking app now.",
+      "tool_calls": [
+        {
+          "tool": "Write",
+          "input": {
+            "file_path": "src/app.py",
+            "content": "x"
+          }
+        }
+      ],
+      "files": [
+        "src/app.py"
+      ]
+    }
+  ]
+}

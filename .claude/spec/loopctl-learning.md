@@ -1,6 +1,6 @@
 # loopctl learning loop: retro, gaps, calibration, report conformance, Docs Delta, harness review
 
-**Status**: Phase 10, FULL in warn mode; `report_trailers: block` is a person's switch. Implements report sections 9 ("Critic calibration", G7 owner metric), 16.1 row 10, 16.2 (the pruning rule) and 19.7 (L-32 Primer Delta, L-33 brief gaps, L-34 blocker definition, F-29 learning loop, F-30 Doc Delta), DEC-28 and DEC-29, under H6. Operator guide: `docs/learning.md`. The release procedure: `docs/harness-review.md`. The mode: `.claude/commands/retro.md`.
+**Status**: Phase 10, FULL in warn mode; `report_trailers: block` is a person's switch. Implements report sections 9 ("Critic calibration", G7 owner metric), 16.1 row 10, 16.2 (the pruning rule) and 19.7 (L-32 Primer Delta, L-33 brief gaps, L-34 blocker definition, F-29 learning loop, F-30 Doc Delta), DEC-28 and DEC-29, under H6. Operator guide: `docs/learning.md`. The release procedure: `docs/harness-review.md`. The mode: `.claude/skills/retro/SKILL.md`.
 
 Code: `.claude/scripts/loopctl/learning/` (`data`, `retro`, `trailers`, `gaps`, `calibration`, `harness`, `docsdelta`, `commands`), `loopctl/report.py` (the hard and soft problems), `loopctl/gates/docs_delta.py`, `tools/evals/ablate.py`.
 

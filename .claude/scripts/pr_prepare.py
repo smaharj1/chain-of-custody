@@ -988,10 +988,17 @@ def _requirements_title(repo: str, slug: str) -> Optional[str]:
 def init_body(repo: str, lane: Optional[str] = None, title: Optional[str] = None, **ctx_options: Any) -> Tuple[str, Context]:
     """The template text with every fact git, the reports and the verify result already hold filled in."""
     ctx = build_context(repo, **ctx_options)
-    try:
-        with open(os.path.join(ctx.repo, TEMPLATE_REL), "r", encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError:
+    # the project's own copy wins; a plugin install has none, so fall back to the template next to this script (Phase 9)
+    kit_copy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "pr-body.md")
+    text = None
+    for candidate in (os.path.join(ctx.repo, TEMPLATE_REL), kit_copy):
+        try:
+            with open(candidate, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            break
+        except OSError:
+            continue
+    if text is None:
         raise PrError("template %s not found" % TEMPLATE_REL)
     reports = read_reports(ctx.repo, ctx.slug)
     the_lane = lane or ("full" if reports else "quick")

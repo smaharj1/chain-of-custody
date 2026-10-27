@@ -36,7 +36,7 @@ Everything bootstrap writes that you review lives in `.claude/bootstrap/` (ignor
 
 | File | What it is | Who runs it |
 |---|---|---|
-| `.claude/commands/bootstrap.md` | The mode: the interview and the order of steps | you invoke `/bootstrap` |
+| `.claude/skills/bootstrap/SKILL.md` | The mode: the interview and the order of steps | you invoke `/bootstrap` |
 | `.claude/scripts/bootstrap_detect.py` | Read-only facts: mode hint, stack, suggested verify commands, deploy hosts, release automation, kit and receipt state | the agent |
 | `.claude/scripts/bootstrap_config.py` | `plan`: check keys and values against the registry and write a plan. `apply`: edit `loop.config.md` from a plan | the agent plans; **you** apply |
 | `.claude/scripts/github/repo_script.py` | Prints the setup script (`.claude/bootstrap/setup.sh`). It only writes text | the agent |

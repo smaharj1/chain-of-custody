@@ -1,0 +1,164 @@
+# infra-apply (Environment variant): post-merge plan of main, a human approves THAT plan, CI applies it by hash.
+# Report section 8.2, section 8.4, RC-2, RC-4. Install as .github/workflows/infra-apply.yml. Use this variant when the
+# repository's GitHub plan offers Environment required reviewers (public repositories, or Enterprise for private ones).
+# Otherwise use infra-apply.dispatch.yml.
+#
+# Nothing here is automatic. The workflow starts on a push to main, makes a plan, and then STOPS: the `apply` job
+# names environment `production`, whose required reviewers (with "prevent self-review") must approve the deployment
+# before the job starts. The bot is not a reviewer and holds no `environments` scope (docs/security/bot-identity.md).
+# The reviewers read the plan in the run's summary (resource addresses and actions, plus the digest) and approve
+# that run. Then:
+#   - the saved plan file is checked against the sha256 recorded when it was made (verify-hash);
+#   - the commit that was planned must still be the tip of main (base-is-main): a plan of an older main is refused;
+#   - `terraform apply tfplan` applies that file and nothing else. Terraform itself also refuses a saved plan when
+#     the state has changed since it was made.
+#
+# Plan and apply are separate jobs on purpose: an Environment approval comes before its job starts, so a single job
+# would ask the reviewers to approve something that had not been planned yet (ci_lint: infra.apply-same-job-as-plan).
+#
+# Roles (OIDC, no stored keys): `plan` uses the plan-main role (environment `plan-main`, no reviewers; read access, state lock,
+# no secrets); `apply` uses the apply role (environment `production`). See .claude/templates/infra/oidc/ and
+# .claude/templates/security/oidc/aws-apply-environment.trust.json. Repository variables: INFRA_PLAN_MAIN_ROLE_ARN,
+# INFRA_APPLY_ROLE_ARN, AWS_REGION, FACTORY_APPROVERS, FACTORY_BOT_LOGIN, CONFTEST_VERSION and CONFTEST_SHA256 (the release you
+# vetted). Set TF_ROOT below.
+#
+# GitHub creates an Environment the first time a workflow names it, with NO reviewers. An unconfigured `production` would
+# let this job run unattended. The doctor reads the Environment's reviewers when it has GitHub data (gh.environments), and the
+# first step of `apply` also refuses unless the run's review history holds an approval from a listed approver.
+name: infra-apply
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-apply
+  cancel-in-progress: false
+
+env:
+  TF_ROOT: infra
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: plan-main
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      plan_sha256: ${{ steps.hash.outputs.plan_sha256 }}
+      planned_sha: ${{ steps.hash.outputs.planned_sha }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          persist-credentials: false
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: Install conftest at the vetted version, checked by hash
+        env:
+          CONFTEST_VERSION: ${{ vars.CONFTEST_VERSION }}
+          CONFTEST_SHA256: ${{ vars.CONFTEST_SHA256 }}
+        run: |
+          set -eu
+          curl -sSfL -o conftest.tgz "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          echo "${CONFTEST_SHA256}  conftest.tgz" | sha256sum -c -
+          tar -xzf conftest.tgz conftest
+      - name: Assume the plan-main role
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_PLAN_MAIN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-plan-main
+          role-duration-seconds: 3600
+      - name: terraform init
+        run: terraform -chdir="$TF_ROOT" init -lockfile=readonly
+      - name: terraform plan of main, with the state lock and refresh on
+        run: |
+          set -eu
+          terraform -chdir="$TF_ROOT" plan -lock=true -refresh=true -out=tfplan -no-color
+          terraform -chdir="$TF_ROOT" show -json tfplan > "$TF_ROOT/plan.json"
+      - name: Policy on the plan JSON
+        run: ./conftest test --policy .claude/templates/infra/policy --namespace kit.infra.plan "$TF_ROOT/plan.json"
+      - name: Record what was planned
+        id: hash
+        run: |
+          set -eu
+          echo "plan_sha256=$(python3 .claude/scripts/infra/gate.py hash-file "$TF_ROOT/tfplan")" >> "$GITHUB_OUTPUT"
+          echo "planned_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          python3 .claude/scripts/infra/gate.py plan-summary --plan-json "$TF_ROOT/plan.json" --title "Plan of main for approval" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the plan for the apply job of this run
+        uses: actions/upload-artifact@v4 # pin to SHA
+        with:
+          name: infra-tfplan
+          path: ${{ env.TF_ROOT }}/tfplan
+          retention-days: 1
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout the planned commit
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          persist-credentials: false
+      - name: A listed approver approved this run in the Environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          APPROVERS: ${{ vars.FACTORY_APPROVERS }}
+          BOT_LOGIN: ${{ vars.FACTORY_BOT_LOGIN }}
+        run: |
+          set -eu
+          gh api "repos/$REPO/actions/runs/$RUN_ID/approvals" > approvals.json
+          python3 .claude/scripts/infra/gate.py require-run-approval --approvals-json approvals.json --environment production --approvers "$APPROVERS" --bot "$BOT_LOGIN"
+      - name: Fetch the saved plan
+        uses: actions/download-artifact@v4 # pin to SHA
+        with:
+          name: infra-tfplan
+          path: ${{ env.TF_ROOT }}
+      - name: The saved plan is the file that was made and reviewed
+        env:
+          EXPECTED: ${{ needs.plan.outputs.plan_sha256 }}
+        run: python3 .claude/scripts/infra/gate.py verify-hash --file "$TF_ROOT/tfplan" --sha256 "$EXPECTED"
+      - name: The planned commit is still the tip of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PLANNED_SHA: ${{ needs.plan.outputs.planned_sha }}
+        run: |
+          set -eu
+          main_sha="$(gh api "repos/$REPO/commits/main" --jq .sha)"
+          python3 .claude/scripts/infra/gate.py base-is-main --planned-sha "$PLANNED_SHA" --main-sha "$main_sha"
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: Assume the apply role
+        uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
+        with:
+          role-to-assume: ${{ vars.INFRA_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: infra-apply
+          role-duration-seconds: 3600
+      - name: terraform init
+        run: terraform -chdir="$TF_ROOT" init -lockfile=readonly
+      - name: terraform apply of the saved plan
+        run: terraform -chdir="$TF_ROOT" apply -input=false tfplan

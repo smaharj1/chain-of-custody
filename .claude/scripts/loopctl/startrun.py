@@ -149,7 +149,7 @@ def dry_run(ctx: Any, out: Any, as_json: bool) -> int:
 
 def handoff_text(ctx: Any, run_id: str, session: str, order: List[str], eligible: List[str], state: Any) -> str:
     base = "python3 .claude/scripts/loopctl"
-    L = ["loopctl run: runner is sequential, so the prose loop (.claude/commands/orchestrate.md) runs this run.",
+    L = ["loopctl run: runner is sequential, so the prose loop (.claude/skills/orchestrate/SKILL.md) runs this run.",
          "  run id     %s" % run_id, "  session    %s (registered as the conductor; holds the run lock)" % session,
          "  plan       %s, %d item(s); approved by %s" % (ctx.plan.name, len(order), (state.header.get("approvedPlan") or {}).get("by")),
          "  config and plan read at base sha %s" % (ctx.base_sha or "")[:12],

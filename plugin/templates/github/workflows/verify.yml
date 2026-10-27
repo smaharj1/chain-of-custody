@@ -1,0 +1,85 @@
+# verify: the untrusted PR job (report section 8.4, RC-3, DEC-39). Copy to .github/workflows/verify.yml.
+#
+# It runs the pull request's own code, so it holds nothing worth stealing: no secrets, no OIDC token,
+# contents: read only, no deploy command. Make the job `verify` a REQUIRED status check in the ruleset
+# (docs/security/rulesets.md), pinned to the GitHub Actions app.
+#
+# The verify definition is NOT taken from the pull request. The commands come from .claude/loop.config.md
+# as committed at the base sha, and verify.py itself is extracted from the base sha too, so a change set
+# cannot weaken its own gate (CO-11). The first pull request that installs the kit therefore cannot pass
+# this job; a human merges that one, then this job protects every later one.
+#
+# Network egress is the one control a workflow file cannot give you. On GitHub-hosted runners the job can
+# reach any host; use a self-hosted runner or an egress-filtering step if package registries only is a
+# requirement (docs/security/split-ci.md).
+#
+# Actions are referenced by tag; pin each to a commit SHA before you rely on this (ci_lint warns).
+name: verify
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # TOOLCHAIN (project-specific; pick yours and pin it to the same versions as .tool-versions / .nvmrc):
+      # - uses: actions/setup-node@v4 # pin to a commit SHA
+      #   with:
+      #     node-version-file: .nvmrc
+      # - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Take the kit from the base sha
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          if ! git cat-file -e "$BASE_SHA:.claude/scripts/verify.py" 2>/dev/null; then
+            echo "::error::The base branch has no .claude/scripts/verify.py. A human merges the PR that installs the kit; verify protects the PRs after it."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/kit"
+          git archive "$BASE_SHA" .claude/scripts | tar -x -C "$RUNNER_TEMP/kit"
+
+      - name: Verify (G6, definition read from the base sha)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set +e
+          python3 "$RUNNER_TEMP/kit/.claude/scripts/verify.py" --repo "$GITHUB_WORKSPACE" --base "$BASE_SHA" \
+            --apply-gate --no-log --json > "$RUNNER_TEMP/verify.json"
+          rc=$?
+          python3 - "$RUNNER_TEMP/verify.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          try:
+              r = json.load(open(sys.argv[1]))
+          except (OSError, ValueError):
+              print("verify produced no result")
+              sys.exit(0)
+          print("### verify: %s" % r.get("status", "?").upper())
+          print(r.get("message", ""))
+          print("")
+          print("| stage | status | detail |")
+          print("|---|---|---|")
+          for s in r.get("stages", []):
+              print("| %s | %s | %s |" % (s["name"], s["status"], (s.get("reason") or "").replace("|", "/")[:120]))
+          for f in r.get("findings", []):
+              print("- %s: %s" % (f["id"], f["message"]))
+          PY
+          cat "$RUNNER_TEMP/verify.json"
+          exit "$rc"

@@ -1,0 +1,17 @@
+{
+  "id": "Q-critic-verdict-design",
+  "class": "quality",
+  "setup": {
+    "agent": "design-critic",
+    "fixture": "design-missing-idempotency"
+  },
+  "prompt": "Critique docs/features/payments/technical-design.md.",
+  "graders": [
+    {
+      "type": "verdict_schema",
+      "schema": "design-critic"
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}

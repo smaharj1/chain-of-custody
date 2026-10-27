@@ -1,0 +1,95 @@
+# smoke: a scheduled check that main still works, and a bug issue when it does not (report F-14 "nothing post-merge", Q4; DEC-32).
+# Copy to .github/workflows/smoke.yml. Needs the labels from apply-labels.sh.
+#
+# Two checks, either or both:
+#   * the repository's own smoke stage: `verify.py --only smoke`, using verify_run or verify_dev from .claude/loop.config.md as it is
+#     committed on the default branch (set the verify_ports and the commands first: docs/delivery.md);
+#   * a plain HTTP check of a deployed URL, when the repository variable SMOKE_URL is set (https only). SMOKE_PATH defaults to /.
+#
+# On failure a second job opens ONE issue titled "Smoke check failing on main" (or comments on it when it is already open) with the
+# label `factory:bug`, and closes nothing. The issue holds fixed text and the link to the run: no log, no output of the project, nothing
+# an attacker could write. It does not start a fix: an approver still has to apply `factory:go` (intake.yml).
+#
+# Two jobs, so the one that runs the project's code cannot write to the repository (`smoke` reads, `report` writes and runs no project code).
+# It runs on the default branch only. Edit the "Set up" step for your toolchain. Actions are referenced by tag; pin each to a commit SHA.
+#
+# Monitoring to intake (F-14) is design only: an external monitor can open the same issue through its own, narrowly scoped token. See docs/ops.md.
+name: smoke
+
+on:
+  schedule:
+    - cron: "43 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Set up: install your toolchain and dependencies here (pinned setup actions, then the install command with scripts disabled).
+
+      - name: Repository smoke stage
+        run: |
+          set -u
+          if ! grep -Eq '^verify_(run|dev):[[:space:]]*[^[:space:]<#]' .claude/loop.config.md; then
+            echo "No verify_run or verify_dev command is set: skipping the repository smoke stage."
+            exit 0
+          fi
+          python3 .claude/scripts/verify.py --only smoke --json --apply-gate --base "$GITHUB_SHA"
+
+      - name: Deployed URL check
+        env:
+          SMOKE_URL: ${{ vars.SMOKE_URL }}
+          SMOKE_PATH: ${{ vars.SMOKE_PATH }}
+        run: |
+          set -eu
+          if [ -z "${SMOKE_URL:-}" ]; then echo "SMOKE_URL is not set: skipping."; exit 0; fi
+          case "$SMOKE_URL" in
+            https://*) ;;
+            *) echo "::error::SMOKE_URL must start with https://"; exit 1 ;;
+          esac
+          case "${SMOKE_PATH:-/}" in
+            /*) ;;
+            *) echo "::error::SMOKE_PATH must start with /"; exit 1 ;;
+          esac
+          curl --fail --silent --show-error --max-time 20 --retry 2 --retry-delay 5 --output /dev/null "${SMOKE_URL%/}${SMOKE_PATH:-/}"
+
+  report:
+    needs: smoke
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          title="Smoke check failing on main"
+          number="$(gh issue list --state open --label factory:bug --search "\"$title\" in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$title\")][0].number // empty")"
+          body="The scheduled smoke check failed on the default branch. Run: $RUN_URL"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --label factory:bug --body "$body"
+          fi

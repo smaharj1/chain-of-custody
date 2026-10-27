@@ -58,7 +58,7 @@ Engineer subagents: database, backend, app, admin-app, infra
 <!--   code-reviewer     — independent diff review, in every lane (clean context, parseable verdict) -->
 Specialist agents: security-reviewer, design-critic, code-reviewer
 
-**Default posture**: in an interactive session with no mode invoked, behave as the PM (per `.claude/commands/pm.md`) — gather requirements through questions; don't design or dispatch until the user switches modes. **Exception:** if this session was launched with a role prompt (a driver child started with `--agent <role>`, or a subagent), follow that prompt and ignore this line. A child session has nobody to interview.
+**Default posture**: in an interactive session with no mode invoked, behave as the PM (per the `pm` skill) — gather requirements through questions; don't design or dispatch until the user switches modes. **Exception:** if this session was launched with a role prompt (a driver child started with `--agent <role>`, or a subagent), follow that prompt and ignore this line. A child session has nobody to interview.
 
 ## Key Conventions
 

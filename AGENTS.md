@@ -8,11 +8,11 @@ current agent runtime is Codex, Cursor, or another coding agent.
 
 ## Workflow routing
 
-- Product requirements: read `.claude/commands/pm.md`.
-- Architecture and API design: read `.claude/commands/architect.md`.
-- Dispatch, implementation, and review: read `.claude/commands/tech-lead.md`.
-- Whole-project planning: read `.claude/commands/planner.md`.
-- Autonomous item execution: read `.claude/commands/orchestrate.md` and the
+- Product requirements: read `.claude/skills/pm/SKILL.md`.
+- Architecture and API design: read `.claude/skills/architect/SKILL.md`.
+- Dispatch, implementation, and review: read `.claude/skills/tech-lead/SKILL.md`.
+- Whole-project planning: read `.claude/skills/planner/SKILL.md`.
+- Autonomous item execution: read `.claude/skills/orchestrate/SKILL.md` and the
   authoritative `.claude/spec/loop-engineering.md`.
 
 Use the role definitions in `.claude/agents/` when delegating work. Before
@@ -40,7 +40,7 @@ For Cursor-specific loading, see `.cursor/rules/chain-of-custody.mdc`.
 
 | Capability | Claude Code | Codex / Cursor (this adapter) |
 |---|---|---|
-| Role prompts (`.claude/commands/*.md`) | Slash commands: `/pm`, `/architect`, `/tech-lead`, `/planner`, `/orchestrate` | Read as instructions; you name the role in your prompt. No slash commands |
+| Role prompts (`.claude/skills/*/SKILL.md`) | Slash commands (skills): `/pm`, `/architect`, `/tech-lead`, `/planner`, `/orchestrate` | Read as instructions; you name the role in your prompt. No slash commands |
 | Subagents with a clean context (engineers, critics, reviewers) | `.claude/agents/*.md`, dispatched by the Agent tool | Not loaded by the kit. Delegation, if the tool has any, is the tool's own |
 | Independent code review | The `code-reviewer` agent, in a clean context | Only if you run the review in a separate session yourself. A single context reviewing its own work is not independent |
 | Safety hooks (`guard-git.sh`, `guard-main-edit.sh`) | Wired in `.claude/settings.json` | **Not installed**: these runtimes ignore Claude Code settings. Nothing blocks `git push` or edits on `main` |

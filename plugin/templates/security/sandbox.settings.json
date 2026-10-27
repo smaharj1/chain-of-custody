@@ -1,0 +1,65 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [],
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "registry.npmjs.org",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ],
+      "deniedCidrs": [
+        "169.254.0.0/16",
+        "fd00:ec2::254/128"
+      ]
+    },
+    "filesystem": {
+      "denyRead": [
+        "~/.aws",
+        "~/.ssh",
+        "~/.config/gh",
+        "~/.config/gcloud",
+        "~/.azure",
+        "~/.kube",
+        "~/.docker",
+        "~/.netrc",
+        "~/.git-credentials",
+        "~/.npmrc",
+        "**/.env.production*",
+        "**/*.pem",
+        "**/*.key",
+        ".git/loopctl/heldout"
+      ],
+      "denyWrite": [
+        ".git/hooks",
+        ".git/config",
+        ".git/info",
+        ".claude/settings.json",
+        ".claude/hooks",
+        ".mcp.json"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.azure/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.docker/**)",
+      "Read(~/.netrc)",
+      "Read(~/.git-credentials)",
+      "Read(**/.env.production*)",
+      "Edit(.git/hooks/**)",
+      "Edit(.git/config)",
+      "Edit(.git/info/**)",
+      "Read(.git/loopctl/heldout/**)"
+    ]
+  }
+}

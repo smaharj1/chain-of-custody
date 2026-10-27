@@ -72,6 +72,9 @@ LOOPCTL_FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "-
 # a flag that makes a command a write even when a read flag is also present (`migrate-plan --check --write`)
 LOOPCTL_WRITE_FLAGS = ("--apply", "--write", "--force")
 
+HUMAN_APPLY_SCRIPTS = {"migrate.py", "init_project.py"}
+HUMAN_APPLY_FLAGS = {"--apply", "--resolved", "--take-kit"}
+
 NPX_DEV = {"tsc", "eslint", "prettier", "jest", "vitest", "mocha", "playwright", "cypress", "tsx", "ts-node", "next", "vite", "nuxt", "astro",
            "remix", "nx", "turbo", "prisma", "drizzle-kit", "tailwindcss", "postcss", "esbuild", "rollup", "webpack", "babel", "nodemon",
            "concurrently", "rimraf", "cross-env", "lint-staged", "knip", "depcheck", "madge", "tsup", "unbuild", "storybook", "sb", "biome",
@@ -189,6 +192,15 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     d = _loopctl(ctx, inv)
     if d:
         return d
+    # -- human-only apply steps (Phase 9): the upgrade and the project-settings writer change the kit's own instructions, hooks and settings (H6) --
+    if inv.args or raw_base:
+        named = [raw_base] + [_basename_lc(a) for a in inv.args[:3] if not a.startswith("-")]
+        if any(n in HUMAN_APPLY_SCRIPTS for n in named) and any(a in HUMAN_APPLY_FLAGS or a.split("=", 1)[0] in HUMAN_APPLY_FLAGS for a in inv.args):
+            return deny(G, "human-apply", "migrate.py and init_project.py change the kit's own instructions, scripts and settings (H6); their apply step is "
+                        "a human command: read the dry run, then run it yourself from a plain terminal")
+    if name.startswith("py-module:") and name[10:].split(".")[-1] in ("migrate", "init_project") and any(
+            a in HUMAN_APPLY_FLAGS or a.split("=", 1)[0] in HUMAN_APPLY_FLAGS for a in inv.args):
+        return deny(G, "human-apply", "python -m %s --apply changes the kit's own instructions, scripts and settings (H6): a human runs it from a plain terminal" % name[10:])
     # -- the guards' own state CLI --
     if name in ("python", "python3") or re.match(r"python[0-9.]+$", name):
         for a in inv.args:

@@ -7,7 +7,7 @@
 * the reviewers are read-only (no Edit, Write or NotebookEdit); the engineers can write
 * effort is `high` on critics, database-engineer and backend-engineer (the `quality` profile)
 * descriptions no longer promise things the kit does not do ("cheap", the interactive review skill)
-* every command file has frontmatter with a description
+* every skill (the modes, Phase 9) has frontmatter obeying report 12.1 and DEC-17, and its reference files exist
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import unittest
 from . import REPO_ROOT
 
 AGENTS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "agents", "*.md")))
-COMMANDS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "commands", "*.md")))
+SKILLS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "skills", "*", "SKILL.md")))
 
 ENGINEERS = {"database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer", "infra-engineer"}
 AUTHORS = {"acceptance-author"}     # Phase 4b: writes the tests the engineers are graded by; engineer-class tools, never the implementation
@@ -157,20 +157,48 @@ class AgentFrontmatter(unittest.TestCase):
                 split_frontmatter(bad)
 
 
-class CommandFrontmatter(unittest.TestCase):
-    def test_every_command_has_a_description(self):
-        names = {os.path.basename(p)[:-3] for p in COMMANDS}
-        core = {"pm", "architect", "tech-lead", "planner", "orchestrate"}
-        later = {"bootstrap", "retro"}   # modes added by Phases 11a and 10 (IMP-3): each is a command until Phase 9 converts them
-        self.assertTrue(core <= names <= core | later, sorted(names ^ core))
-        for path in COMMANDS:
-            with self.subTest(os.path.basename(path)):
+class SkillFrontmatter(unittest.TestCase):
+    CORE = {"pm", "architect", "tech-lead", "planner", "orchestrate"}
+    LATER = {"bootstrap", "retro", "init", "migrate"}     # modes added by Phases 11a, 10 and 9
+    MODEL_INVOCABLE = {"pm"}                              # DEC-17: every other mode is typed by a person
+    RESERVED = {"loop", "code-review"}                    # bundled commands
+
+    def test_the_skill_set(self):
+        self.assertFalse(os.path.isdir(os.path.join(REPO_ROOT, ".claude", "commands")), "IMP-3: the commands are removed, no thin aliases")
+        names = {os.path.basename(os.path.dirname(p)) for p in SKILLS}
+        self.assertEqual(names, self.CORE | self.LATER)
+        self.assertFalse(names & self.RESERVED)
+
+    def test_frontmatter_per_dec_17(self):
+        for path in SKILLS:
+            name = os.path.basename(os.path.dirname(path))
+            with self.subTest(name):
                 fm, body = split_frontmatter(path)
+                self.assertEqual(fm["name"], name)
                 self.assertTrue(fm.get("description"))
+                self.assertNotIn(": ", fm["description"], "an unquoted ': ' breaks YAML")
+                self.assertTrue(fm.get("argument-hint"), "argument-hint")
+                self.assertIn(fm.get("effort"), EFFORTS)
+                self.assertNotEqual(fm.get("context"), "fork", "a mode never forks (report 12.1)")
+                if name in self.MODEL_INVOCABLE:
+                    self.assertNotIn("disable-model-invocation", fm)
+                else:
+                    self.assertEqual(fm.get("disable-model-invocation"), "true", "only a person types %s" % name)
                 self.assertTrue(body.lstrip().startswith("# "))
 
+    def test_reference_files_exist_and_are_linked(self):
+        for path in SKILLS:
+            d = os.path.dirname(path)
+            with open(path, "r", encoding="utf-8") as fh:
+                text = fh.read()
+            others = [f for f in os.listdir(d) if f != "SKILL.md"]
+            for f in others:
+                self.assertIn("](%s)" % f, text, "%s: %s is not linked from SKILL.md" % (os.path.basename(d), f))
+            for target in re.findall(r"\]\(([A-Za-z0-9._-]+\.md)\)", text):
+                self.assertTrue(os.path.exists(os.path.join(d, target)), "%s links to missing %s" % (os.path.basename(d), target))
+
     def test_tech_lead_description_names_the_agent_reviewer(self):
-        fm, _ = split_frontmatter(os.path.join(REPO_ROOT, ".claude", "commands", "tech-lead.md"))
+        fm, _ = split_frontmatter(os.path.join(REPO_ROOT, ".claude", "skills", "tech-lead", "SKILL.md"))
         self.assertIn("code-reviewer", fm["description"])
         self.assertNotIn("skill", fm["description"].lower())
 
