@@ -1188,5 +1188,367 @@
 "rule": "guard-halt:halted",
 "why": "only the reads pass while HALT is set",
 "halt": true
+},
+{
+"id": "loopctl-144",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl retro",
+"expect": "allow",
+"why": "retro reads the run data and prints numbers"
+},
+{
+"id": "loopctl-145",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl retro",
+"expect": "allow",
+"why": "retro reads the run data and prints numbers"
+},
+{
+"id": "loopctl-146",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl retro --json --milestone M1",
+"expect": "allow",
+"why": "retro reads the run data and prints numbers"
+},
+{
+"id": "loopctl-147",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl retro --json --milestone M1",
+"expect": "allow",
+"why": "retro reads the run data and prints numbers"
+},
+{
+"id": "loopctl-148",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl harness --json",
+"expect": "allow",
+"why": "harness prints each gate's owner metric"
+},
+{
+"id": "loopctl-149",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "python3 .claude/scripts/loopctl harness --json",
+"expect": "allow",
+"why": "harness prints each gate's owner metric"
+},
+{
+"id": "loopctl-150",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl gaps",
+"expect": "allow",
+"why": "gaps without --write only shows what repeats"
+},
+{
+"id": "loopctl-151",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl gaps",
+"expect": "allow",
+"why": "gaps without --write only shows what repeats"
+},
+{
+"id": "loopctl-152",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl gaps --json --min 1",
+"expect": "allow",
+"why": "gaps without --write only shows what repeats"
+},
+{
+"id": "loopctl-153",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl gaps --json --min 1",
+"expect": "allow",
+"why": "gaps without --write only shows what repeats"
+},
+{
+"id": "loopctl-154",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration report",
+"expect": "allow",
+"why": "calibration report prints precision"
+},
+{
+"id": "loopctl-155",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration report",
+"expect": "allow",
+"why": "calibration report prints precision"
+},
+{
+"id": "loopctl-156",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration scan",
+"expect": "allow",
+"why": "calibration scan without --write shows what it would log"
+},
+{
+"id": "loopctl-157",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration scan",
+"expect": "allow",
+"why": "calibration scan without --write shows what it would log"
+},
+{
+"id": "loopctl-158",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl report scan --json",
+"expect": "allow",
+"why": "report scan reads reports and events"
+},
+{
+"id": "loopctl-159",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl report scan --json",
+"expect": "allow",
+"why": "report scan reads reports and events"
+},
+{
+"id": "loopctl-160",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl gaps --write",
+"expect": "deny",
+"why": "--write drafts files under the git directory",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-161",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl gaps --write",
+"expect": "deny",
+"why": "--write drafts files under the git directory",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-162",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl gaps --min 1 --write",
+"expect": "deny",
+"why": "--write drafts files under the git directory",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-163",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl gaps --min 1 --write",
+"expect": "deny",
+"why": "--write drafts files under the git directory",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-164",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration scan --write",
+"expect": "deny",
+"why": "--write appends to the calibration log",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-165",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration scan --write",
+"expect": "deny",
+"why": "--write appends to the calibration log",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-166",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration record --blocker bk-0 --outcome fixed --by me",
+"expect": "deny",
+"why": "record is a person's outcome: not a read word",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-167",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration record --blocker bk-0 --outcome fixed --by me",
+"expect": "deny",
+"why": "record is a person's outcome: not a read word",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-168",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration",
+"expect": "deny",
+"why": "no action word: not a read",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-169",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration",
+"expect": "deny",
+"why": "no action word: not a read",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-170",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration frobnicate",
+"expect": "deny",
+"why": "an unknown action counts as a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-171",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration frobnicate",
+"expect": "deny",
+"why": "an unknown action counts as a write",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-172",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl calibration report --write",
+"expect": "deny",
+"why": "a write flag beats a read word",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-173",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl calibration report --write",
+"expect": "deny",
+"why": "a write flag beats a read word",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-174",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl retro --write",
+"expect": "deny",
+"why": "a write flag beats a read command",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-175",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl retro --write",
+"expect": "deny",
+"why": "a write flag beats a read command",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-176",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl gaps --force",
+"expect": "deny",
+"why": "--force is a write flag in every spelling",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-177",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl gaps --force",
+"expect": "deny",
+"why": "--force is a write flag in every spelling",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-178",
+"caller": "engineer",
+"repo": "feat",
+"cmd": "loopctl --json gaps --write",
+"expect": "deny",
+"why": "an option before the command is not a clean invocation",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-179",
+"caller": "unknown",
+"repo": "feat",
+"cmd": "loopctl --json gaps --write",
+"expect": "deny",
+"why": "an option before the command is not a clean invocation",
+"rule": "guard-exec:loopctl-write"
+},
+{
+"id": "loopctl-180",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl gaps --write",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-181",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl calibration record --blocker bk-0 --outcome fixed --by me",
+"expect": "allow",
+"why": "the registered conductor"
+},
+{
+"id": "loopctl-182",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl retro",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-183",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl gaps",
+"expect": "allow",
+"why": "read-only while halted",
+"halt": true
+},
+{
+"id": "loopctl-184",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl gaps --write",
+"expect": "deny",
+"why": "only the reads pass while HALT is set",
+"rule": "guard-halt:halted",
+"halt": true
+},
+{
+"id": "loopctl-185",
+"caller": "conductor",
+"repo": "feat",
+"cmd": "loopctl calibration scan --write",
+"expect": "deny",
+"why": "only the reads pass while HALT is set",
+"rule": "guard-halt:halted",
+"halt": true
 }
 ]

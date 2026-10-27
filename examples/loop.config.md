@@ -62,6 +62,11 @@ model_profile: quality           # opus for engineers and critics (see model-pro
 max_item_loc: 400                # estimated changed lines per item; larger items are split
 quick_lane_max_loc: 30           # largest quick-lane change that may skip review
 
+# --- Learning loop ---
+# Report conformance, the Docs Delta gate and the retro/gaps/calibration commands. Nothing here edits a rule, primer, agent or setting: `loopctl gaps`
+# writes drafts under the git directory and prints the commands a human runs (H6). Read from the BASE sha, never from the branch under judgement (CO-11).
+report_trailers: warn            # warn first; block when `loopctl report scan` says the streak is clean
+
 # --- Delivery ---
 # Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the
 # work and prints the exact commands; the human runs them (IMP-25).

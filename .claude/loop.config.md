@@ -181,6 +181,19 @@ promotion_attested: ""           # date (YYYY-MM-DD) the human confirmed the §6
 mcp_allowed_servers: []          # names of MCP servers or plugins the human accepts in a loop run (report section 5.6), for
                                  #   example a read-only docs server. Any other deploy-capable server caps the level at L1.
 
+# --- Learning loop (report 16.1 row 10, DEC-28, DEC-29; docs/learning.md) ---
+# Report conformance, the Docs Delta gate and the retro/gaps/calibration commands. Nothing here edits a rule, primer, agent or setting: `loopctl gaps`
+# writes drafts under the git directory and prints the commands a human runs (H6). Read from the BASE sha, never from the branch under judgement (CO-11).
+report_trailers: warn            # warn | block   (report 16.1 row 10, L-32, DEC-29). How strictly the driver reads an engineer's report and its JSON trailer. `block` fails the item on
+                                 #   every form problem (a missing trailer, a missing section, NONE without a checked: line); `warn` fails it only when the decision cannot be read or the
+                                 #   trailer contradicts the report, and records the rest as report_warning events. A forged trailer is never tolerated in either mode. Move to `block` once
+                                 #   `loopctl report scan` shows a clean streak. Not evidence-gated: `block` is the stricter of the two.
+docs_delta_min_words: 5          # Docs Delta gate (gates.docs): the fewest net-new words a change to documentation files must add before it counts as documenting anything. A blank
+                                 #   line, trailing whitespace, a reflow or a punctuation-only edit adds none. Lowering it weakens the gate, so it is H6.
+gaps_min_occurrences: 2          # `loopctl gaps` drafts a rule or primer change only for a gap seen in at least this many items or reports of the milestone (one odd report is not a pattern).
+calibration_min_samples: 5       # `loopctl calibration report` judges a critic's precision only after this many logged blockers with a final outcome; before that it says `pending`.
+harness_min_item_runs: 10        # `loopctl harness` names a gate a removal candidate only after it has run on at least this many items without once blocking or catching anything.
+
 # --- Guards (report section 7). Read by .claude/scripts/guards/ ---
 roster: {}                       # extra subagent roles the guards should know, as role: engineer | critic (CS-39).
                                  #   The built-in roster (the kit's own agent names) needs no entry. A role that is not on the roster is treated

@@ -9,10 +9,11 @@ in step (a test compares them).
         lock status   evidence --check   cost --projection   reconcile --dry-run   migrate-plan --check|--dry-run
         run --dry-run   abort --dry-run   unattended check|status|promotion|intake (without --write)
         parallel check|status|leases   (and `parallel cleanup|cascade --dry-run`)
+        retro   harness   gaps (without --write)   calibration report|scan (without --write)   report scan      (Phase 10, the learning loop)
 
     TIER 1 WRITES (work with `loopctl_tier2: false`)
         lock acquire|release|steal   migrate-plan --write   halt   resume   unattended watch|notify-test|intake --write
-        parallel cleanup --apply (cascade --apply also needs Tier 2)
+        parallel cleanup --apply (cascade --apply also needs Tier 2)   gaps --write   calibration scan --write|record
 
     TIER 2 WRITES (refuse unless `loopctl_tier2: true` in the BASE sha's loop.config; OPT-IN, IMP-1)
         approve  begin  advance  fail  clarify  park  gate  spend  run  abort  reconcile --apply
@@ -40,13 +41,13 @@ from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlErr
 
 __all__ = ["main", "READ_COMMANDS", "FLAG_READ", "TIER1_WRITES", "TIER2_WRITES", "classification"]
 
-READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version")
+READ_COMMANDS = ("validate", "status", "render", "doctor", "audit", "report", "help", "version", "retro", "harness", "gaps")
 # command -> flags that make an otherwise-writing command read-only (and the flags that always make it a write)
 FLAG_READ = {"reconcile": ("--dry-run",), "migrate-plan": ("--check", "--dry-run"), "cost": ("--projection",), "evidence": ("--check",),
              "lock": ("status",), "run": ("--dry-run",), "abort": ("--dry-run",), "unattended": ("check", "status", "promotion", "intake"),
-             "parallel": ("check", "status", "leases", "--dry-run")}
+             "parallel": ("check", "status", "leases", "--dry-run"), "calibration": ("report", "scan")}
 WRITE_FLAGS = ("--apply", "--write", "--force")
-TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended", "parallel")
+TIER1_WRITES = ("lock", "migrate-plan", "halt", "resume", "unattended", "parallel", "calibration")
 TIER2_WRITES = ("approve", "begin", "advance", "fail", "clarify", "park", "gate", "spend", "run", "abort", "reconcile")
 
 
@@ -262,12 +263,18 @@ def cmd_audit(args: List[str], env: Mapping[str, str], out: Out) -> int:
 
 
 def cmd_report(args: List[str], env: Mapping[str, str], out: Out) -> int:
-    ap = _parser("report", "report check PATH [--message FILE]: parse an engineer report and its JSON trailer.")
-    ap.add_argument("action", choices=("check",))
-    ap.add_argument("path")
+    ap = _parser("report", "report check PATH [--message FILE]: parse an engineer report and its JSON trailer. report scan: how well the reports conform "
+                           "and whether report_trailers: block is ready (Phase 10).")
+    ap.add_argument("action", choices=("check", "scan"))
+    ap.add_argument("path", nargs="?", default=None)
     ap.add_argument("--slug", default=None)
     ap.add_argument("--message", default=None, help="a file holding the engineer's final message (for the trailer)")
     a = ap.parse_args(args)
+    if a.action == "scan":
+        from .learning import commands as learning_commands
+        return learning_commands.report_scan(a, env, out)
+    if not a.path:
+        raise UsageError("report check needs the report's path")
     from . import report
     msg = None
     if a.message:
@@ -1014,12 +1021,32 @@ def _parallel_plan(ctx: Any) -> Dict[str, Any]:
 
 
 
+def cmd_retro(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from .learning import commands
+    return commands.cmd_retro(args, env, out)
+
+
+def cmd_gaps(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from .learning import commands
+    return commands.cmd_gaps(args, env, out)
+
+
+def cmd_calibration(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from .learning import commands
+    return commands.cmd_calibration(args, env, out)
+
+
+def cmd_harness(args: List[str], env: Mapping[str, str], out: Out) -> int:
+    from .learning import commands
+    return commands.cmd_harness(args, env, out)
+
+
 COMMANDS = {
     "validate": cmd_validate, "status": cmd_status, "render": cmd_render, "doctor": cmd_doctor, "audit": cmd_audit, "report": cmd_report,
     "help": cmd_help, "version": cmd_version, "evidence": cmd_evidence, "cost": cmd_cost, "migrate-plan": cmd_migrate_plan, "lock": cmd_lock,
     "halt": cmd_halt, "resume": cmd_resume, "approve": cmd_approve, "begin": cmd_begin, "advance": cmd_advance, "fail": cmd_fail,
     "clarify": cmd_clarify, "park": cmd_park, "gate": cmd_gate, "spend": cmd_spend, "reconcile": cmd_reconcile, "abort": cmd_abort, "run": cmd_run,
-    "unattended": cmd_unattended, "parallel": cmd_parallel,
+    "unattended": cmd_unattended, "parallel": cmd_parallel, "retro": cmd_retro, "gaps": cmd_gaps, "calibration": cmd_calibration, "harness": cmd_harness,
 }
 
 
