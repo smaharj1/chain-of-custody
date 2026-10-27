@@ -14,6 +14,13 @@ absent from the result, which every caller treats as "not executed".
 Text parsing is a heuristic, and it can be spoofed by code that prints a runner-looking line. That is why a pass here is never the only
 evidence: the criterion's test must also exist in a pinned file (G1), and CI re-runs the tests on the merge-candidate tree (Evidence).
 A parse that misses a line produces a false FAIL, never a false pass.
+
+Merging rule (UN-1, GT-2). The product code runs in the same process tree as the harness, so no channel here is unforgeable. The rule makes
+a forgery strictly less useful instead: every channel is read, and a failure on ANY channel wins (`merge_verdict`). A JSON object can add
+failures, errors and skips; it can turn a missing criterion into a pass only where the caller says the output format is a documented JSON
+harness (`allow_json_pass`: the G3 visible and held-out runs), never in G6; and it can never upgrade a text or JUnit verdict. Every JSON
+object with a `results` key counts, not only the first. G3's held-out run additionally needs exit status 0, and G5 lints production code for
+runner-shaped prints. The CI re-run on the merge-candidate tree stays the backstop.
 """
 from __future__ import annotations
 
@@ -41,7 +48,7 @@ class Parsed(object):
     def __init__(self) -> None:
         self.results = {}  # type: Dict[str, Dict[str, Any]]
         self.invalid = False
-        self.source = "text"
+        self.source = "text"            # text | json | junit | mixed
 
     def verdict(self, ac: str) -> Optional[str]:
         r = self.results.get(ac)
@@ -109,31 +116,50 @@ class Allowed(object):
         return True
 
 
+_MAX_JSON_TRIES = 400
+
+
+def _flatten_results(res: Dict[str, Any], wanted: set) -> Dict[str, str]:
+    flat = {}  # type: Dict[str, str]
+    for k, v in res.items():
+        if isinstance(v, dict) and not {"result", "verdict", "status"} & set(v):
+            for k2, v2 in v.items():
+                nv = _norm_verdict(v2)
+                if nv and k2 in wanted:
+                    flat[k2] = merge_verdict(flat[k2], nv) if k2 in flat else nv
+        else:
+            nv = _norm_verdict(v)
+            if nv and k in wanted:
+                flat[k] = merge_verdict(flat[k], nv) if k in flat else nv
+    return flat
+
+
 def parse_json_results(text: str, ac_ids: Iterable[str]) -> Optional[Dict[str, str]]:
-    """The first JSON object in the output that carries `results`. None when there is none."""
+    """Every JSON object in the output that carries `results`, flattened and merged per criterion (a failure in any object wins). None when
+    there is no such object. Stdout JSON is advisory: `parse` decides how far it is trusted."""
     wanted = set(ac_ids)
     dec = json.JSONDecoder()
-    for m in re.finditer(r"(?m)^\s*\{", text):
+    merged = None  # type: Optional[Dict[str, str]]
+    pos, tries = 0, 0
+    rx = re.compile(r"(?m)^\s*\{")
+    while tries < _MAX_JSON_TRIES:
+        m = rx.search(text, pos)
+        if not m:
+            break
+        tries += 1
         try:
-            obj, _end = dec.raw_decode(text[m.end() - 1:])
+            obj, end = dec.raw_decode(text[m.end() - 1:])
         except (ValueError, RecursionError):
+            pos = m.end()
             continue
+        pos = m.end() - 1 + end
         res = obj.get("results") if isinstance(obj, dict) else None
         if not isinstance(res, dict):
             continue
-        flat = {}  # type: Dict[str, str]
-        for k, v in res.items():
-            if isinstance(v, dict) and not {"result", "verdict", "status"} & set(v):
-                for k2, v2 in v.items():
-                    nv = _norm_verdict(v2)
-                    if nv and k2 in wanted:
-                        flat[k2] = nv
-            else:
-                nv = _norm_verdict(v)
-                if nv and k in wanted:
-                    flat[k] = nv
-        return flat
-    return None
+        merged = merged if merged is not None else {}
+        for ac, v in _flatten_results(res, wanted).items():
+            merged[ac] = merge_verdict(merged[ac], v) if ac in merged else v
+    return merged
 
 
 def parse_junit(xml_text: str, ac_ids: Iterable[str], allowed: Optional["Allowed"] = None) -> Optional[Parsed]:
@@ -172,7 +198,7 @@ def _line_verdict(line: str) -> Optional[str]:
     s = line.rstrip()
     if _SKIP_WORDS.search(s):
         return "skipped"
-    if re.search(r"\.\.\. FAIL\s*$|\.\.\. unexpected success|^FAIL: |^--- FAIL|\bFAILED\b|^not ok\b|\.\.\. FAILED$|^\s*[✕×✗]", s):
+    if re.search(r"\.\.\. FAIL\s*$|\.\.\. unexpected success|^\s*FAIL\b|^--- FAIL|\bFAILED\b|^not ok\b|\.\.\. FAILED$|^\s*[✕×✗]", s):
         return "fail"
     if re.search(r"\.\.\. ERROR\s*$|^ERROR: |^ERROR\b|\bERROR\b\s*$", s):
         return "error"
@@ -217,18 +243,13 @@ def _red_names(text: str) -> set:
     return names
 
 
-def parse(text: str, ac_ids: Iterable[str], allowed: Optional["Allowed"] = None) -> Parsed:
-    """Results for the criteria named in `ac_ids`, from a JSON verdict object when the output has one (the harness vouches for its own
-    verdicts), else from verbose lines, restricted to the tests `allowed` admits when it is given."""
+def parse(text: str, ac_ids: Iterable[str], allowed: Optional["Allowed"] = None, *, allow_json: bool = True, allow_json_pass: bool = False) -> Parsed:
+    """Results for the criteria named in `ac_ids`: verbose lines (restricted to the tests `allowed` admits) always, plus the JSON verdict
+    objects when `allow_json`. The channels are merged per criterion and a failure on any of them wins; a JSON `pass` is taken only for a
+    criterion no text line speaks for AND only when `allow_json_pass` (see the module docstring)."""
     ids = list(ac_ids)
     out = Parsed()
     text = text[-_MAX_TEXT:] if isinstance(text, str) else ""
-    js = parse_json_results(text, ids)
-    if js is not None:
-        out.source = "json"
-        for ac, v in js.items():
-            out.add(ac, v, "harness")
-        return out
     out.invalid = bool(_INVALID_RE.search(text))
     pats = [(a, _lib.ac_pattern(a)) for a in ids]
     red = _red_names(text)
@@ -258,4 +279,18 @@ def parse(text: str, ac_ids: Iterable[str], allowed: Optional["Allowed"] = None)
         for r in out.results.values():          # an import error and no assertion failure anywhere: nothing here is a red test
             if r["verdict"] == "fail":
                 r["verdict"] = "error"
+    js = parse_json_results(text, ids) if allow_json else None
+    if js:
+        had_text = bool(out.results)
+        used = False
+        for ac, v in js.items():
+            if ac in out.results:
+                if v != "pass":                 # JSON can add a failure to a criterion the text speaks for; it never upgrades one
+                    out.add(ac, v, "harness")
+                    used = True
+            elif v != "pass" or allow_json_pass:
+                out.add(ac, v, "harness")
+                used = True
+        if used:
+            out.source = "mixed" if had_text else "json"
     return out

@@ -4,7 +4,11 @@ What it does without the network: reads the dependency manifests at the base and
 `pyproject.toml`, `go.mod`, `Cargo.toml`, `Gemfile`), and for every NEW top-level dependency checks
 
 * the plan declared it (`touches.deps_change: true`; a dependency the plan did not announce is the classic way an agent adds a package);
-* it comes from a registry by name, not from a git URL, a tarball URL or a local path (which skip every other check);
+* it comes from a registry by name, not from a git URL, a tarball URL or a local path (which skip every other check) -- and the same holds
+  when an EXISTING dependency's spec changes to such a source (a name that was fine yesterday is not fine as a tarball today);
+* the diff adds no package-index override: `--index-url`, `--extra-index-url`, `--find-links`, `--trusted-host`, `--pre` in a requirements
+  file, a `registry=` or `@scope:registry=` line in `.npmrc` and its cousins, a `[tool.uv]`, `[tool.poetry.source]` or `[tool.pdm.source]` change
+  (`g9.index-changed`: a dependency name only means something relative to where it is resolved);
 * its name is not within edit distance one or two of a very popular package without being one (slopsquat and typosquat), unless the plan
   allows it (`ext.g9.allow: ["name"]`);
 * the lockfile moved with the manifest (frozen lockfile), and an exact pin for `requirements.txt`;
@@ -39,7 +43,12 @@ _NAME_OK = re.compile(r"^[@A-Za-z0-9][A-Za-z0-9._/@+~-]{0,213}\Z")        # what
 _LIFECYCLE = ("preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly", "prepack", "postpack")
 _LOCKS = {"npm": ("package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"),
           "pypi": ("poetry.lock", "Pipfile.lock", "uv.lock", "pdm.lock"), "go": ("go.sum",), "cargo": ("Cargo.lock",), "ruby": ("Gemfile.lock",)}
-_NON_REGISTRY = re.compile(r"^(?:git\+|git://|github:|gitlab:|bitbucket:|https?://|file:|link:|npm:|patch:|workspace:\*?$|\.{1,2}/|/|ssh://)", re.I)
+_NON_REGISTRY = re.compile(r"^(?:git\+|git://|git@|github:|gitlab:|bitbucket:|gist:|https?://|file:|link:|portal:|exec:|npm:|patch:|workspace:|\.{1,2}/|~/|/|ssh:|@\s*\S|"
+                           r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:#\S*)?$)", re.I)       # the last two: a PEP 508 direct reference (`pkg @ https://…`) and npm's `owner/repo` GitHub shorthand
+_STRUCT_SOURCE = re.compile(r"\b(?:git|path|url|source|registry|github|branch|rev)\s*[=:]", re.I)      # poetry/cargo inline tables, Gemfile options
+_INDEX_OPT = re.compile(r"(?:^|\s)(--index-url|-i|--extra-index-url|--find-links|-f|--trusted-host|--pre|--no-index)(?:[=\s]\s*(\S*))?", re.I)
+_REGISTRY_FILES = (".npmrc", ".yarnrc", ".yarnrc.yml", "pip.conf", "pip.ini", "uv.toml", "config.toml", "config", ".pypirc")
+_REGISTRY_LINE = re.compile(r"(?i)^\s*[^#;\n]*(?:registry|index-url|index_url|extra-index-url|find-links|trusted-host|replace-with|npmRegistryServer|repository)\b[^\n]*$")
 
 _POPULAR = {
     "npm": """react react-dom vue angular lodash express axios moment chalk commander debug request async underscore bluebird webpack babel-core typescript
@@ -204,6 +213,73 @@ def parse_manifest(path: str, text: Optional[str]) -> Dict[str, str]:
     return out
 
 
+def _nonregistry(spec: str) -> bool:
+    """Whether a dependency spec names a source other than the default registry: a git, tarball, file or path source, or an inline table that
+    says so (`{ git = "..." }`, `{ path = "..." }`)."""
+    spec = spec.strip()
+    return bool(_NON_REGISTRY.match(spec) or _STRUCT_SOURCE.search(spec))
+
+
+def _npm_overrides(text: str) -> List[str]:
+    """`name=spec` for every `overrides`, `resolutions` and `pnpm.overrides` entry whose spec is not a registry version: these pin TRANSITIVE
+    packages, so a git or tarball source there skips the checks as well as a direct one."""
+    try:
+        doc = json.loads(text)
+    except (ValueError, RecursionError):
+        return []
+    out = []  # type: List[str]
+
+    def walk(node: Any, path: str, depth: int) -> None:
+        if depth > 6:
+            return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                walk(v, "%s>%s" % (path, k) if path else str(k), depth + 1)
+        elif isinstance(node, str) and _nonregistry(node):
+            out.append("%s=%s" % (path, node))
+    if isinstance(doc, dict):
+        for key in ("overrides", "resolutions"):
+            walk(doc.get(key), key, 0)
+        pn = doc.get("pnpm")
+        if isinstance(pn, dict):
+            walk(pn.get("overrides"), "pnpm.overrides", 0)
+    return out
+
+
+def _index_overrides(path: str, text: Optional[str]) -> List[str]:
+    """Normalised lines of a manifest or config file that choose WHERE packages are resolved (UN-8): the pip options in a requirements file, the
+    registry lines of `.npmrc` and its cousins, the index and source settings of a pyproject, extra `source` lines of a Gemfile."""
+    out = []  # type: List[str]
+    if not text:
+        return out
+    base = os.path.basename(path)
+    if manifest_kind(path) == "pypi" and base.endswith(".txt"):
+        for ln in text.splitlines():
+            ln = ln.split(" #")[0].strip()
+            if ln.startswith("-"):
+                for m in _INDEX_OPT.finditer(ln):
+                    out.append(" ".join(x for x in (m.group(1).lower(), m.group(2)) if x))
+    elif base == "pyproject.toml":
+        for m in re.finditer(r"(?m)^\s*(index-url|extra-index-url|find-links|index|trusted-host|no-index)\s*=\s*(.*)$", text):
+            out.append("%s = %s" % (m.group(1), m.group(2).strip()))
+        for table, body in _toml_tables(re.sub(r"(?m)^\s*\[\[(.*?)\]\]", r"[\1]", text)):
+            if re.match(r"tool\.(?:uv\.index|uv\.sources|poetry\.source|pdm\.source)", table.replace(" ", "")):
+                out.append("[%s] %s" % (table, " ".join(body.split())))
+    elif base == "Cargo.toml":
+        for table, body in _toml_tables(text):
+            if re.match(r"(?:patch|replace|source)\b", table.replace(" ", "")):
+                out.append("[%s] %s" % (table, " ".join(body.split())))
+    elif base == "package.json":
+        out.extend(_npm_overrides(text))
+    elif base == "Gemfile":
+        out.extend(m.group(0).strip() for m in re.finditer(r"(?m)^\s*source\s+[\"'][^\"'\n]+[\"']", text))
+    elif base == "go.mod":
+        out.extend(m.group(0).strip() for m in re.finditer(r"(?m)^\s*replace\s+[^\n]+$", text))
+    elif base in _REGISTRY_FILES:
+        out.extend(ln.strip() for ln in text.splitlines() if _REGISTRY_LINE.match(ln))
+    return out
+
+
 def _lifecycle(text: Optional[str]) -> List[str]:
     try:
         sc = json.loads(text or "{}").get("scripts")
@@ -241,6 +317,19 @@ def run(ctx: Any) -> GateResult:
         before = parse_manifest(path, _lib.blob(ctx, ctx.base_sha, path)) if status != "A" else {}
         after = parse_manifest(path, _lib.blob(ctx, head, path))
         fresh = sorted(set(after) - set(before))
+        old_txt = _lib.blob(ctx, ctx.base_sha, path) if status != "A" else None
+        new_txt = _lib.blob(ctx, head, path)
+        # an existing dependency whose SPEC moved to a git, tarball, file or path source skips every registry check just as a new one would
+        for name in sorted(set(after) & set(before)):
+            if before[name] != after[name] and _nonregistry(after[name]):
+                sev = "warn" if name in allow else "error"
+                findings.append(_lib.finding("g9.source-changed", sev, "dependency %s changed from %s to %s, which is not a registry source: none of the registry checks apply to it"
+                                             % (common.clean_text(name, 60), common.clean_text(before[name], 40), common.clean_text(after[name], 50)),
+                                             dependency=common.clean_text(name, 60), path=path))
+        added_idx = sorted(set(_index_overrides(path, new_txt)) - set(_index_overrides(path, old_txt)))
+        for opt in added_idx[:5]:
+            findings.append(_lib.finding("g9.index-changed", "error", "%s adds or changes a package-index setting (%s): where a name resolves decides what it installs"
+                                         % (path, common.clean_text(opt, 80)), path=path))
         if os.path.basename(path) == "package.json":
             old_t = _lib.blob(ctx, ctx.base_sha, path) if status != "A" else None
             add = [k for k in _lifecycle(_lib.blob(ctx, head, path)) if k not in _lifecycle(old_t)]
@@ -263,12 +352,21 @@ def run(ctx: Any) -> GateResult:
             if not name.isascii():
                 findings.append(_lib.finding("g9.non-ascii-name", "error", "new dependency %s has non-ASCII characters in its name: a homoglyph look-alike of a real package"
                                              % ascii(name)[:60], dependency=rec["name"]))
-            if _NON_REGISTRY.match(spec) or _NON_REGISTRY.match(name):
+            if _nonregistry(spec) or _NON_REGISTRY.match(name):
                 sev = "warn" if name in allow else "error"
                 findings.append(_lib.finding("g9.non-registry-source", sev, "new dependency %s comes from %s, not from a registry: none of the registry checks apply to it"
                                              % (rec["name"], common.clean_text(spec, 50)), dependency=rec["name"]))
-            if pinned_txt and not re.search(r"==\s*[0-9]", spec) and not _NON_REGISTRY.match(spec):
+            if pinned_txt and not re.search(r"==\s*[0-9]", spec) and not _nonregistry(spec):
                 findings.append(_lib.finding("g9.unpinned", "error", "new requirement %s is not pinned with == (frozen installs need an exact version)" % rec["name"]))
+    for status, path, _o in rows:
+        if status == "D" or os.path.basename(path) not in _REGISTRY_FILES or manifest_kind(path):
+            continue
+        if os.path.basename(path) in ("config", "config.toml") and not path.endswith((".cargo/config", ".cargo/config.toml")):
+            continue
+        old_t = (_lib.blob(ctx, ctx.base_sha, path) if status != "A" else None)
+        for opt in sorted(set(_index_overrides(path, _lib.blob(ctx, head, path))) - set(_index_overrides(path, old_t)))[:5]:
+            findings.append(_lib.finding("g9.index-changed", "error", "%s adds or changes a package-index setting (%s): where a name resolves decides what it installs"
+                                         % (path, common.clean_text(opt, 80)), path=path))
     manifest_dirs = {os.path.dirname(p) for _s, p in manifests}
     lock_names = {n for names in _LOCKS.values() for n in names}
     for _s, p, _o in rows:
