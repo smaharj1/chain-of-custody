@@ -186,7 +186,7 @@ class Alignment(unittest.TestCase):
                         del seen[:]
                         refused = False
                         try:
-                            fn([action, "--repo", "/nonexistent"] + (["F1"] if cmd == "claim" and action != "list" else []), env, cli.Out(io.StringIO(), io.StringIO()))
+                            fn([action] + (["F1"] if cmd == "claim" and action != "list" else []) + ["--repo", "/nonexistent"], env, cli.Out(io.StringIO(), io.StringIO()))      # the positional item first: Python 3.9's argparse reads one given after an option as unrecognized (R-A-5)
                         except common.Refused as exc:
                             refused = "refusing to run inside a Claude Code session" in str(exc)
                         with self.subTest("%s %s %s" % (cmd, action, sorted(env))):
@@ -195,7 +195,7 @@ class Alignment(unittest.TestCase):
                             self.assertEqual(bool(seen), not human, "a human-only action must stop before any config, git or network access")
                     del seen[:]       # without a marker the action goes on to read the config
                     try:
-                        fn([action, "--repo", "/nonexistent"] + (["F1"] if cmd == "claim" and action != "list" else []), {}, cli.Out(io.StringIO(), io.StringIO()))
+                        fn([action] + (["F1"] if cmd == "claim" and action != "list" else []) + ["--repo", "/nonexistent"], {}, cli.Out(io.StringIO(), io.StringIO()))
                     except common.Refused:
                         pass
                     self.assertTrue(seen, "%s %s without a session marker must run" % (cmd, action))

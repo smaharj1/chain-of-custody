@@ -11,6 +11,16 @@ from loopctl import startrun
 from . import LoopTestCase
 
 
+def _restore_module(name, real):
+    """Put `sys.modules[name]` back to the module that was there (or remove it when none was). A test that replaced `loopctl.driver` with a fake
+    must not leave the NEXT import of it a different module object than the one other tests imported at their top (LC-14, the order-dependent
+    failure of unattended/test_runs)."""
+    if real is None:
+        sys.modules.pop(name, None)
+    else:
+        sys.modules[name] = real
+
+
 class Run(LoopTestCase):
     def approved(self, **kw):
         lr = self.lr(**kw)
@@ -151,7 +161,7 @@ class Run(LoopTestCase):
         self.assertEqual(r.rc, 3, r)                                      # no ceiling: refused by policy (the driver module is installed since Phase 4c)
         self.assertIn("run_budget_usd is not set", r.err)
         lr2 = self.approved(extra_cfg="runner: driver\nrun_budget_usd: 5")
-        self.addCleanup(sys.modules.pop, "loopctl.driver", None)
+        self.addCleanup(_restore_module, "loopctl.driver", sys.modules.get("loopctl.driver"))
         sys.modules["loopctl.driver"] = None                              # a module that cannot be imported: "driver not installed"
         r = lr2.ctl("run")
         self.assertIn("driver not installed", r.err)
@@ -167,8 +177,8 @@ class Run(LoopTestCase):
             calls.append((run_record["runner"], ctx.lock().status()["record"]["driverPid"], type(loop).__name__))
             raise RuntimeError("driver crashed")
         fake.run = run
+        self.addCleanup(_restore_module, "loopctl.driver", sys.modules.get("loopctl.driver"))
         sys.modules["loopctl.driver"] = fake
-        self.addCleanup(sys.modules.pop, "loopctl.driver", None)
         with self.assertRaises(RuntimeError):
             lr.ctl("run")
         self.assertEqual(calls[0][0], "driver")
