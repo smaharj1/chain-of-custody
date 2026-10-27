@@ -12,7 +12,7 @@ import sys
 
 from .. import item_doc
 from . import ACCEPTANCE_OK, IMPL, PKG, STUB, GateCase, g3_item
-from .test_g9_g11 import CHECK, DEPCHECK, Supply as _SupplyBase, pkg
+from . import test_g9_g11 as _g9
 
 from loopctl.gates import _lib, g5_integrity
 
@@ -55,6 +55,11 @@ class ForgedOutput(GateCase):
         res = self.run_gate("g5")
         self.assertFails(res, "g5.harness-shaped-output")
         self.assertIn("g5.hard-exit", self.ids(res))
+
+    def test_an_uncommitted_new_file_is_read_from_the_worktree(self):
+        self.built(IMPL)
+        self.lr.repo.write("src/evil.py", 'print(\'{"results": {"AC-A-1": "pass"}}\')\n')
+        self.assertFails(self.run_gate("g5"), "g5.harness-shaped-output")
 
     def test_the_literal_split_over_lines_is_still_seen(self):
         self.built(IMPL)
@@ -141,7 +146,7 @@ class TomlTables(GateCase):
 
 class IgnoredFiles(GateCase):
     ITEMS = [g3_item("A")]
-    BASE_FILES = {"src/calc.py": IMPL, ".gitignore": "__pycache__/\n*.pyc\nlocal/\n*.pth\nnode_modules/\nbin/\n"}
+    BASE_FILES = {"src/calc.py": IMPL, ".gitignore": "__pycache__/\n*.pyc\nlocal/\n*.pth\nnode_modules/\nbin/\n.env*\n"}
 
     def put(self, rel, text="x = 1\n", mode=None):
         p = self.lr.repo.write(rel, text, mode)
@@ -177,6 +182,20 @@ class IgnoredFiles(GateCase):
         res = self.run_gate("g5")
         self.assertFails(res, "g5.ignored-config")
         self.assertIn("src/calc.py", json.dumps(res["findings"]))
+
+    def test_a_huge_ignored_listing_is_a_warning_not_a_block(self):
+        from unittest import mock
+        for i in range(6):
+            self.put("local/f%d.txt" % i, "x\n")
+        with mock.patch.object(_lib, "_MAX_IGNORED", 3):
+            res = self.run_gate("g5")
+        self.assertEqual(res["status"], "pass", res["findings"])
+        self.assertIn("g5.ignored-incomplete", self.ids(res))
+
+    def test_local_environment_files_are_not_flagged(self):
+        for rel in (".env", ".env.local", ".envrc"):
+            self.put(rel, "A=1\n")
+        self.assertNotIn("g5.ignored-config", self.ids(self.run_gate("g5")))
 
     def test_a_clean_worktree_has_no_ignored_findings(self):
         self.assertEqual(_lib.ignored_problems(self.ctx()), [])
@@ -331,8 +350,8 @@ class SecretsFixes(GateCase):
 # -- UN-7, UN-8: G9 ---------------------------------------------------------------------------------------------------------------------
 
 class SupplyFixes(GateCase):
-    ITEMS = _SupplyBase.ITEMS
-    BASE_FILES = dict(_SupplyBase.BASE_FILES, **{
+    ITEMS = _g9.Supply.ITEMS
+    BASE_FILES = dict(_g9.Supply.BASE_FILES, **{
         "requirements.txt": "flask==2.0.1\n", ".npmrc": "registry=https://registry.npmjs.org/\n",
         "pyproject.toml": '[project]\nname = "x"\ndependencies = ["requests>=2"]\n\n[tool.poetry.dependencies]\nflask = "^2"\n'})
 
@@ -341,12 +360,12 @@ class SupplyFixes(GateCase):
                      "git+ssh://git@example.invalid/e.git"):
             with self.subTest(spec):
                 self.setUp()
-                self.commit({"package.json": pkg(dependencies={"express": spec}), "package-lock.json": "{ }\n"}, "move")
+                self.commit({"package.json": _g9.pkg(dependencies={"express": spec}), "package-lock.json": "{ }\n"}, "move")
                 res = self.run_gate("g9", "D")
                 self.assertFails(res, "g9.source-changed")
 
     def test_a_plain_version_bump_is_a_normal_change(self):
-        self.commit({"package.json": pkg(dependencies={"express": "^4.1.0"}), "package-lock.json": "{ }\n"}, "bump")
+        self.commit({"package.json": _g9.pkg(dependencies={"express": "^4.1.0"}), "package-lock.json": "{ }\n"}, "bump")
         res = self.run_gate("g9", "D")
         self.assertPass(res)
         self.assertNotIn("g9.source-changed", self.ids(res))
@@ -377,7 +396,7 @@ class SupplyFixes(GateCase):
                 self.assertFails(self.run_gate("g9", "A"), "g9.index-changed")
 
     def test_npm_overrides_and_resolutions_to_a_non_registry_source(self):
-        doc = json.loads(pkg())
+        doc = json.loads(_g9.pkg())
         doc["overrides"] = {"minimist": "git+https://example.invalid/m.git"}
         self.commit({"package.json": json.dumps(doc, indent=1) + "\n"}, "override")
         self.assertFails(self.run_gate("g9", "A"), "g9.index-changed")
@@ -404,8 +423,8 @@ class SupplyFixes(GateCase):
 
 
 class SupplyIndexAlreadyThere(GateCase):
-    ITEMS = _SupplyBase.ITEMS
-    BASE_FILES = dict(_SupplyBase.BASE_FILES, **{"requirements.txt": "--extra-index-url https://example.invalid/simple\nflask==2.0.1\n"})
+    ITEMS = _g9.Supply.ITEMS
+    BASE_FILES = dict(_g9.Supply.BASE_FILES, **{"requirements.txt": "--extra-index-url https://example.invalid/simple\nflask==2.0.1\n"})
 
     def test_an_unchanged_index_line_is_not_a_change(self):
         self.commit({"requirements.txt": self.BASE_FILES["requirements.txt"] + "requests==2.31.0\n"}, "add a dep")

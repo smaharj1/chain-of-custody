@@ -21,6 +21,7 @@ Any hit is a finding for a separate review verdict plus a human flag. Owner metr
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
@@ -273,6 +274,17 @@ _RESULTS_RE = re.compile(r"""["']results["']""")
 _ACID_RE = re.compile(r"""AC-[A-Za-z0-9]+-\d+|["']AC-["']""")
 
 
+def _read_untracked(ctx: Any, path: str) -> Optional[str]:
+    full = os.path.join(ctx.worktree or "", path)
+    try:
+        if not common.safe_rel_path(path) or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > (1 << 20):
+            return None
+        with open(full, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
 def _output_lint(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], counts: Dict[str, int]) -> None:
     """Production code that prints what a test harness would print (UN-1, GT-2). A product module is not the harness: a JSON object with a
     `results` key naming an acceptance id, added outside tests and test configuration, is a forged verdict until proven otherwise; so is
@@ -283,6 +295,8 @@ def _output_lint(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], coun
         if status == "D" or _lib.is_protected(path) or path.lower().endswith(_DOC_EXT):
             continue
         text_head = _lib.blob(ctx, head, path)
+        if text_head is None and status == "A":
+            text_head = _read_untracked(ctx, path)          # a new file nobody committed yet still runs in the worktree
         if text_head is None or _lib.is_binary(text_head):
             continue
         old = set((_lib.blob(ctx, ctx.base_sha, path) or "").splitlines())
@@ -302,6 +316,9 @@ def _output_lint(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], coun
 
 def _ignored_check(ctx: Any, findings: List[Dict[str, Any]], counts: Dict[str, int]) -> None:
     for path, why in _lib.ignored_problems(ctx)[:20]:
+        if path.startswith("<more than"):
+            findings.append(_lib.finding("g5.ignored-incomplete", "warn", "%s: %s" % (path, why)))
+            continue
         findings.append(_lib.finding("g5.ignored-config", "error", "%s: %s. It is in no diff, so no gate has read it. Delete it, or un-ignore "
                                      "and commit it (clear the flag) so it can be reviewed" % (path, why), path=path))
         counts["flags"] += 1

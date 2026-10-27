@@ -206,6 +206,9 @@ def run(ctx: Any) -> GateResult:
                                      "scan can cover them (it does not cap silently)" % overflow[0]))
         n_hits += 1
     for path, why in _lib.ignored_problems(ctx)[:20]:
+        if path.startswith("<more than"):
+            findings.append(_lib.finding("g11.ignored-incomplete", "warn", "%s: %s" % (path, why)))
+            continue
         findings.append(_lib.finding("g11.ignored-config", "error", "%s: %s. No scan has read it" % (path, why), path=path))
         n_hits += 1
     if skipped:
