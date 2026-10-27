@@ -81,7 +81,7 @@ LOOPCTL_IMPORT_RE = re.compile(r"(\b(from|import)\s+loopctl\b|(import_module|__i
 LOOPCTL_CALL_RE = re.compile(r"\b(main|Loop|Driver|State|approve|approve_plan|approve_item|cmd_approve|cmd_resume|set_status|advance)\b")
 MAX_IMPORT_SCAN = 10
 # a loopctl command line inside code (`os.system("loopctl approve plan")`, `['python3', '.claude/scripts/loopctl', 'approve', ...]`)
-LOOPCTL_LINE_RE = re.compile(r"(?:^|[\s'\"`(\[,;|&=])(?:[^\s'\"`()\[\],;|&=]*/)?loopctl(?:\.py|/__main__\.py)?/?(?=[\s'\"`,)\]]|$)([^;&|`\n]*)")
+LOOPCTL_LINE_RE = re.compile(r"(?:^|-m|[\s'\"`(\[,;|&=])(?:[^\s'\"`()\[\],;|&=]*/)?loopctl(?:\.py|/__main__\.py)?/?(?=[\s'\"`,)\]]|$)([^;&|`\n]*)")
 OBFUSCATION_RE = re.compile(r"(\b(exec|eval|compile)\s*\(|\bFunction\s*\(|new\s+Function|__import__|\bvm\.run)", re.I)
 DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from|zlib|decompress|rot13|codecs\.decode|\bchr\b|String\.fromCharCode|"
                        r"\\x[0-9a-f]{2}|bytes\.fromhex|marshal|pickle)", re.I)
@@ -296,9 +296,10 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
         if any(GUARDS_WIRING_RE.search(r) for r in reals) and _flag_hit(rest, ("--write",)):
             return deny(G, "guards-cli", "wiring.py --write regenerates settings.v2.json and the settings templates, which are H6 files: a human runs it")
         if any(GUARDS_RUN_RE.search(r) for r in reals):
-            if not any(x in ("--selftest", "--explain", "--help", "-h") for x in rest) or any(x in ("register-session", "clear-halt", "set-halt", "unregister-session") for x in rest):
-                return deny(G, "guards-cli", "the guards' state commands (register-session, set-halt, clear-halt) are human commands: run them with `!`")
-    if inv.cwd_unknown and PY_NAME_RE.match(name) and any(x in inv.args for x in ("register-session", "clear-halt", "set-halt", "unregister-session")):
+            d = _guards_cli_words(rest)
+            if d:
+                return d
+    if inv.cwd_unknown and PY_NAME_RE.match(name) and any(x in inv.args for x in _STATE_WORDS):
         return deny(G, "guards-cli", "the guards' state commands (register-session, set-halt, clear-halt) are human commands, and a `cd` to a directory computed at run time "
                     "hides which script this is: run them with `!`")
     if name.startswith("py-module:") and re.match(r"py-module:(guards|kitlib|doctorlib)(\.|$)", name):
@@ -811,42 +812,78 @@ def _argv_after_code(ic) -> Optional[Tuple[List[str], List[bool]]]:
     return None
 
 
+SYS_ARGV_RE = re.compile(r"sys\.argv(\[[^\]=]*\])?\s*=\s*\[([^\]]*)\]")
+_STATE_WORDS = ("register-session", "clear-halt", "set-halt", "unregister-session")
+
+
+def _code_argvs(ic, norm: str) -> List[Tuple[List[str], List[bool]]]:
+    """The argument vectors inline python code runs with: the words after `-c CODE`, and a literal `sys.argv = [...]` assignment in the code (its program name
+    dropped, unless the assignment is to a slice)."""
+    out = []   # type: List[Tuple[List[str], List[bool]]]
+    got = _argv_after_code(ic)
+    if got and got[0]:
+        out.append(got)
+    for m in SYS_ARGV_RE.finditer(g_file.normalise_code(ic.code, join=False)):       # the list form: joining would fuse `'a','b'` into one word
+        toks = re.findall(r"[^\s'\",\[\]]+", m.group(2))
+        if toks:
+            whole = m.group(1) is not None            # `sys.argv[1:] = [...]` has no program name
+            out.append((toks if whole else toks[1:], [False] * len(toks if whole else toks[1:])))
+    return out
+
+
 def _loopctl_argv_of_code(ctx: Ctx, ic, norm: str) -> Optional[Decision]:
     """`python3 -c "import runpy; runpy.run_path('.claude/scripts/loopctl', run_name='__main__')" approve item F1` hands the command line to loopctl through the
-    code's own arguments, which `_loopctl_in_code` (it reads the code text only) never sees. The arguments are judged as loopctl's when the code names loopctl, when
-    the first of them is the loopctl path (`runpy.run_path(sys.argv[1])`), and, for code that runs another file or module whose name the guard cannot read,
-    always: whatever is not a read is a human step then."""
-    got = _argv_after_code(ic)
-    if not got or not got[0]:
+    code's own arguments (or through `sys.argv = [...]` in the code), which `_loopctl_in_code` (it reads the code text only) never sees. The arguments are judged as
+    loopctl's when the code names loopctl, when the first of them is the loopctl path (`runpy.run_path(sys.argv[1])`), and, for code that runs another file or
+    module whose name the guard cannot read, always: whatever is not a read is a human step then. The same arguments are checked against the guards CLI."""
+    if ic.lang != "python":
         return None
-    argv, adyn = got
     inv = ic.inv
-    judged = None   # type: Optional[Tuple[str, str, Optional[str]]]
-    for reals, rest, rdyn, loose in _py_targets_of_words(inv, argv, adyn, ctx.home):
-        if loose or any(LOOPCTL_REAL_RE.search(r) for r in reals):
-            judged = classify_rest(rest, rdyn)
-            break
-    if judged is None and re.search(r"loopctl", norm, re.I):
-        judged = classify_rest(argv, adyn)
-    if judged is None and RUNPY_RE.search(norm):
-        lit = RUNPY_LITERAL_RE.search(norm)
-        named_elsewhere = False
-        if lit:
-            tgt = lit.group(2)
-            named_elsewhere = not (LOOPCTL_REAL_RE.search(tgt) or tgt.split(".")[0].lower().startswith("loopctl") or GLOB_CHARS_RE.search(tgt)) and \
-                not any(LOOPCTL_REAL_RE.search(r) for r in _reals(tgt, inv, ctx.home))
-        if not named_elsewhere:
-            c = classify_rest(argv, adyn)
-            judged = ("human", c[1], c[2]) if c[0] != "read" else c
-    if judged is None:
+    best = None   # type: Optional[Tuple[str, str, Optional[str]]]
+    for argv, adyn in _code_argvs(ic, norm):
+        judged = None   # type: Optional[Tuple[str, str, Optional[str]]]
+        for reals, rest, rdyn, loose in _py_targets_of_words(inv, argv, adyn, ctx.home):
+            if any(GUARDS_RUN_RE.search(r) for r in reals):
+                d = _guards_cli_words(rest)
+                if d:
+                    return d
+            if loose or any(LOOPCTL_REAL_RE.search(r) for r in reals):
+                judged = classify_rest(rest, rdyn)
+                break
+        if judged is None and re.search(r"loopctl", norm, re.I):
+            judged = classify_rest(argv, adyn)
+        if judged is None and RUNPY_RE.search(norm):
+            lit = RUNPY_LITERAL_RE.search(norm)
+            named_elsewhere = False
+            if lit:
+                tgt = lit.group(2)
+                named_elsewhere = not (LOOPCTL_REAL_RE.search(tgt) or tgt.split(".")[0].lower().startswith("loopctl") or GLOB_CHARS_RE.search(tgt)) and \
+                    not any(LOOPCTL_REAL_RE.search(r) for r in _reals(tgt, inv, ctx.home))
+                if GUARDS_RUN_RE.search(tgt) or tgt.split(".")[0].lower() == "guards":
+                    d = _guards_cli_words(argv)
+                    if d:
+                        return d
+            if not named_elsewhere:
+                c = classify_rest(argv, adyn)
+                judged = ("human", c[1], c[2]) if c[0] != "read" else c
+        if judged is not None and (best is None or {"human": 2, "write": 1, "read": 0}[judged[0]] > {"human": 2, "write": 1, "read": 0}[best[0]]):
+            best = judged
+    if best is None:
         return None
-    cls, sub, action = judged
+    cls, sub, action = best
     what = "loopctl %s" % " ".join(x for x in (sub, action) if x)
     if cls == "human":
         return deny(G, "loopctl-human-only", "%s is a human step (inline %s code is handed it as its arguments): it grants an approval, lifts a stop or pushes to a remote. Run it "
                     "yourself in a plain terminal, or with `!` in the prompt" % (what, ic.lang))
     if cls == "write" and ctx.kind != "conductor":
         return deny(G, "loopctl-write", "inline %s code is handed `%s` as its arguments, which changes the run state; only the registered conductor session may (RC-13)" % (ic.lang, what))
+    return None
+
+
+def _guards_cli_words(rest: Sequence[str]) -> Optional[Decision]:
+    """The guards CLI is handed `rest`: refused unless it is only the self-test, `--explain` or help."""
+    if not any(x in ("--selftest", "--explain", "--help", "-h") for x in rest) or any(x in _STATE_WORDS for x in rest):
+        return deny(G, "guards-cli", "the guards' state commands (register-session, set-halt, clear-halt) are human commands: run them with `!`")
     return None
 
 
