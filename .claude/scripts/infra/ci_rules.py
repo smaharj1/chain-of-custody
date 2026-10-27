@@ -18,7 +18,8 @@ Environment has reviewers (the doctor reads that from GitHub) or that a reposito
   infra.apply-ref-input           an apply (or its plan) that checks out a ref chosen at dispatch
   infra.apply-flags               -lock=false or -refresh=false on an apply, or on the plan beside one
   infra.apply-tool-unsupported    an apply tool with no saved-plan-by-hash flow here (cdk, pulumi, kubectl, helm)
-  infra.environment-approval-unverified an Environment apply that never checks the run's approval history (warning)
+  infra.environment-approval-unverified an Environment apply that never checks the run's approval history (an Environment created without reviewers
+                                  gates nothing, and these rules cannot read GitHub)
   infra.apply-concurrency         no concurrency group: two applies could overlap (warning)
   infra.plan-ungated              a credentialed plan on a pull request event with no human gate
   infra.policy-after-init         init, validate or plan on pull-request source before source_policy ran
@@ -28,9 +29,12 @@ Environment has reviewers (the doctor reads that from GitHub) or that a reposito
   infra.gate-bypassable           a gate step that can fail without failing the job or its dependents (continue-on-error, `|| true`,
                                   a pipe), or an apply job that runs after a failed dependency (`if: always()`)
   infra.apply-environment-dynamic an `environment:` chosen at run time (`${{ }}`): the dispatcher could name one with no reviewers
-  infra.apply-indirect            `$VAR apply` or `$VAR destroy`: the command is hidden from these rules (warning)
+  infra.apply-indirect            `$VAR apply`, `$VAR destroy`, `$VAR deploy`, `$VAR up`: the command word is hidden from these rules (error in a
+                                  credentialed job, warning elsewhere)
 
-These rules read the commands in the workflow's own `run:` text. A command hidden in a script, an alias or `$VAR` is outside them (the
+These rules read the commands in the workflow's own `run:` text (and the args of a `docker://` step), after `workflows.normalize_shell` has
+removed the spellings that hide a command word: a path (`/usr/local/bin/terraform`), quotes (`terraform 'apply'`), `$(which terraform)`,
+`${TF:-terraform}` and a `TF=terraform` assignment. A command hidden in a script, an alias or `$VAR` is outside them (the
 doctor's deploy-surface scan follows one level of scripts); `.github/**` is a CODEOWNERS path so a person reads what is installed.
 """
 from __future__ import annotations
@@ -40,6 +44,8 @@ import re
 import shlex
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
+from doctorlib import workflows
+
 Finding = Tuple[str, str, str, str]   # (rule, severity, job id, message)
 
 ERROR, WARN = "error", "warn"
@@ -47,27 +53,45 @@ ERROR, WARN = "error", "warn"
 _PR_EVENTS = ("pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment", "merge_group",
               "issue_comment", "issues", "workflow_run", "repository_dispatch", "discussion", "discussion_comment", "release", "create")
 
-_CMD_RE = re.compile(r"(?<![\w./-])(terraform|tofu|terragrunt|pulumi|cdk|kubectl|helm)\b")
+def bot_reachable(events: Dict[str, Any]) -> List[str]:
+    """The triggers a bot (or anyone with a pull request) can start: the `_PR_EVENTS` plus a `push` that is not main-only (any other branch,
+    `branches-ignore`, `**`, tags). A credentialed job on one of these needs a human gate (IN-1)."""
+    out = [e for e in events if e in _PR_EVENTS]
+    if "push" in events and not workflows.push_main_only(events["push"]):
+        out.append("push")
+    return out
+
+
+_CMD_RE = re.compile(r"(?<![\w./-])(terraform|tofu|terragrunt|pulumi|cdktf|cdk8s|cdk|kubectl|helm|sam)\b")
 _CFN_RE = re.compile(r"\baws\s+cloudformation\b")
 _INFRA_USES = ("hashicorp/setup-terraform", "opentofu/setup-opentofu", "pulumi/actions", "aws-actions/configure-aws-credentials",
                "hashicorp/terraform-github-actions", "dflook/terraform-", "aws-actions/aws-cloudformation-github-deploy")
-_APPLY_USES = ("hashicorp/terraform-github-actions", "dflook/terraform-apply", "dflook/terraform-destroy", "pulumi/actions",
-               "aws-actions/aws-cloudformation-github-deploy", "azure/arm-deploy", "azure/k8s-deploy")
-_CRED_SECRETS = re.compile(
-    r"secrets\.(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|ARM_CLIENT_SECRET|ARM_ACCESS_KEY|ARM_CLIENT_CERTIFICATE\w*|"
-    r"GOOGLE_CREDENTIALS|GOOGLE_APPLICATION_CREDENTIALS|GCP_SA_KEY\w*|TF_TOKEN_\w+|TF_API_TOKEN|TFE_TOKEN|PULUMI_ACCESS_TOKEN|"
-    r"DIGITALOCEAN_TOKEN|AZURE_CREDENTIALS|KUBE_CONFIG\w*|KUBECONFIG\w*)", re.I)
-_CRED_ACTIONS = ("aws-actions/configure-aws-credentials", "google-github-actions/auth", "azure/login")
-_TF_SUBCMD = re.compile(r"(?<![\w./-])(terraform|tofu)\b((?:\s+-chdir=\S+)*)\s+([a-z][a-z-]*)\b([^\n;&|]*)")
+_APPLY_USES = ("hashicorp/terraform-github-actions", "dflook/terraform-apply", "dflook/terraform-destroy", "dflook/tofu-apply", "pulumi/actions",
+               "gruntwork-io/terragrunt-action", "aws-actions/aws-cloudformation-github-deploy", "azure/arm-deploy", "azure/k8s-deploy",
+               "serverless/github-action", "dawidd6/action-ansible-playbook")
+_MODE_USES = ("hashicorp/terraform-github-actions", "pulumi/actions", "gruntwork-io/terragrunt-action")   # one action, several commands: read the command
+_CRED_SECRETS = workflows.CRED_SECRETS
+_CRED_ACTIONS = workflows.CRED_ACTIONS
+_TF_SUBCMD = re.compile(r"(?<![\w./-])(terraform|tofu)\b((?:[ \t]+-chdir=\S+)*)[ \t]+([a-z][a-z-]*)\b([^\n;&|]*)")   # one line: a verb on the next line is not this command's
 _VALUE_FLAGS = {"-var", "-var-file", "-target", "-replace", "-parallelism", "-lock-timeout", "-state", "-state-out", "-backup", "-out", "-chdir"}
+_FL = r"(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*"     # flags between a program and its verb
 _APPLY_OTHER = [
-    ("cdk deploy", re.compile(r"(?<![\w./-])cdk\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:deploy|destroy)\b")),
-    ("pulumi up", re.compile(r"(?<![\w./-])pulumi\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:up|destroy)\b")),
+    ("cdk deploy", re.compile(r"(?<![\w./-])cdk\b" + _FL + r"\s+(?:deploy|destroy)\b")),
+    ("cdktf deploy", re.compile(r"(?<![\w./-])cdktf\b" + _FL + r"\s+(?:deploy|destroy)\b")),
+    ("sam deploy", re.compile(r"(?<![\w./-])sam\b" + _FL + r"\s+(?:deploy|sync|delete)\b")),
+    ("copilot deploy", re.compile(r"(?<![\w./-])copilot\b" + _FL + r"\s+(?:(?:svc|env|job|pipeline)\s+)?deploy\b")),
+    ("eb deploy", re.compile(r"(?<![\w./-])eb\b" + _FL + r"\s+(?:deploy|create|terminate|upgrade|swap)\b")),
+    ("serverless deploy", re.compile(r"(?<![\w./-])(?:serverless|sls)\b" + _FL + r"\s+(?:deploy|remove)\b")),
+    ("ansible-playbook", re.compile(r"(?<![\w./-])ansible-playbook\b")),
+    ("pulumi up", re.compile(r"(?<![\w./-])pulumi\b" + _FL + r"\s+(?:up|update|destroy)\b")),
     ("cloudformation", re.compile(r"\baws\s+cloudformation\s+(?:deploy|execute-change-set|create-stack|update-stack|delete-stack)\b")),
     ("kubectl apply", re.compile(r"(?<![\w./-])kubectl\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:apply|replace|delete|patch|create)\b")),
     ("helm upgrade", re.compile(r"(?<![\w./-])helm\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:upgrade|install|uninstall|rollback)\b")),
-    ("terragrunt apply", re.compile(r"(?<![\w./-])terragrunt\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:run-all\s+)?(?:apply|destroy)\b")),
+    ("terragrunt apply", re.compile(r"(?<![\w./-])terragrunt\b" + _FL + r"\s+(?:(?:run-all|run" + _FL + r"\s+(?:--all|-a))" + _FL + r"\s+)?(?:apply|destroy)\b")),
 ]  # type: List[Tuple[str, Any]]
+_INDIRECT_RE = re.compile(
+    r"(?:^|[;&|({]|\bthen\b|\bdo\b|\belse\b)[ \t]*(?:\w+=\S+[ \t]+)*(?:(?:sudo|exec|command|nohup|time|env)[ \t]+(?:\w+=\S+[ \t]+)*)*"
+    r"(?:\"?\$\{?[A-Za-z_]\w*\}?\"?|\$\([^)\n]{0,200}\)|`[^`\n]{0,200}`)[ \t]+(?:-\S+[ \t]+)*(?:apply|destroy|deploy|up)\b", re.M)
 _GATE_CMDS = ("authorize", "verify-hash", "base-is-main", "require-main-ref", "require-run-approval")
 _INIT_LIKE = ("init", "validate", "plan", "apply", "destroy", "providers", "get", "test", "console", "refresh", "import", "show")
 _REF_OK = re.compile(r"^\s*(?:main|master|refs/heads/main|\$\{\{\s*(?:github\.sha|github\.ref|github\.event\.repository\.default_branch|steps\.[\w.-]+\.outputs\.[\w.-]+|needs\.[\w.-]+\.outputs\.[\w.-]+)\s*\}\})\s*$")
@@ -81,11 +105,17 @@ class Ctx(object):
 
 
 def _norm_run(text: str) -> str:
+    """A run: script with comments stripped and the spellings that hide a command word normalised (`workflows.normalize_shell`)."""
     out = []  # type: List[str]
     for line in text.replace("\\\n", " ").split("\n"):
         m = re.search(r"(?:^|\s)#", line)
         out.append(line[:m.start()] if m else line)
-    return "\n".join(out)
+    return workflows.normalize_shell("\n".join(out))
+
+
+def _cmd(step: Any) -> str:
+    """The command text of a step: its run: script, or for a `uses: docker://IMAGE` step the image's command and args."""
+    return workflows.step_command_text(step)
 
 
 def _tf_calls(run: str) -> List[Tuple[str, str, List[str]]]:
@@ -116,7 +146,7 @@ def _has_plan_arg(args: Sequence[str]) -> bool:
 
 def _kinds(step: Any) -> Set[str]:
     out = set()  # type: Set[str]
-    run = _norm_run(step.run)
+    run = _norm_run(_cmd(step))
     for m in _CMD_RE.finditer(run):
         out.add(m.group(1))
     if _CFN_RE.search(run):
@@ -127,25 +157,32 @@ def _kinds(step: Any) -> Set[str]:
 def is_infra_workflow(wf: Any) -> bool:
     for job in wf.jobs.values():
         for s in job.steps:
-            if _kinds(s) or any(s.uses.lower().startswith(u) for u in _INFRA_USES):
+            if _kinds(s) or any(s.uses.lower().startswith(u) for u in _INFRA_USES) or apply_calls(s):
                 return True
+        # `$TOOL apply` in a job that holds cloud credentials: the tool name is hidden, so the workflow is infrastructure until shown otherwise
+        if workflows.job_credentialed(wf, job) and any(_INDIRECT_RE.search(_norm_run(s.run)) for s in job.steps):
+            return True
     return False
 
 
 def apply_calls(step: Any) -> List[str]:
     """Labels of apply-class commands in a step."""
     out = []  # type: List[str]
-    for tool, sub, _ in _tf_calls(step.run):
+    text = _cmd(step)
+    for tool, sub, _ in _tf_calls(text):
         if sub in ("apply", "destroy"):
             out.append("%s %s" % (tool, sub))
+    norm = _norm_run(text)
     for label, rx in _APPLY_OTHER:
-        if rx.search(_norm_run(step.run)):
+        if rx.search(norm):
             out.append(label)
     u = step.uses.lower().split("@", 1)[0]
     if any(u == a or u.startswith(a) for a in _APPLY_USES):
         mode = " ".join(str(v) for v in step.with_.values()).lower()
-        if u not in ("hashicorp/terraform-github-actions", "pulumi/actions") or re.search(r"apply|up\b|deploy|destroy", mode + " " + str(step.with_.get("command", "")).lower()):
+        if u not in _MODE_USES or re.search(r"\b(?:apply|up|update|deploy|destroy)\b", mode):
             out.append("uses " + u)
+    if workflows.docker_opaque_iac(step):
+        out.append("uses " + step.uses.split("@", 1)[0].lower())      # a known IaC image whose command is not visible: assume it can apply
     return out
 
 
@@ -185,9 +222,39 @@ def _chain_text(wf: Any, job: Any, before: Optional[int] = None) -> str:
     return "\n".join(parts)
 
 
-def _has_actor_check(runs: str) -> bool:
-    """Only the kit's gate.py authorize counts: a hand-written comparison cannot be checked structurally, so it is reported and a human reads it."""
-    return bool(re.search(r"gate\.py\s+authorize\b", runs))
+_AUTHZ_RE = re.compile(r"^[ \t]*(?:(?:\S*/)?python3?[ \t]+)?(?:\S*/)?gate\.py[ \t]+authorize\b([^\n]*)", re.M)
+_ACTOR_ARG_RE = re.compile(r"--actor[ \t=]+\S*\$")
+_OPENS_BLOCK_RE = re.compile(r"^[ \t]*(?:if|elif|else|case|while|until|for|select|exit|return)\b|(?:\bthen|\bdo|\belse|&&|\|\||\||\{|\()[ \t]*$")
+
+
+def _step_authorizes(st: Any) -> bool:
+    """One step that runs `gate.py authorize` for real: as the command itself (not an argument of `echo`, not in a comment), unconditionally
+    (no step `if:`, no `if`/`case`/loop around it, no `&&` or `||` in front of it, no `exit` before it), and with `continue-on-error`
+    absent or the literal `false` (so `${{ true }}` does not count)."""
+    if st.if_.strip():
+        return False
+    if str(st.raw.get("continue-on-error", "")).strip().lower() not in ("", "false"):
+        return False
+    lines = _norm_run(st.run).split("\n")
+    for i, line in enumerate(lines):
+        m = _AUTHZ_RE.match(line)
+        if m:
+            # the actor must come from the run (`--actor "$ACTOR"`, `--actor "${{ github.actor }}"`): a constant name makes the check pass for ever
+            return bool(_ACTOR_ARG_RE.search(m.group(1))) and not any(_OPENS_BLOCK_RE.search(prev) for prev in lines[:i] if prev.strip())
+    return False
+
+
+def _has_actor_check(wf: Any, job: Any, before: Optional[int] = None) -> bool:
+    """Only the kit's gate.py authorize counts: a hand-written comparison cannot be checked structurally, so it is reported and a human reads it.
+    The step must be in the job (before step `before`, when given) or in a job it needs: a job-level `if:` that skips an earlier job skips
+    this one too, and a step in a job this one does not need gates nothing."""
+    for j in _ancestors(wf, job.id) + [job]:
+        for st in j.steps:
+            if j is job and before is not None and st.index >= before:
+                continue
+            if _step_authorizes(st):
+                return True
+    return False
 
 
 def _has_main_ref_check(text: str) -> bool:
@@ -208,11 +275,7 @@ def _events_only_dispatch(events: Dict[str, Any]) -> bool:
 
 
 def _push_main_only(cfg: Any) -> bool:
-    from doctorlib import workflows
-    cfg = cfg or {}
-    br = [str(b) for b in workflows._as_list(cfg.get("branches"))]
-    return bool(br) and all(b in ("main", "master") for b in br) and not workflows._as_list(cfg.get("tags")) \
-        and not workflows._as_list(cfg.get("branches-ignore")) and not workflows._as_list(cfg.get("tags-ignore"))
+    return workflows.push_main_only(cfg)
 
 
 def _credentialed(wf: Any, job: Any, ctx: Ctx) -> bool:
@@ -228,7 +291,7 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
     if not is_infra_workflow(wf):
         return out
     events = wf.events
-    pr_like = [e for e in events if e in _PR_EVENTS]
+    pr_like = bot_reachable(events)
     has_apply_anywhere = False
     wf_text = "\n".join(j.text for j in wf.jobs.values())
 
@@ -252,8 +315,9 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                 out.append(("infra.gate-bypassable", ERROR, jid, "a gate.py check can fail without failing the step (continue-on-error, `||`, a pipe, `set +e`)"))
                 break
         for st in job.steps:
-            if re.search(r"\$\{?[A-Za-z_]\w*\}?\s+(?:-\S+\s+)*(?:apply|destroy)\b", _norm_run(st.run)):
-                out.append(("infra.apply-indirect", WARN, jid, "`$VAR apply` hides the command from these rules; write the tool name so the gates can be checked"))
+            if _INDIRECT_RE.search(_norm_run(st.run)):
+                out.append(("infra.apply-indirect", ERROR if _credentialed(wf, job, ctx) else WARN, jid,
+                            "`$VAR apply` (or destroy, deploy, up) hides the command word from these rules; write the tool name so the gates can be checked"))
                 break
         # dispatch inputs in run scripts
         for s in job.steps:
@@ -290,19 +354,19 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
         chain = _chain_text(wf, job)
         dispatch_only = _events_only_dispatch(events)
         if not job.environment:
-            if not (dispatch_only and _has_actor_check(_chain_runs(wf, job))):
+            if not (dispatch_only and _has_actor_check(wf, job, min(s.index for s, _ in applies))):
                 out.append(("infra.apply-ungated", ERROR, jid,
                             "an apply (%s) with no `environment:` (required reviewers) and no dispatch-only actor check against factory_approvers: nothing needs a human" % ", ".join(labels)))
         if "workflow_dispatch" in events and not _has_main_ref_check(chain + "\n" + _chain_runs(wf, job)):
             out.append(("infra.dispatch-ref-unchecked", ERROR, jid, "a dispatch can run on any branch; require refs/heads/main (gate.py require-main-ref) before planning or applying"))
         # one job for plan and apply
-        plans_here = [s for s in job.steps for tool, sub, args in _tf_calls(s.run) if sub == "plan"]
+        plans_here = [s for s in job.steps for tool, sub, args in _tf_calls(_cmd(s)) if sub == "plan"]
         if plans_here:
             out.append(("infra.apply-same-job-as-plan", ERROR, jid, "plan and apply are in one job: an Environment approval comes before the job starts, so nobody approves the plan. Plan in an earlier job"))
         # per-apply-step checks
         for s, lab in applies:
             before_text = _chain_runs(wf, job, before=s.index, own_only=True)
-            for tool, sub, args in _tf_calls(s.run):
+            for tool, sub, args in _tf_calls(_cmd(s)):
                 if sub in ("apply", "destroy"):
                     if not _has_plan_arg(args):
                         out.append(("infra.apply-without-saved-plan", ERROR, jid, "`%s %s` without a saved plan file plans again at apply time: apply the plan that was approved (apply tfplan)" % (tool, sub)))
@@ -328,14 +392,14 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                     if ctx.step_pr(s):
                         out.append(("infra.apply-ref-input", ERROR, j.id, "an apply path checks out pull request code"))
         if job.environment and not re.search(r"gate\.py\s+require-run-approval\b", _chain_runs(wf, job)):
-            out.append(("infra.environment-approval-unverified", WARN, jid, "an Environment created without reviewers gates nothing; add gate.py require-run-approval so the job refuses unless a listed approver approved this run"))
+            out.append(("infra.environment-approval-unverified", ERROR, jid, "an Environment created without reviewers gates nothing, and this lint cannot see GitHub: add gate.py require-run-approval (in this job or one it needs) so the apply refuses unless a listed approver approved this run"))
         if not (wf.raw.get("concurrency") or job.raw.get("concurrency")):
             out.append(("infra.apply-concurrency", WARN, jid, "no concurrency group: two applies of the same state could overlap"))
 
     if has_apply_anywhere:
         for jid, job in wf.jobs.items():
             for s in job.steps:
-                for tool, sub, args in _tf_calls(s.run):
+                for tool, sub, args in _tf_calls(_cmd(s)):
                     if sub == "plan" and re.search(r"-(?:lock|refresh)=false", " ".join(args)):
                         out.append(("infra.apply-flags", ERROR, jid, "the plan that gets applied must run with the state lock and refresh on (found -lock=false or -refresh=false in a workflow that applies)"))
 
@@ -352,10 +416,10 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
             untrusted = [e for e in pr_like]
             if not untrusted:
                 continue
-            ok_label = "pull_request_target" in events and set(untrusted) <= {"pull_request_target"} and "plan-ok" in chain and _has_actor_check(_chain_runs(wf, job))
+            ok_label = "pull_request_target" in events and set(untrusted) <= {"pull_request_target"} and "plan-ok" in chain and _has_actor_check(wf, job)
             if not ok_label:
                 out.append(("infra.plan-ungated", ERROR, jid,
-                            "a plan with cloud credentials on %s needs a human gate: pull_request_target with the plan-ok label and an approver check (gate.py authorize), or workflow_dispatch" % "/".join(untrusted)))
+                            "a plan with cloud credentials on %s needs a human gate: pull_request_target with the plan-ok label and an approver check (gate.py authorize), or workflow_dispatch (a push to any branch but main is reachable by the bot)" % "/".join(untrusted)))
 
     # policy before init, from the base ref, not bypassable
     untrusted_source = [e for e in events if e in ("pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment", "merge_group", "issue_comment")]
@@ -391,7 +455,7 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                     out.append(("infra.policy-bypassable", ERROR, jid, "source_policy.py can fail without failing the job (continue-on-error or `|| true`)"))
         if untrusted_source:
             for s in job.steps:
-                init_like = [sub for tool, sub, args in _tf_calls(s.run) if sub in _INIT_LIKE and not (sub == "init" and "-backend=false" in " ".join(args) and False)]
+                init_like = [sub for tool, sub, args in _tf_calls(_cmd(s)) if sub in _INIT_LIKE and not (sub == "init" and "-backend=false" in " ".join(args) and False)]
                 if not init_like:
                     continue
                 before = _chain_runs(wf, job, before=s.index)
