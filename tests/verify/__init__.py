@@ -41,19 +41,23 @@ class VerifyCase(BaseTestCase):
 
     def make_repo(self, config: Optional[Mapping[str, Any]] = None, files: Optional[Dict[str, str]] = None,
                   branch: bool = True) -> TempRepo:
-        r = self.repo()
         cfg = {"verify_tests": UNITTEST}
         cfg.update(config or {})
-        r.write(".claude/loop.config.md", config_text(cfg))
-        r.write("tests/__init__.py", "")
-        r.write("tests/test_a.py", PASSING_TEST)
-        for rel, text in (files or {}).items():
-            r.write(rel, text)
-        r.git("add", "-A")
-        r.git("commit", "-q", "-m", "base")
-        self.base = r.head()
-        if branch:
-            r.git("switch", "-q", "-c", "feat/x")
+
+        def build(r: TempRepo) -> str:
+            r.write(".claude/loop.config.md", config_text(cfg))
+            r.write("tests/__init__.py", "")
+            r.write("tests/test_a.py", PASSING_TEST)
+            for rel, text in (files or {}).items():
+                r.write(rel, text)
+            r.git("add", "-A")
+            r.git("commit", "-q", "-m", "base")
+            base = r.head()
+            if branch:
+                r.git("switch", "-q", "-c", "feat/x")
+            return base
+
+        r, self.base = self.cached_repo(("verify", sorted(cfg.items()), sorted((files or {}).items()), branch), build)
         return r
 
     def commit(self, r: TempRepo, files: Dict[str, str], msg: str = "work") -> str:

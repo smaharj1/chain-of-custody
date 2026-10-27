@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from typing import Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 __all__ = ["TempRepo", "BareRemote", "make_bare_remote", "make_repo_with_remote", "git_test_env"]
 
@@ -173,6 +173,27 @@ class TempRepo(object):
 
     def cleanup(self) -> None:
         shutil.rmtree(self.parent if self._owns_parent else self.path, ignore_errors=True)
+
+
+_BUILT = {}  # type: dict
+
+
+def cached_repo(key: object, build: "Callable[[TempRepo], object]", **kw) -> Tuple["TempRepo", object]:
+    """A fresh `TempRepo` populated by `build(repo)`; `build` runs once per `key` in this process, every call returns its own copy.
+
+    `key` must name everything the build depends on (repr() of config/files is the usual key). `build` may return a value that
+    belongs with the repo (a base commit id, say); it is handed back unchanged. Use it for the fixed starting point of a test file
+    (committed config, files, a branch), not for state a test changes before another one reads it."""
+    k = repr((key, sorted(kw.items())))
+    if k not in _BUILT:
+        repo = TempRepo(**kw)
+        extra = build(repo)
+        dst = tempfile.mkdtemp(prefix="built-", dir=scratch_root())
+        copy_tree(repo.path, os.path.join(dst, "repo"))
+        repo.cleanup()
+        _BUILT[k] = (os.path.join(dst, "repo"), extra)
+    src, extra = _BUILT[k]
+    return TempRepo(clone_from=src, **{a: b for a, b in kw.items() if a in ("name",)}), extra
 
 
 class BareRemote(object):

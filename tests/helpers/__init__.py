@@ -20,8 +20,8 @@ from typing import List, Optional
 from .. import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (re-exported for convenience)
 from .bins import install_fake_claude, install_fake_gh, read_jsonl  # noqa: F401
 from .fakehome import FakeHome, clean_env  # noqa: F401
-from . import gitfast  # noqa: F401
-from .gitrepo import BareRemote, TempRepo, make_bare_remote, make_repo_with_remote  # noqa: F401
+from . import gitfast, inproc  # noqa: F401
+from .gitrepo import BareRemote, TempRepo, cached_repo, make_bare_remote, make_repo_with_remote  # noqa: F401
 from .procs import ProcessTracker  # noqa: F401
 
 
@@ -50,6 +50,12 @@ class BaseTestCase(unittest.TestCase):
         r = TempRepo(**kw)
         self._repos.append(r)
         return r
+
+    def cached_repo(self, key, build, **kw):
+        """`gitrepo.cached_repo`, with the copy cleaned up after the test. Returns (repo, what build returned)."""
+        r, extra = cached_repo(key, build, **kw)
+        self._repos.append(r)
+        return r, extra
 
     def bare(self) -> BareRemote:
         b = BareRemote()

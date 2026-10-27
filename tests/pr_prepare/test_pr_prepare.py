@@ -11,6 +11,7 @@ import pr_prepare
 
 from . import FeatureCase, GOOD_REPORT, good_body
 from .. import REPO_ROOT
+from ..helpers import inproc
 
 SCRIPT = os.path.join(REPO_ROOT, ".claude", "scripts", "pr_prepare.py")
 
@@ -627,7 +628,9 @@ class Init(FeatureCase):
 
 
 class Cli(FeatureCase):
-    def run_cli(self, *args, cwd=None):
+    def run_cli(self, *args, cwd=None, real=False):
+        if not real:                                                # in this process (tests/helpers/inproc.py); `real` starts python3
+            return inproc.run_script(SCRIPT, list(args), cwd=cwd)
         return subprocess.run([sys.executable, SCRIPT] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                               cwd=cwd, timeout=60)
 
@@ -655,7 +658,7 @@ class Cli(FeatureCase):
         self.assertIn("git push --set-upstream origin feat/x", text.stdout)
 
     def test_usage_and_not_a_repo(self):
-        self.assertEqual(self.run_cli().returncode, 2)
+        self.assertEqual(self.run_cli(real=True).returncode, 2)             # the one real process: a script on the command line
         self.assertEqual(self.run_cli("check", "--repo", self.tmpdir()).returncode, 2)
 
     def test_reverts_subcommand(self):
