@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "phase": "7-unattended",
+  "sections": [
+    {
+      "id": "unattended",
+      "title": "Unattended L4 (report 6.2, 6.3, 10.4, 16.1 row 7; python3 .claude/scripts/loopctl unattended ...)",
+      "comment": [
+        "Unattended mode is `autonomy: unattended` + `autonomy_level: L4` (both refuse until the evidence gate passes). These keys say how a run that nobody",
+        "watches reaches a person, and the promotion bar. Read from the BASE sha, never from the branch under judgement (CO-11)."
+      ],
+      "example_title": "Unattended"
+    }
+  ],
+  "keys": [
+    {
+      "name": "notify_command",
+      "type": "command",
+      "default": "",
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "OPT-IN. A program (and fixed arguments) the kit runs to reach you when a run stops, parks or stalls (DEC-31). It is run with no shell,",
+        "  so write the program and its arguments only: no pipes, redirects, `$VAR` or `;` (wrap those in a script of yours). The message is",
+        "  never on the command line: it arrives on stdin as JSON and in KIT_NOTIFY_* variables, as plain text with a strict character set. It must be an",
+        "  absolute path or a name on PATH, and must not live inside the repository (an agent could edit it). The kit never sends anything itself.",
+        "  Empty = no notifications; unattended mode then refuses to start."
+      ],
+      "example": {
+        "value": "",
+        "doc": [
+          "e.g. /usr/local/bin/notify-me   (a script of yours; the kit passes the message on stdin)"
+        ]
+      }
+    },
+    {
+      "name": "notify_timeout_s",
+      "type": "int",
+      "default": 20,
+      "owner_phase": "7-unattended",
+      "h6_protected": false,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Seconds the notify_command may run before it is killed. A command that hangs must not hang the run."
+      ]
+    },
+    {
+      "name": "notify_env_allow",
+      "type": "list",
+      "default": [],
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Names of environment variables passed to notify_command (for a webhook URL or a topic name). It otherwise gets only PATH, HOME, the locale",
+        "  and KIT_NOTIFY_*. Cloud, GitHub, SSH, git and Claude credential families are never passed, whatever this says."
+      ]
+    },
+    {
+      "name": "stall_run_min",
+      "type": "int",
+      "default": 30,
+      "owner_phase": "7-unattended",
+      "h6_protected": false,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Minutes the driver may go without a sign of life before the stall watchdog notifies (the driver itself is stuck or gone). Not the child's",
+        "  stall limit (dispatch_timeout_min). Keep it above the longest gate command you run. Used by the in-process watchdog and by `loopctl unattended watch` (cron or launchd, every 5 minutes; an unattended start needs it to have checked in)."
+      ]
+    },
+    {
+      "name": "stall_storm_n",
+      "type": "int",
+      "default": 3,
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Stalls (a child with no tool call for dispatch_timeout_min, or a child past its wall limit) inside stall_storm_window_min that count as a",
+        "  stall storm. A storm demotes the effective level to L3 (report 6.3): unattended runs refuse until a human runs `loopctl approve demotion`. 0 = off."
+      ]
+    },
+    {
+      "name": "stall_storm_window_min",
+      "type": "int",
+      "default": 180,
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "The window, in minutes, for stall_storm_n."
+      ]
+    },
+    {
+      "name": "promotion_min_prs",
+      "type": "int",
+      "default": 10,
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "The promotion bar (report 6.3): consecutive merged draft PRs, at L2 or L3, before `loopctl unattended promotion` calls the install eligible",
+        "  for L4. Server-side facts only (a file made from GitHub or CI; never the local event log, which can be forged). The bar is advice for a human; nothing here promotes."
+      ]
+    },
+    {
+      "name": "promotion_max_correctness_changes",
+      "type": "int",
+      "default": 1,
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Most reviewer-requested changes of class `correctness` across those PRs (default 1)."
+      ]
+    },
+    {
+      "name": "promotion_max_reverts",
+      "type": "int",
+      "default": 0,
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Most reverted PRs across the window (default 0)."
+      ]
+    },
+    {
+      "name": "promotion_max_integrity_flags",
+      "type": "int",
+      "default": 0,
+      "owner_phase": "7-unattended",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "unattended",
+      "doc": [
+        "Most test-integrity flags (a weakened or deleted assertion, a reward hack) across the window (default 0)."
+      ]
+    }
+  ]
+}

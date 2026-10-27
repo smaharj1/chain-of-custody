@@ -66,3 +66,10 @@ docs/security/platform-requirements.md
 .github/workflows/dependency-check.yml
 .github/workflows/smoke.yml
 docs/design/deferred.md
+
+# 9-packaging: files the migration tooling creates in a user's project, and the retired v1 mode directory the migration notes name.
+.claude/commands
+.claude/commands/*
+.claude/.migrate
+.claude/.migrate/*
+.claude/settings.json.pre-init

@@ -1,0 +1,84 @@
+# heldout: the CI half of G3, held-out acceptance tests (report section 8.4 and section 9 G3, RC-3, RC-6, DEC-11).
+# Copy to .github/workflows/heldout.yml, with heldout-sync.yml beside it. Make the job `heldout` a REQUIRED status check in the ruleset
+# (docs/security/rulesets.md), pinned to the GitHub Actions app, for projects that run `runner: sequential` (the held-out tests have no safe
+# home inside a session there: no per-subagent sandbox is documented, P42). Under `runner: driver` loopctl runs them itself and this job
+# is a second opinion.
+#
+# What it protects: the engineer must not see the tests that grade it. So
+#   * the tests are NOT in the repository. heldout-sync.yml (a trusted job: default branch, never PR code) fetches them from a private store
+#     with a step-scoped token and saves them in the Actions cache; this job only RESTORES that cache. It holds no secret, no OIDC token and
+#     contents: read, so it passes ci_lint's "no secrets in a pull_request job" rule;
+#   * the restore is the last step before the tests run, and nothing from the pull request runs before it (no install scripts: use
+#     --ignore-scripts / a frozen lockfile in the toolchain step, placed BEFORE the restore if you must install);
+#   * the kit that runs the tests is extracted from the BASE sha, and so are the config and the plan: a pull request cannot change what is
+#     run or which items need held-out tests (CO-11);
+#   * the output is annotations with criterion ids and counts only. The bot that wrote the code has no `actions: read`, so it sees the check
+#     result and the failing ids, never the log and never what a test asserts (RC-6). The harness's own output is parsed and dropped.
+#
+# A pull request that edits this file or heldout-sync.yml is an H3 change (.github/** is in CODEOWNERS): a human reads it before anything it says
+# counts, because the workflow that runs on a pull request is the pull request's own copy.
+#
+# Needs: loop.config at the base with `heldout_cmd` (and `runner`), plan items with `ext.g3.heldout: true`, and the store populated
+# (heldout-sync.yml). The first pull request that installs the kit cannot pass this job; a human merges that one.
+# Actions are referenced by tag; pin each to a commit SHA before you rely on this (ci_lint warns).
+name: heldout
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heldout-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  heldout:
+    name: heldout
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Take the kit from the base sha
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          if ! git cat-file -e "$BASE_SHA:.claude/scripts/loopctl/gates/_ci.py" 2>/dev/null; then
+            echo "::error::The base branch has no loopctl gates. A human merges the PR that installs the kit; heldout protects the PRs after it."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/kit"
+          git archive "$BASE_SHA" .claude/scripts | tar -x -C "$RUNNER_TEMP/kit"
+
+      # TOOLCHAIN (project-specific; pick yours and pin it to the same versions as .tool-versions / .nvmrc). Install BEFORE the restore below,
+      # with install scripts off, so no code from the pull request runs while the held-out tests are on disk:
+      # - uses: actions/setup-node@v4 # pin to a commit SHA
+      #   with:
+      #     node-version-file: .nvmrc
+      # - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Restore the held-out tests (written by heldout-sync.yml; nothing from the pull request has run yet)
+        uses: actions/cache/restore@v4 # pin to a commit SHA
+        with:
+          path: ${{ runner.temp }}/heldout
+          key: heldout-none
+          restore-keys: |
+            heldout-
+
+      - name: Held-out tests (G3)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HELDOUT_DIR: ${{ runner.temp }}/heldout
+          KIT_SCRIPTS: ${{ runner.temp }}/kit/.claude/scripts
+        run: |
+          set -eu
+          PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci heldout --repo "$GITHUB_WORKSPACE" --base "$BASE_SHA" \
+            --head-ref "$HEAD_REF" --dir "$HELDOUT_DIR"

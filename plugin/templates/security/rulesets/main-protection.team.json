@@ -1,0 +1,37 @@
+{
+  "name": "kit: protect default and integration branches",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH", "refs/heads/integration/**"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"},
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          {"context": "verify", "integration_id": 15368},
+          {"context": "evidence", "integration_id": 15368},
+          {"context": "secrets-scan", "integration_id": 15368}
+        ]
+      }
+    }
+  ]
+}

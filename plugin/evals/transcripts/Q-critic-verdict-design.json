@@ -1,0 +1,33 @@
+{
+  "case": "Q-critic-verdict-design",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "## Verdict\nDESIGN_NEEDS_REVISION\n\n## Findings\n- [BLOCKER] no idempotency key on the payment webhook\n",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "## Verdict\nDESIGN_NEEDS_REVISION\n\n## Findings\n- [BLOCKER] no idempotency key on the payment webhook\n",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "## Verdict\nDESIGN_NEEDS_REVISION\n\n## Findings\n- [BLOCKER] no idempotency key on the payment webhook\n",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "## Verdict\nDESIGN_APPROVED\n\n- [BLOCKER] no idempotency key\n",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "LGTM",
+      "tool_calls": [],
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,317 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run typecheck:*)"
+    ],
+    "deny": [
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(terraform import:*)",
+      "Bash(terraform state:*)",
+      "Bash(terraform taint:*)",
+      "Bash(tofu apply:*)",
+      "Bash(tofu destroy:*)",
+      "Bash(tofu import:*)",
+      "Bash(tofu state:*)",
+      "Bash(terragrunt apply:*)",
+      "Bash(terragrunt destroy:*)",
+      "Bash(terragrunt run-all apply:*)",
+      "Bash(cdk deploy:*)",
+      "Bash(cdk destroy:*)",
+      "Bash(cdk bootstrap:*)",
+      "Bash(cdktf deploy:*)",
+      "Bash(cdktf destroy:*)",
+      "Bash(pulumi up:*)",
+      "Bash(pulumi destroy:*)",
+      "Bash(pulumi refresh:*)",
+      "Bash(kubectl apply:*)",
+      "Bash(kubectl delete:*)",
+      "Bash(kubectl replace:*)",
+      "Bash(kubectl patch:*)",
+      "Bash(helm install:*)",
+      "Bash(helm upgrade:*)",
+      "Bash(helm uninstall:*)",
+      "Bash(sam deploy:*)",
+      "Bash(serverless deploy:*)",
+      "Bash(sls deploy:*)",
+      "Bash(sst deploy:*)",
+      "Bash(amplify publish:*)",
+      "Bash(fly deploy:*)",
+      "Bash(flyctl deploy:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(wrangler publish:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(vercel deploy:*)",
+      "Bash(netlify deploy:*)",
+      "Bash(railway up:*)",
+      "Bash(aws cloudformation deploy:*)",
+      "Bash(aws cloudformation delete-stack:*)",
+      "Bash(aws s3 rm:*)",
+      "Bash(aws s3 sync:*)",
+      "Bash(aws iam:*)",
+      "Bash(sudo:*)",
+      "Bash(su:*)",
+      "Bash(doas:*)",
+      "Bash(docker run --privileged:*)",
+      "Bash(docker push:*)",
+      "Bash(claude:*)",
+      "Bash(npx @anthropic-ai/claude-code:*)",
+      "Bash(npx -y @anthropic-ai/claude-code:*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin master:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --delete:*)",
+      "Bash(git push --mirror:*)",
+      "Bash(git push --tags:*)",
+      "Bash(git commit --no-verify:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh release:*)",
+      "Bash(gh secret:*)",
+      "Bash(gh workflow run:*)",
+      "Bash(gh repo edit:*)",
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.test)",
+      "Read(**/.env.development)",
+      "Read(**/.env.production)",
+      "Read(**/.env.production.*)",
+      "Read(**/.env.staging)",
+      "Read(**/.env.*.local)",
+      "Read(~/.aws/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.config/gh/**)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Edit(.claude/hooks/**)",
+      "Edit(.claude/scripts/**)",
+      "Edit(.claude/agents/**)",
+      "Edit(.claude/skills/**)",
+      "Edit(.claude/commands/**)",
+      "Edit(.github/workflows/**)",
+      "Edit(.github/CODEOWNERS)",
+      "Edit(.mcp.json)",
+      "Edit(.claude-plugin/**)",
+      "Edit(.git/hooks/**)",
+      "Edit(.git/config)",
+      "mcp__*__run_script",
+      "mcp__*deploy*",
+      "Workflow",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash(npm install:*)",
+      "Bash(npm i:*)",
+      "Bash(npm ci:*)",
+      "Bash(pnpm install:*)",
+      "Bash(yarn add:*)",
+      "Bash(pip install:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": false,
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [],
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "api.github.com",
+        "registry.npmjs.org",
+        "pypi.org",
+        "files.pythonhosted.org"
+      ],
+      "deniedCidrs": [
+        "169.254.0.0/16",
+        "fd00:ec2::254/128"
+      ]
+    },
+    "filesystem": {
+      "denyRead": [
+        "~/.aws",
+        "~/.ssh",
+        "~/.config/gh",
+        "~/.config/gcloud",
+        "~/.azure",
+        "~/.kube",
+        "~/.docker",
+        "~/.netrc",
+        "~/.git-credentials",
+        "~/.npmrc",
+        "**/.env.production*",
+        "**/*.pem",
+        "**/*.key",
+        ".git/loopctl/heldout"
+      ],
+      "denyWrite": [
+        ".git/hooks",
+        ".git/config",
+        ".git/info",
+        ".claude/settings.json",
+        ".claude/hooks",
+        ".mcp.json"
+      ]
+    }
+  },
+  "env": {},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-bash",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-edit",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-mcp",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PreToolUse --id pre-dispatch",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch|WebSearch|mcp__.*|Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PostToolUse --id post-untrusted; exit 0",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PostToolUse --id post-telemetry; exit 0",
+            "timeout": 10,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" SubagentStart --id subagent-start; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" SubagentStop --id subagent-stop; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 && exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" PermissionDenied --id permission-denied; exit 0",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v python3 >/dev/null 2>&1 || { echo \"kit guards: python3 not found; failing closed (rule guards:no-python3)\" >&2; exit 2; }; exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" ConfigChange --id config-change",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/session_start.py\"; fi; echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"kit guards: python3 was not found, so the guards and the liveness canary did NOT load. Install python3 (3.9 or newer); until then the effective level is L0 (rule guards:no-python3).\"}}'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\" SessionStart --id session-start-selftest; fi; echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"kit guards: python3 was not found, so the guards and the liveness canary did NOT load. Install python3 (3.9 or newer); until then the effective level is L0 (rule guards:no-python3).\"}}'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/loopctl/compact_hook.py\"; fi; echo '{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"kit guards: python3 was not found, so the guards and the liveness canary did NOT load. Install python3 (3.9 or newer); until then the effective level is L0 (rule guards:no-python3).\"}}'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

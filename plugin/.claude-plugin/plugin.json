@@ -1,0 +1,38 @@
+{
+  "name": "chain-of-custody",
+  "version": "1.2.0",
+  "description": "A role-based engineering workflow for Claude Code: a product manager, architect and tech lead mode, engineer and reviewer subagents, hook-enforced guards, and an optional plan-driven build loop.",
+  "author": {
+    "name": "Sujil Maharjan"
+  },
+  "homepage": "https://github.com/smaharj1/chain-of-custody",
+  "repository": "https://github.com/smaharj1/chain-of-custody",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "agents",
+    "code-review",
+    "guards",
+    "planning"
+  ],
+  "userConfig": {
+    "protected_branches": {
+      "type": "string",
+      "title": "Protected branches",
+      "description": "Comma-separated branches that are shared: no edits to app source while checked out, no push. main and master are always protected. /init writes this into .claude/loop.config.md.",
+      "default": "main,master"
+    },
+    "integration_branch": {
+      "type": "string",
+      "title": "Integration branch",
+      "description": "The loop's integration branch, if you use one. Protected like main. Empty means none.",
+      "default": ""
+    },
+    "main_edit_allow": {
+      "type": "string",
+      "title": "Extra editable paths on main",
+      "description": "Comma-separated path globs that may be edited while on a protected branch. Empty means only the built-in set.",
+      "default": ""
+    }
+  }
+}

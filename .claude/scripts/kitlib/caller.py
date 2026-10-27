@@ -50,6 +50,7 @@ DEFAULT_ROSTER = {
     "code-reviewer": CRITIC,
     "design-critic": CRITIC,
     "security-reviewer": CRITIC,
+    "intake-triage": CRITIC,             # Phase 7 agent, listed in the Phase 9 roster: reads one untrusted text, writes nothing (report 5.3)
 }  # type: Dict[str, str]
 
 

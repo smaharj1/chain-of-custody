@@ -1,0 +1,30 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadMetadataOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*", "elasticloadbalancing:Describe*", "autoscaling:Describe*", "rds:Describe*", "rds:ListTagsForResource",
+        "s3:GetBucket*", "s3:ListAllMyBuckets", "s3:GetAccelerateConfiguration", "s3:GetEncryptionConfiguration",
+        "iam:Get*", "iam:List*", "lambda:Get*", "lambda:List*", "dynamodb:Describe*", "dynamodb:List*",
+        "cloudfront:Get*", "cloudfront:List*", "route53:Get*", "route53:List*", "logs:Describe*", "sqs:GetQueueAttributes", "sqs:ListQueues",
+        "sns:Get*", "sns:List*", "kms:Describe*", "kms:ListAliases", "apigateway:GET"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StateReadOnlyExample",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::acme-terraform-state", "arn:aws:s3:::acme-terraform-state/*"]
+    },
+    {
+      "Sid": "NeverReadSecretValues",
+      "Effect": "Deny",
+      "Action": ["secretsmanager:GetSecretValue", "ssm:GetParameter*", "kms:Decrypt", "s3:GetObject"],
+      "Resource": "*",
+      "Condition": {"StringNotEquals": {"aws:ResourceArn": ["arn:aws:s3:::acme-terraform-state/*"]}}
+    }
+  ]
+}

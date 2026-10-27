@@ -1,0 +1,82 @@
+# infra-check: the untrusted source check that runs before any plan (report section 8.1 Layer 5, section 8.4, RC-3).
+#
+# Install as .github/workflows/infra-check.yml and add `infra-check` to the required status checks of the main ruleset.
+#
+# This job reads pull-request code as DATA. It has contents: read, no secrets, no OIDC token and no cloud
+# credential, so nothing the PR contains can reach one. Order matters:
+#   1. the BASE ref's source_policy.py and infra-policy.json judge the PR's source BEFORE terraform runs,
+#      because `init` downloads the modules and providers the PR names;
+#   2. fmt, init without a backend, the policy again on the modules init downloaded, validate, tflint;
+#   3. optionally checkov, pinned by the repository variable INFRA_CHECKOV_VERSION.
+# Nothing here plans. A plan needs a credential and a human (infra-plan.yml).
+#
+# A pull_request workflow runs the PR's own copy of this file, so a PR could weaken it. That is why
+# .github/** is a CODEOWNERS path that needs a code owner who is not the bot, and why the required check
+# is pinned to the GitHub Actions app in the ruleset.
+#
+# Set TF_ROOT to the directory that holds your root module. Repository variable INFRA_INITIAL=true is for the
+# first infrastructure PR only (no baseline exists): it lists providers for a human instead of judging them.
+name: infra-check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_ROOT: infra
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "0"
+  INITIAL_FLAG: ${{ vars.INFRA_INITIAL == 'true' && '--initial' || '' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout the pull request (data only)
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          path: pr
+          persist-credentials: false
+      - name: Checkout the base ref (trusted scripts and policy)
+        uses: actions/checkout@v4 # pin to SHA
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - name: Source policy, before terraform runs
+        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG
+      - name: Install terraform
+        uses: hashicorp/setup-terraform@v3 # pin to SHA
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+      - name: terraform fmt
+        run: terraform -chdir="pr/$TF_ROOT" fmt -check -recursive -diff
+      - name: terraform init without a backend
+        run: terraform -chdir="pr/$TF_ROOT" init -backend=false -lockfile=readonly
+      - name: Source policy on the downloaded modules
+        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init $INITIAL_FLAG
+      - name: terraform validate
+        run: terraform -chdir="pr/$TF_ROOT" validate
+      - name: Install tflint
+        uses: terraform-linters/setup-tflint@v4 # pin to SHA
+        with:
+          tflint_version: v0.53.0
+      - name: tflint, with the base ref's configuration
+        run: |
+          tflint --config "$GITHUB_WORKSPACE/base/.tflint.hcl" --init
+          tflint --config "$GITHUB_WORKSPACE/base/.tflint.hcl" --chdir "pr/$TF_ROOT" --recursive
+      - name: "checkov (optional; set the repository variable INFRA_CHECKOV_VERSION)"
+        if: ${{ vars.INFRA_CHECKOV_VERSION != '' }}
+        env:
+          CHECKOV_VERSION: ${{ vars.INFRA_CHECKOV_VERSION }}
+        run: |
+          python3 -m pip install "checkov==${CHECKOV_VERSION}"
+          checkov --directory "pr/$TF_ROOT" --framework terraform --quiet --compact

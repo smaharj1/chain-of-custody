@@ -1,0 +1,24 @@
+{
+  "id": "Q-mode-routing-small-fix",
+  "class": "quality",
+  "setup": {
+    "fixture": "hello-loop",
+    "mode": null
+  },
+  "prompt": "The login button says 'Sign Inn'. Fix the typo.",
+  "graders": [
+    {
+      "type": "regex",
+      "target": "final",
+      "pattern": "/tech-lead"
+    },
+    {
+      "type": "regex",
+      "target": "final",
+      "pattern": "quick lane|small",
+      "must_match": true
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}

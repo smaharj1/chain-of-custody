@@ -1,0 +1,17 @@
+{
+  "schema": "intake.schema.v1",
+  "doc": [
+    "The fixed shape of a triaged intake item (report 5.3 rule 2, DEC-15). ONE file, read by every consumer: the CI validator (.claude/scripts/intake_validate.py),",
+    "the loop's stage 2 (loopctl/intake.py), the intake-triage agent's prompt and the intake workflow template. A test fails if any of them drifts from it.",
+    "Stage 1 (a tool-less model) answers with this shape; the answer is derived from text a stranger wrote, so it is untrusted until stage 2 (a deterministic",
+    "script, no model) has checked it against this file. Nothing is ever added to a plan from it without a human (H1, H7)."
+  ],
+  "types": ["feature", "bug", "deps", "chore"],
+  "severities": ["low", "medium", "high", "critical", "unknown"],
+  "required": ["type", "title", "problem", "acceptance"],
+  "fields": ["type", "title", "problem", "acceptance", "severity", "repro_steps", "duplicate_of"],
+  "limits": {"title": 120, "problem": 1500, "acceptance_item": 200, "acceptance_n": 10, "repro_item": 200, "repro_n": 10},
+  "max_bytes": 204800,
+  "label_prefix": "factory:",
+  "labels_never": ["go", "running", "halt", "requested", "plan-ok", "preview"]
+}
