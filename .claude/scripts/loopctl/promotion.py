@@ -9,6 +9,11 @@ come from a file a human (or a CI job) made from GitHub; loopctl cannot reach Gi
               "test_integrity_flags": 0, "ci_fix_attempts": 1, "escaped_defects": 0}, ...],
      "eval_pass_k": {"suite": "safety", "k": 3, "passed": true}}
 
+`source` inside the file is the file's OWN claim about where it came from, and loopctl cannot check it (it never calls GitHub). So it is kept
+only as `claimed_source` and a claim of anything but "github" or "ci" is refused; what loopctl reports as provenance is `origin`, which the LOADER
+sets from where it read the document (`file:<name>`), never from any key in the document. A report that says ELIGIBLE therefore also says which file
+it read and what that file claims, so a human can see that nothing here was verified against the server.
+
 The bar is the config's `promotion_*` keys (suggested defaults from the report: 10 consecutive draft PRs at L2 or L3, at most one
 reviewer-requested correctness change, no reverts, no test-integrity flags) plus a green pass^k eval and the evidence gate. The result
 is ADVICE for a human. This module never changes a level, a config key or a state: promotion is an H6 change (a reviewed commit of
@@ -48,8 +53,10 @@ def _int(v: Any) -> bool:
     return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10 ** 6
 
 
-def parse_facts(raw: str) -> Dict[str, Any]:
-    """The facts document, strictly parsed (duplicate keys, NaN and deep nesting are refused). Raises ValueError with a reason."""
+def parse_facts(raw: str, origin: str = "file") -> Dict[str, Any]:
+    """The facts document, strictly parsed (duplicate keys, NaN and deep nesting are refused). Raises ValueError with a reason. The result
+    carries `origin` (set here, from the caller's own knowledge of where `raw` was read: "file:<name>"), and the file's `source` claim moves
+    to `claimed_source`; no key of the document can set `origin` (unknown keys are refused)."""
     try:
         doc = common.strict_loads(raw, max_depth=6, max_bytes=2 * 1024 * 1024)
     except (ValueError, RecursionError) as exc:
@@ -72,6 +79,9 @@ def parse_facts(raw: str) -> Dict[str, Any]:
         for k in _PR_INTS:
             if k in p and not _int(p[k]):
                 raise ValueError("PR #%s: %s must be a whole number" % (p.get("number"), k))
+    doc = dict(doc)
+    doc["claimed_source"] = doc.pop("source", None)
+    doc["origin"] = common.clean_text(origin, 80) or "file"
     return doc
 
 
@@ -84,9 +94,11 @@ def evaluate(facts: Optional[Dict[str, Any]], bar: Bar, evidence_ok: bool) -> Di
     if facts is None:
         reasons.append("no facts were given")
         return {"eligible": False, "reasons": reasons, "stats": stats, "bar": bar.to_dict()}
-    if facts.get("source") not in SERVER_SOURCES:
+    claimed = facts.get("claimed_source", facts.get("source"))
+    stats.update({"origin": facts.get("origin", "file"), "claimed_source": common.clean_text(claimed, 30) if isinstance(claimed, str) else None})
+    if claimed not in SERVER_SOURCES:
         reasons.append("the facts say they come from %r; only %s count (the local event log is forgeable, CS-21)" % (
-            common.clean_text(facts.get("source"), 30), " or ".join(SERVER_SOURCES)))
+            common.clean_text(claimed, 30), " or ".join(SERVER_SOURCES)))
     counted = sorted((p for p in facts["prs"] if p["level"] in LEVELS_COUNTED), key=lambda p: p["number"])
     streak = []  # type: List[Dict[str, Any]]
     for p in reversed(counted):                                  # the trailing run of merged PRs: an unmerged one ends it

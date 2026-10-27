@@ -74,6 +74,25 @@ class OneSchema(unittest.TestCase):
             self.assertIn(tool, m.group(1).split(","), "stage 1 must run with %s denied" % tool)
         self.assertIn("{}", agent)                                                                # an empty answer is a correct answer
 
+    def test_the_workflow_fences_the_issue_with_a_nonce_made_after_the_fetch_and_denies_tools_twice(self):
+        # UN-12: the stranger's text must not be able to close its own fence, and no tool may be pre-approved.
+        wf = read(".claude/templates/github/workflows/intake.yml")
+        fetch, nonce, triage = wf.index("Fetch the issue as data"), wf.index("Make the fence nonce"), wf.index("- name: Triage with no tools")
+        self.assertLess(fetch, nonce)
+        self.assertLess(nonce, triage)
+        self.assertIn("secrets.token_hex", wf)
+        self.assertRegex(wf, r"FENCE_NONCE: \$\{\{ steps\.nonce\.outputs\.nonce \}\}")                  # reaches the step by env, not by ${{ }} in the script
+        run = wf[triage:wf.index("actions/upload-artifact")]
+        self.assertNotIn("${{ steps.nonce", run.split("run: |")[1])
+        self.assertIn("< .intake/input.txt", run)
+        self.assertNotIn("< .intake/issue.json", run)
+        self.assertIn("UNTRUSTED-ISSUE-BEGIN-$FENCE_NONCE", run)
+        self.assertIn("UNTRUSTED-ISSUE-END-$FENCE_NONCE", run)
+        self.assertIn('--allowedTools ""', run)
+        self.assertIn("[probe]", run)
+        self.assertIn("--permission-mode dontAsk", run)
+        self.assertIn("--disallowedTools", run)
+
     def test_the_agent_is_read_only_and_tool_less_at_launch(self):
         head = read(".claude/agents/intake-triage.md").split("\n---\n")[0]
         self.assertIn("\ntools: Read\n", head)
@@ -142,6 +161,11 @@ class Stage2(unittest.TestCase):
         for words in ("Ignore previous", "curl", "factory:go", "print your environment", "SYSTEM"):
             self.assertNotIn(words, outside)                                                      # nothing the stranger wrote is in a field an engineer is instructed by
         self.assertLess(len(json.dumps(d["ext"])), 8 * 1024)                                      # the plan's cap on `ext`
+
+    def test_the_drafts_risk_class_never_follows_the_strangers_severity(self):
+        for sev in ("low", "unknown", "medium", "high", "critical"):
+            clean, _ = intake.check(json.dumps(dict(POISON, severity=sev)))
+            self.assertEqual(intake.draft_item(intake.make_record(clean, "issue#12"))["riskClass"], "medium", sev)
 
     def test_the_cli_checks_without_writing_and_quarantines_only_on_write(self):
         lr = LoopRepo()

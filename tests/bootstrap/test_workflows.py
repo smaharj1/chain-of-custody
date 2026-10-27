@@ -116,7 +116,8 @@ class Intake(unittest.TestCase):
         for tool in ("Bash", "Read", "Grep", "Glob", "Edit", "Write", "WebFetch", "WebSearch", "Agent", "Skill", "Workflow"):
             self.assertIn(tool, denied)
         self.assertIn("--max-budget-usd", s)
-        self.assertIn("< .intake/issue.json", s)  # the untrusted text arrives on stdin, not as a file the model reads
+        self.assertIn("< .intake/input.txt", s)  # the untrusted text arrives on stdin (inside the nonce fence), not as a file the model reads
+        self.assertIn("cat .intake/issue.json", s)
         self.assertNotRegex(s, r"\$\{\{\s*github\.event\.issue")
 
     def test_both_jobs_run_the_default_branch_kit(self):

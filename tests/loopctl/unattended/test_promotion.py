@@ -75,6 +75,21 @@ class Evaluate(unittest.TestCase):
             self.assertTrue(any("forgeable" in r for r in res["reasons"]), src)
         self.assertTrue(self.ev(facts(source="ci"))["eligible"])
 
+    def test_provenance_is_set_by_the_loader_and_the_files_own_source_is_only_a_claim(self):
+        # UN-13: no key inside the document can say where it was read from.
+        got = promotion.parse_facts(json.dumps(facts()), origin="file:facts.json")
+        self.assertEqual((got["origin"], got["claimed_source"]), ("file:facts.json", "github"))
+        self.assertNotIn("source", got)
+        res = promotion.evaluate(got, BAR, True)
+        self.assertTrue(res["eligible"])
+        self.assertEqual((res["stats"]["origin"], res["stats"]["claimed_source"]), ("file:facts.json", "github"))
+        for key in ("origin", "claimed_source", "verified", "server_verified"):
+            with self.assertRaises(ValueError, msg=key):
+                promotion.parse_facts(json.dumps(facts(**{key: "github"})))
+        # a hand-built dict that already holds an `origin` is overwritten by the loader on the way in, never read from the file
+        self.assertEqual(promotion.parse_facts(json.dumps(facts()))["origin"], "file")
+        self.assertEqual(promotion.parse_facts(json.dumps(facts()), origin="x\ny")["origin"], "x y")
+
     def test_the_bar_comes_from_the_config_and_can_be_stricter(self):
         res = self.ev(facts(), bar=promotion.Bar(min_prs=12, max_correctness=0, max_reverts=0, max_integrity=0))
         self.assertTrue(res["eligible"])
