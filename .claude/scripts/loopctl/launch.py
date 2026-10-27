@@ -144,11 +144,18 @@ def check_version(repo: str, base_sha: Optional[str], rs: Any, env: Mapping[str,
 
 # -- environment ------------------------------------------------------------------------------------------------------------
 
+# Names `extra_allow` may never add, however a plan or the config asks (B3, RC-5): cloud, source-control, registry and container credentials.
+_HARD_CREDENTIALS = re.compile(r"^(AWS_|GH_|GITHUB_|GITLAB_|BITBUCKET_|GOOGLE_|GCLOUD_|CLOUDSDK_|AZURE_|ARM_|KUBE|DOCKER_|TF_VAR_|NPM_|NODE_AUTH|SSH_|GIT_|"
+                               r"ANTHROPIC_|CLAUDE|OPENAI_)", re.I)
+
+
 def child_env(env: Mapping[str, str], extra_allow: Sequence[str] = (), fake: bool = False,
               overrides: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
-    """The child's environment: an allowlist, never the shell's credentials (B3). `extra_allow` is verify_env_allow."""
+    """The child's environment: an allowlist, never the shell's credentials (B3). `extra_allow` is `verify_env_allow` plus the item's
+    `requiresEnv` (names a human approved at H1); a name in a credential family is never passed whatever asks for it."""
     out = {}  # type: Dict[str, str]
-    names = set(BASE_ENV) | set(AUTH_ENV) | set(TOOLCHAIN_ENV) | {n for n in extra_allow if isinstance(n, str)}
+    names = set(BASE_ENV) | set(AUTH_ENV) | set(TOOLCHAIN_ENV) | {n for n in extra_allow if isinstance(n, str) and re.match(r"^[A-Za-z_][A-Za-z0-9_]{0,63}\Z", n)
+                                                                    and not _HARD_CREDENTIALS.match(n)}
     for k, v in env.items():
         if k in names or k.startswith("KIT_") or (fake and k.startswith("FAKE_CLAUDE_")):
             out[k] = v
@@ -355,14 +362,15 @@ class ChildSpec(object):
 
 
 def build_argv(binary: str, spec: ChildSpec) -> List[str]:
-    """claude -p --agent <role> --agents <json> --settings <file> --allowedTools <rules> --permission-mode dontAsk
+    """claude -p --agent <role> --agents <json> --settings <file> --allowedTools <rule> <rule> ... --permission-mode dontAsk
     --max-budget-usd <remaining> --output-format json --session-id <uuid>   (report 11.1; the prompt arrives on stdin)."""
     if not runstate.valid_id(spec.session_id) or not _SAFE_ROLE.match(spec.role):
         raise LaunchRefused("invalid session id or role for a launch line")
     if not (isinstance(spec.budget_usd, (int, float)) and not isinstance(spec.budget_usd, bool) and 0 < spec.budget_usd < 1e6):
         raise LaunchRefused("the launch budget must be a positive number")
+    tools = [t for t in spec.allowed_tools if isinstance(t, str) and t and not t.startswith("-")]      # one argument per rule: a rule may hold spaces
     return [binary, "-p", "--agent", spec.role, "--agents", json.dumps({spec.role: spec.agent}, sort_keys=True, ensure_ascii=True),
-            "--settings", spec.settings_path, "--allowedTools", ",".join(spec.allowed_tools), "--permission-mode", "dontAsk",
+            "--settings", spec.settings_path, "--allowedTools"] + tools + ["--permission-mode", "dontAsk",
             "--max-budget-usd", "%.4f" % spec.budget_usd, "--output-format", "json", "--session-id", spec.session_id]
 
 

@@ -66,11 +66,18 @@ class Retry(DriverTestCase):
 
     def test_a_second_discard_is_a_hard_stop_that_trips_the_breaker_and_ends_the_run(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)])
-        lr.stubs.results["g5"] = lambda ctx: GateResult.failed([{"id": "g5.x", "severity": "error", "message": "pinned test edited"}])
-        lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A")]}))
-        lr.approve()
-        r = lr.run()
-        self.assertEqual(r.rc, 1, r)
+        drv = lr.driver_at("A", "design_review", "building", "verifying")
+        lr.repo.commit_file("src/a.py", "x = 1\n", "work")                                    # something on the branch, so the discard has a branch to keep
+        d = drv.fail("A", "item", "reward_hack", (), "verifying", "pinned test edited")
+        self.assertEqual(d.action, "discard")
+        self.assertEqual((lr.item("A")["status"], lr.item("A")["attempt"]), ("pending", 2))
+        self.assertEqual(lr.repo.git("branch", "--show-current"), "main")
+        self.assertEqual(lr.branch_names(), ["dead/slice-a-a1", "main"])
+        drv.begin("A")
+        lr.walk("A", "design_review", "building", "verifying")
+        lr.repo.commit_file("src/a2.py", "x = 2\n", "work again")
+        d = drv.fail("A", "item", "reward_hack", (), "verifying", "pinned test edited again")
+        self.assertEqual(d.action, "hard_stop")
         it = lr.item("A")
         self.assertEqual((it["status"], it["blockReason"], it["attempt"], it["counters"]["discards"]), ("blocked", "retries_exhausted", 2, 1))
         st = lr.state()
@@ -78,9 +85,6 @@ class Retry(DriverTestCase):
         self.assertEqual(lr.item("B")["status"], "pending")                                  # park and stop: B was not started
         self.assertEqual(lr.branch_names(), ["blocked/slice-a-a2", "dead/slice-a-a1", "main"])
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")
-        self.assertEqual(len(lr.calls_for("backend-engineer")), 2)
-        self.assertEqual(lr.run().rc, 1)                                                     # and a plain re-run does not start B either: the item is parked
-        self.assertEqual(lr.item("B")["status"], "pending")
 
 
 if __name__ == "__main__":

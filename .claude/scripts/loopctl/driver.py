@@ -1228,7 +1228,7 @@ class Driver(object):
         extra = {"brief": self.brief_path(iid, role) if role != "code-reviewer" and role != "security-reviewer" else None,
                  "report": self.report_path(iid, role) if kind == "engineer" else None, "attempt": attempt}
         spec = launch.ChildSpec(role, sid, prompt_path, self.repo, settings_path, agent, settings["permissions"]["allow"], allowance,
-                                launch.child_env(self.env, self.cfg.get_list("verify_env_allow"), self.fake), iid, stage, extra)
+                                launch.child_env(self.env, list(self.cfg.get_list("verify_env_allow")) + list(item.get("requiresEnv") or []), self.fake), iid, stage, extra)
         self.child_n += 1
         self.ev("launch", item=iid, role=role, stage=stage, session=sid, budget_usd=allowance)
         self.say("item %s: %s (%s), budget $%.4f" % (iid, role, stage, allowance))

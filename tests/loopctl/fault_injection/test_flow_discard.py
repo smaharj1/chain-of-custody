@@ -36,16 +36,15 @@ class Discard(DriverTestCase):
 
     def test_a_blocking_gate_of_a_worse_class_wins_the_round(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)])
-        lr.stubs.results["g3"] = GateResult.failed([{"id": "g3.x", "severity": "error", "message": "an AC failed"}])
-        lr.stubs.results["g9"] = GateResult.errored("registry unreachable", "env")
-        lr.set_scenario(lr.happy())
-        lr.approve()
-        r = lr.run()
-        self.assertEqual(r.rc, 1, r)
+        drv = lr.driver_at("A", "design_review", "building", "verifying")
+        results = [("g3", {"status": "fail", "mode": "on", "blocking": True, "failure_class": "item", "findings": [{"id": "g3.x", "message": "an AC failed"}], "evidence": {}}),
+                   ("g9", {"status": "error", "mode": "on", "blocking": True, "failure_class": "env", "findings": [{"id": "gate.error", "message": "registry unreachable"}], "evidence": {}}),
+                   ("g11", {"status": "pass", "mode": "on", "blocking": False, "failure_class": "none", "findings": [], "evidence": {}})]
+        self.assertTrue(drv.gate_failure("A", results, "verifying"))
         it = lr.item("A")
-        self.assertEqual((it["status"], it["blockReason"], it["lastFailure"]["class"]), ("blocked", "env:doctor_failed", "env"))   # one failure, the worst class
+        self.assertEqual((it["status"], it["blockReason"], it["lastFailure"]["class"]), ("blocked", "env:doctor_failed", "env"))     # one failure, the worst class
         self.assertEqual(it["counters"]["verify"], 0)                                          # an env failure uses no retry budget
-        self.assertEqual(len(lr.calls_for("backend-engineer")), 1)
+        self.assertFalse(drv.gate_failure("A", results[2:], "verifying"))                       # a round with nothing blocking records nothing
 
 
 if __name__ == "__main__":

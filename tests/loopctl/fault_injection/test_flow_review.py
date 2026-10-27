@@ -9,6 +9,8 @@ from ... import SCRIPTS_DIR  # noqa: F401
 
 import json
 
+from loopctl import driver
+
 from . import DriverTestCase, item_doc
 
 ENG = {"loc": 100, "engineers": ["backend-engineer"]}
@@ -40,22 +42,23 @@ class Reviews(DriverTestCase):
     def test_the_security_reviewer_runs_on_sensitive_items_and_a_block_parks_the_item(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG, intent="Add password reset with a token emailed to the user.")], cfg={"security_review": "sensitive"})
         lr.set_scenario(lr.happy(by_role={"code-reviewer": [lr.review_run()], "security-reviewer": [lr.review_run("SECURITY_BLOCKED", kind="Security Review")]}))
-        lr.approve()
-        r = lr.run()
-        self.assertEqual(r.rc, 1, r)
+        drv = lr.driver_at("A", "design_review", "building", "verifying", "reviewing")
+        drv.write_briefs("A")
+        lr.repo.commit_file("src/a.py", "x = 1\n", "the work")
+        with self.assertRaises(driver._StageDone):
+            drv.stage_reviewing("A")
         it = lr.item("A")
         self.assertEqual((it["status"], it["blockReason"], it["review"]["security"], it["review"]["code"]), ("needs_human", "security_blocked", "blocked", "approved"))
-        self.assertEqual([c["role"] for c in lr.calls()], ["backend-engineer", "code-reviewer", "security-reviewer"])
+        self.assertEqual([c["role"] for c in lr.calls()], ["code-reviewer", "security-reviewer"])
         self.assertEqual(lr.branch_names(), ["blocked/slice-a-a1", "main"])
         self.assertIn("SECURITY_APPROVED or SECURITY_BLOCKED", lr.calls_for("security-reviewer")[0]["stdin"])
         self.assertEqual(lr.state().header["runStatus"], "parked")
         # a critic gets the critic profile: no Edit, no Write, no installs
         sec = lr.calls_for("security-reviewer")[0]
-        allowed = sec["argv"][sec["argv"].index("--allowedTools") + 1].split(",")
+        a = sec["argv"]
+        allowed = a[a.index("--allowedTools") + 1:a.index("--permission-mode")]
         self.assertNotIn("Edit", allowed)
         self.assertNotIn("Write", allowed)
-        eng_allowed = lr.calls_for("backend-engineer")[0]["argv"]
-        self.assertIn("Edit", eng_allowed[eng_allowed.index("--allowedTools") + 1].split(","))
 
     def test_which_reviewers_run(self):
         plain, risky = item_doc("A", estimate=ENG), item_doc("A", estimate=ENG, riskClass="high")

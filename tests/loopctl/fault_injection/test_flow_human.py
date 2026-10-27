@@ -17,7 +17,7 @@ ENG = {"loc": 100, "engineers": ["backend-engineer"]}
 
 class Human(DriverTestCase):
     def test_per_feature_autonomy_pauses_after_each_item_until_a_checkpoint_is_approved(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)], cfg={"autonomy": "per-feature"})
+        lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG, requiresEnv=["B_NEEDS_THIS"])], cfg={"autonomy": "per-feature"})
         lr.set_scenario(lr.happy())
         lr.approve()
         r = lr.run("--json")
@@ -31,14 +31,14 @@ class Human(DriverTestCase):
         self.assertIn("approve checkpoint A", r.out + r.err)
         self.assertEqual((lr.item("B")["status"], len(lr.calls())), ("pending", n))
         self.assertEqual(lr.ctl("approve", "checkpoint", "A", "--by", "Pat").rc, 0)
-        r = lr.run("--json")
-        self.assertEqual(r.rc, 0, r)
-        self.assertEqual(json.loads(r.out)["merged_this_run"], ["B"])
-        self.assertEqual(lr.item("B")["status"], "merged")
+        r = lr.run("--json")                                                                 # the run goes on: B is next (and needs a variable nobody set)
+        self.assertEqual(r.rc, 1, r)
+        self.assertEqual((lr.item("B")["status"], lr.item("B")["blockReason"]), ("blocked", "needs_provisioning"))
+        self.assertEqual(len(lr.calls()), n)
         self.assertTrue([a for a in lr.state().d["approvals"] if a["scope"] == "checkpoint"][0]["used"])      # consumed once
 
     def test_a_human_gated_item_stops_at_awaiting_human_and_merges_only_after_the_approval(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG, riskClass="high"), item_doc("B", ["A"], estimate=ENG)])
+        lr = self.dr(items=[item_doc("A", estimate=ENG, riskClass="high")])
         lr.set_scenario(lr.happy())
         lr.approve()
         r = lr.run("--json")
@@ -55,7 +55,8 @@ class Human(DriverTestCase):
         self.assertEqual(lr.ctl("approve", "item", "A", "--by", "Pat").rc, 0)
         r = lr.run("--json")
         self.assertEqual(r.rc, 0, r)
-        self.assertEqual(json.loads(r.out)["merged_this_run"], ["A", "B"])
+        self.assertEqual(json.loads(r.out)["merged_this_run"], ["A"])
+        self.assertEqual(json.loads(r.out)["children"], 0)                                   # the merge needed no new child
         self.assertEqual(lr.item("A")["status"], "merged")
         self.assertTrue([a for a in lr.state().d["approvals"] if a["scope"] == "item"][0]["used"])
 

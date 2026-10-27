@@ -34,8 +34,15 @@ class LaunchLine(unittest.TestCase):
     def test_the_launch_line_is_fixed_and_golden(self):
         argv = launch.build_argv("/bin/claude", spec())
         self.assertEqual(argv, ["/bin/claude", "-p", "--agent", "backend-engineer", "--agents", '{"backend-engineer": {"description": "d", "prompt": "p", "tools": ["Read"]}}',
-                                "--settings", "/tmp/s.json", "--allowedTools", "Read,Bash(git status:*)", "--permission-mode", "dontAsk",
+                                "--settings", "/tmp/s.json", "--allowedTools", "Read", "Bash(git status:*)", "--permission-mode", "dontAsk",
                                 "--max-budget-usd", "1.2000", "--output-format", "json", "--session-id", "11111111-2222-3333-4444-555555555555"])
+
+    def test_a_tool_rule_that_looks_like_a_flag_is_dropped_and_each_rule_is_its_own_argument(self):
+        argv = launch.build_argv("/bin/claude", spec(allowed_tools=["Read", "--dangerously-skip-permissions", "", "Bash(python3 -m unittest:*)", 5]))
+        i = argv.index("--allowedTools")
+        self.assertEqual(argv[i + 1:i + 3], ["Read", "Bash(python3 -m unittest:*)"])
+        self.assertEqual(argv[i + 3], "--permission-mode")
+        self.assertNotIn("--dangerously-skip-permissions", argv)
 
     def test_nothing_from_the_plan_or_the_prompt_is_on_the_command_line(self):
         argv = launch.build_argv("/bin/claude", spec(agent={"description": "x", "prompt": "do `rm -rf` ; $(x)"}))
@@ -178,6 +185,14 @@ class Environment(unittest.TestCase):
                     "CLAUDECODE", launch.ENV_HARNESS, "GIT_ASKPASS", "DOCKER_HOST", "RANDOM_THING"):
             self.assertNotIn(bad, out)
         self.assertEqual(out["ANTHROPIC_API_KEY"], "key")
+
+    def test_names_a_plan_or_the_config_asks_for_pass_unless_they_are_credentials_of_a_cloud_or_a_forge(self):
+        env = {"PATH": "/x", "STRIPE_TEST_KEY": "sk_test_x", "DATABASE_URL": "postgres://localhost/t", "AWS_ACCESS_KEY_ID": "a", "AWS_PROFILE": "p", "GITHUB_TOKEN": "t",
+               "GH_TOKEN": "t", "SSH_AUTH_SOCK": "/s", "NPM_TOKEN": "n", "ANTHROPIC_API_KEY": "k", "KUBECONFIG": "/k", "bad name": "x", "GIT_ASKPASS": "y"}
+        asked = ["STRIPE_TEST_KEY", "DATABASE_URL", "AWS_ACCESS_KEY_ID", "AWS_PROFILE", "GITHUB_TOKEN", "GH_TOKEN", "SSH_AUTH_SOCK", "NPM_TOKEN", "KUBECONFIG", "bad name",
+                 "GIT_ASKPASS", "", 5, None]
+        out = launch.child_env(env, asked)
+        self.assertEqual(sorted(out), ["ANTHROPIC_API_KEY", "DATABASE_URL", "PATH", "STRIPE_TEST_KEY"])
 
     def test_verify_env_allow_names_pass_and_fake_variables_only_for_the_fake(self):
         env = {"PATH": "/x", "MY_DB_URL": "u", "FAKE_CLAUDE_SCENARIO": "{}", "OTHER": "o"}

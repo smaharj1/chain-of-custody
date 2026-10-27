@@ -99,28 +99,32 @@ class Canary(DriverTestCase):
     def test_a_child_whose_hooks_did_not_load_is_an_environment_failure_and_its_work_is_not_trusted(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)])
         lr.set_scenario(lr.happy(by_role={"backend-engineer": [dict(lr.eng_run("A"), canary=False)]}))
-        lr.approve()
-        r = lr.run()
-        self.assertEqual(r.rc, 1, r)
+        drv = lr.driver_at("A", "design_review", "building")
+        drv.write_briefs("A")
+        self.assertIsNone(drv.launch_child("A", "backend-engineer", "building", "do it"))
         it = lr.item("A")
         self.assertEqual((it["status"], it["blockReason"], it["lastFailure"]["reason"]), ("blocked", "env:canary_missing", "canary_missing"))
         self.assertEqual(lr.state().header["levelCap"]["level"], "L1")                          # an env failure caps the effective level
-        self.assertEqual([c["role"] for c in lr.calls()], ["backend-engineer"])                 # no reviewer, no B
+        self.assertEqual([c["role"] for c in lr.calls()], ["backend-engineer"])
         self.assertNotIn("src/a.py", lr.repo.git("ls-tree", "-r", "--name-only", "main"))      # the unproven work is kept on the branch, not merged
         self.assertAlmostEqual(lr.context().ledger().totals(run_id=lr.rs.read_run()["runId"])["usd"], 0.05)    # but its cost was recorded
+        lr.rs.release_lock(lr.session)
         r = lr.run()
         self.assertEqual(r.rc, 3, r)                                                            # and the cap holds until `approve env`
+        self.assertIn("level-cap", r.err)
 
 
 class Stall(DriverTestCase):
-    def test_a_stalled_child_is_killed_classed_transient_and_the_run_waits_for_a_human_because_its_cost_is_unknown(self):
+    def test_a_stalled_child_is_killed_with_what_it_leaked_classed_transient_and_the_run_waits_for_a_human_because_its_cost_is_unknown(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)], timing={"stall_s": 0.8})
         pidfile = os.path.join(lr.home, "child.pid")
         grand = os.path.join(lr.home, "grand.pid")
-        lr.set_scenario(lr.happy(by_role={"backend-engineer": [{"behavior": "stall", "seconds": 60, "pidfile": pidfile, "spawn_sleeper": grand}, lr.eng_run("A")]}))
-        lr.approve()
-        r = lr.run()
-        self.assertEqual(r.rc, 1, r)
+        lr.set_scenario(lr.happy(by_role={"backend-engineer": [{"behavior": "stall", "seconds": 60, "pidfile": pidfile, "spawn_sleeper": grand}]}))
+        drv = lr.driver_at("A", "design_review", "building")
+        drv.write_briefs("A")
+        with self.assertRaises(driver._Stop) as cm:
+            drv.launch_child("A", "backend-engineer", "building", "do it")
+        self.assertEqual(cm.exception.outcome, "budget")
         for f in (pidfile, grand):
             with open(f) as fh:
                 pid = int(fh.read())
@@ -130,12 +134,8 @@ class Stall(DriverTestCase):
         self.assertEqual((it["lastFailure"]["class"], it["lastFailure"]["reason"]), ("transient", "stall"))
         self.assertEqual(it["counters"]["transient"], 1)
         self.assertEqual(self.slept, [])
-        # the human accepts the unknown cost and unblocks: the second attempt of the same item finishes
-        lr.ctl("approve", "cost", "--by", "Pat")
-        lr.ctl("approve", "unblock", "A", "--by", "Pat", "--choice", "reset")
-        r = lr.run()
-        self.assertEqual(r.rc, 0, r)
-        self.assertEqual(lr.item("A")["status"], "merged")
+        self.assertEqual(lr.children_left(), [])
+        self.assertEqual(os.listdir(lr.rs.sessions_dir), [lr.session + ".json"])                # only the test's own registration is left
 
 
 class Guards(DriverTestCase):

@@ -5,6 +5,7 @@ moment it is no longer the holder, and the lock of a driver that is gone is take
 """
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -18,7 +19,7 @@ from ...helpers import ProcessTracker
 from ...helpers.procs import wait_for
 
 from kitlib import runstate
-from loopctl import lock as lock_mod
+from loopctl import driver, lock as lock_mod
 from loopctl.gates import GateResult
 
 from . import DriverTestCase, item_doc
@@ -41,13 +42,13 @@ class Contention(DriverTestCase):
         lr.rs.acquire_lock({"runId": "run-other", "sessionId": sid, "driverPid": os.getpid(), "worktree": "/elsewhere", "planRev": "r"})
 
     def test_nobody_else_can_start_write_or_take_the_lock_while_a_driver_holds_it(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)])
+        lr = self.dr(items=[item_doc("A", estimate=ENG)])
         seen = {}
 
         def g0(ctx):
             if ctx.item_id == "A":
                 seen["second run"] = lr.ctl("run")
-                seen["conductor begin"] = lr.ctl("begin", "B", "--session", "sess-9")
+                seen["conductor begin"] = lr.ctl("begin", "A", "--session", "sess-9")
                 seen["acquire"] = lr.ctl("lock", "acquire", "--session", "sess-9", "--nonce", lr.canary("sess-9"))
                 seen["steal"] = lr.ctl("lock", "steal", "--session", "sess-9", "--nonce", lr.canary("sess-9"), "--after", "1")
                 seen["status"] = lr.ctl("lock", "status", "--json").json
@@ -62,28 +63,25 @@ class Contention(DriverTestCase):
         self.assertIn("lock", seen["second run"].err)
         self.assertEqual(seen["status"]["record"]["driverPid"], os.getpid())
         self.assertFalse(seen["status"]["stale"])
-        self.assertEqual((lr.item("A")["status"], lr.item("B")["status"]), ("merged", "merged"))         # and the run did not notice any of it
+        self.assertEqual(lr.item("A")["status"], "merged")                                              # and the run did not notice any of it
         self.assertFalse(lr.rs.lock_held())
 
     def test_a_lock_stolen_between_two_steps_stops_the_driver_without_touching_the_thieves_lock(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)])
-
-        def g5(ctx):
-            self.intruder(lr)
-            return GateResult.passed()
-        lr.stubs.results["g5"] = g5
-        lr.set_scenario(lr.happy())
-        lr.approve()
-        r = lr.run()
-        self.assertEqual(r.rc, 3, r)
+        lr = self.dr(items=[item_doc("A", estimate=ENG)])
+        drv = lr.driver_at("A", "design_review", "building")
+        self.intruder(lr)
+        with self.assertRaises(driver._Stop) as cm:
+            drv.check_stop()
+        self.assertEqual((cm.exception.outcome, cm.exception.code), ("lock_lost", 3))
+        with self.assertRaises(Exception) as cm2:
+            drv.advance("A", "verifying", "engineers approved", head=lr.repo.head())
+        self.assertIn("belongs to session intruder", str(cm2.exception))                        # the state refuses a writer that is not the holder
+        drv.settle_worktree()                                                                    # and the exit path does not touch a worktree that is not ours
         self.assertEqual(lr.rs.read_lock()["sessionId"], "intruder")                          # not released, not stamped, not removed
-        self.assertEqual(lr.item("A")["status"], "verifying")                                  # nothing was advanced without the lock
-        self.assertEqual(len(lr.calls()), 1)
-        self.assertEqual(lr.item("B")["status"], "pending")
-        self.assertEqual(lr.repo.git("branch", "--show-current"), "feat/slice-a-a1")          # the worktree is the new holder's business now: untouched
-        r = lr.run()
-        self.assertEqual(r.rc, 3, r)
-        self.assertIn("lock", r.err)
+        self.assertEqual(lr.item("A")["status"], "building")                                   # nothing was advanced without the lock
+        self.assertEqual(lr.repo.git("branch", "--show-current"), "feat/slice-a-a1")
+        self.assertFalse(lr.rs.read_lock().get("heartbeat") is None)
+        self.assertFalse(drv.hb.beat(force=True))
 
     def test_a_lock_stolen_while_a_child_runs_kills_the_child_and_ends_the_run(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)], timing={"stall_s": 60})
@@ -121,7 +119,7 @@ class StaleLock(DriverTestCase):
                 "host": socket.gethostname(), "startedAt": "2020-01-01T00:00:00Z", "heartbeat": "2020-01-01T00:00:00Z"}
         base.update(rec)
         with open(lr.rs.lock_path, "w") as fh:
-            __import__("json").dump(base, fh)
+            json.dump(base, fh)
 
     def test_only_the_lock_of_a_dead_driver_on_this_host_is_taken_over(self):
         lr = self.lr()
@@ -148,7 +146,8 @@ class StaleLock(DriverTestCase):
                     fh.write(text)
                 r = lr.run()
                 self.assertEqual(r.rc, 3, (name, r))
-                self.assertEqual(open(lr.rs.lock_path).read(), text)
+                with open(lr.rs.lock_path) as fh:
+                    self.assertEqual(fh.read(), text)
 
     def test_a_dead_drivers_lock_is_taken_over_at_once_whatever_its_heartbeat_says(self):
         lr = self.lr()

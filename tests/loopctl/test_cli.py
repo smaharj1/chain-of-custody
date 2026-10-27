@@ -34,7 +34,7 @@ class SourceRules(unittest.TestCase):
                 self.assertNotIn(banned, src, "%s uses %s" % (rel, banned))
 
     def test_subprocess_is_only_used_where_it_is_expected_and_always_with_a_list(self):
-        allowed = {"cli.py", "context.py", "abort.py"}
+        allowed = {"cli.py", "context.py", "abort.py", "launch.py"}       # launch.py (Phase 4c) starts the child claude and one `ps`
         for rel, src in sources():
             tree = ast.parse(src)
             for node in ast.walk(tree):
@@ -49,12 +49,14 @@ class SourceRules(unittest.TestCase):
 
     def test_loopctl_never_names_the_claude_binary(self):
         for rel, src in sources():
+            if rel in ("launch.py", "driver.py"):            # the driver (Phase 4c) is the one process that launches claude (CS-2): only these two modules know it
+                continue
             for m in re.finditer(r"""["']claude["']|\bclaude -p\b|anthropic""", src):
                 self.fail("%s mentions launching claude: %r" % (rel, m.group(0)))
 
     def test_python39_syntax_and_no_third_party_imports(self):
         stdlib = {"__future__", "argparse", "ast", "calendar", "collections", "copy", "decimal", "glob", "hashlib", "hmac", "importlib", "json", "math",
-                  "os", "pkgutil", "re", "secrets", "shlex", "socket", "stat", "subprocess", "sys", "threading", "time", "types", "typing"}
+                  "os", "pkgutil", "re", "secrets", "shlex", "signal", "socket", "stat", "subprocess", "sys", "threading", "time", "types", "typing", "uuid"}
         for rel, src in sources():
             tree = ast.parse(src, feature_version=(3, 9))
             for node in ast.walk(tree):
@@ -65,7 +67,7 @@ class SourceRules(unittest.TestCase):
                 else:
                     continue
                 for n in names:
-                    self.assertTrue(n in stdlib or n in ("kitlib", "loopctl", "pr_prepare", "verify", "doctor", "doctorlib", "guards"), "%s imports %s" % (rel, n))
+                    self.assertTrue(n in stdlib or n in ("kitlib", "loopctl", "pr_prepare", "verify", "doctor", "doctorlib", "guards", "session_start"), "%s imports %s" % (rel, n))
 
     def test_every_git_call_goes_through_kitlib_gitutil(self):
         for rel, src in sources():

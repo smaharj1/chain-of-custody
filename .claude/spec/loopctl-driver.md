@@ -24,7 +24,7 @@ State is the only memory. Every iteration re-reads the item's record from `refs/
 | `pending` | checks `requiresEnv`, `Loop.begin`, cuts `feat/<slug>-a<n>` off the integration tip and switches to it | |
 | `designing` | writes `docs/features/<slug>/briefs/<domain>.md` from the plan item, WIP commit | `g0` first |
 | `design_review` | the plan item is the design (H1 and H2 approved it, slicing gave it a footprint): no child | |
-| `stubbing` | only if `gates.g2` is not off, `g2` is installed and `.claude/agents/acceptance-author.md` exists at the base sha: a child writes stubs and tests | `g2` |
+| `stubbing` | only if `gates.g2` is not off, `g2` is installed and the `acceptance-author` agent definition exists at the base sha (Phase 4b ships it): a child writes stubs and tests | `g2` |
 | `building` | one child per engineer role in `estimate.engineers`, in dependency order (infra, database, backend, app, admin-app), each with a brief and a report path; the report is read, then a WIP commit | |
 | `verifying` | | `g5 g1 g3 g6 g9 g11` (a blocking `g5` ends the round) |
 | `reviewing` | `code-reviewer`, and `security-reviewer` per `security_review`; the verdict line is read from each final message; the review is saved under `docs/features/<slug>/reviews/` | `g7` |
@@ -39,7 +39,7 @@ A gate sees `base_sha` = the item's branch point, so its diff is the item's own.
 
 ```
 claude -p --agent <role> --agents <{role: {description, prompt, tools, disallowedTools, model, effort}}> --settings <file>
-       --allowedTools <rules> --permission-mode dontAsk --max-budget-usd <remaining> --output-format json --session-id <uuid>
+       --allowedTools <rule> <rule> ... --permission-mode dontAsk --max-budget-usd <remaining> --output-format json --session-id <uuid>
 ```
 
 Fixed argv, `shell=False`, nothing from the plan or a report on it; the prompt is a file on stdin. The binary is `KIT_CLAUDE_BIN`, else `claude` on PATH.
@@ -90,7 +90,7 @@ Test seams (honoured only when the binary is the fake): `KIT_FAKE_CLAUDE_HARNESS
 
 ## Unverified on a live CLI (probes)
 
-`--session-id` accepted with `-p`; `--agents` with `--agent` and the definition's field names (V22); the settings `env` names for fork mode and background tasks (V18); `total_cost_usd` and the `subtype` values of the `-p` JSON result (IMP-25); whether the child's sandbox honours the `denyWrite` and `denyRead` entries (V5, V19, V24); that a SessionStart hook runs in `-p` and sees the passed session id. Each is in one place (`launch.py`) and the fake mirrors the assumed shape.
+`--session-id` accepted with `-p`; `--allowedTools` taking one argument per rule; `--agents` with `--agent` and the definition's field names (V22); the settings `env` names for fork mode and background tasks (V18); `total_cost_usd` and the `subtype` values of the `-p` JSON result (IMP-25); whether the child's sandbox honours the `denyWrite` and `denyRead` entries (V5, V19, V24); that a SessionStart hook runs in `-p` and sees the passed session id. Each is in one place (`launch.py`) and the fake mirrors the assumed shape.
 
 ## Not built here
 

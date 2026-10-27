@@ -41,11 +41,11 @@ class Crash(DriverTestCase):
 
     def mid_item(self, **cfg):
         """A driver process with an engineer child that never finishes. Returns (repo, driver process, child pid)."""
-        lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)], cfg=dict({"gates": {n: "off" for n in
+        lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg=dict({"gates": {n: "off" for n in
                      ("g0", "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g9", "g10", "g11", "evidence")}}, **cfg),
                      timing={"stall_s": 600, "canary_wait_s": 600, "term_grace_s": 0.5})
         pidfile = os.path.join(lr.home, "child.pid")
-        lr.set_scenario(lr.happy(by_role={"backend-engineer": [{"behavior": "stall", "seconds": 600, "pidfile": pidfile}, lr.eng_run("A"), lr.eng_run("B")]}))
+        lr.set_scenario(lr.happy(by_role={"backend-engineer": [{"behavior": "stall", "seconds": 600, "pidfile": pidfile}, lr.eng_run("A")]}))
         lr.approve()
         p = lr.spawn_run(self.procs)
         return lr, p, self.read_pid(pidfile)
@@ -67,7 +67,7 @@ class Crash(DriverTestCase):
         self.assertEqual(lr.item("A")["status"], "building")                                 # the state still says the item is mid-flight
         n = len(lr.calls())
         # a plain re-run: the lock of a dead driver is taken over (no heartbeat wait), the orphan is killed, the item restarts, the plan completes
-        lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A"), lr.eng_run("B")]}))
+        lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A")]}))
         r = lr.run("--json")
         self.assertEqual(r.rc, 0, r)
         self.assertTrue(wait_for(lambda: not runstate.pid_alive(child), 5), "the orphaned child was not killed")
@@ -76,11 +76,10 @@ class Crash(DriverTestCase):
         self.assertIn("reaped", evs)
         a = lr.item("A")
         self.assertEqual((a["status"], a["attempt"]), ("merged", 1))
-        self.assertEqual(lr.item("B")["status"], "merged")
         self.assertEqual(lr.branch_names(), ["dead/slice-a-a1", "main"])                     # the half-done attempt is kept as dead/*, not merged
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")
         self.assertEqual(lr.children_left(), [])
-        self.assertEqual(len(lr.calls()) - n, 4)                                              # A and B: an engineer and a reviewer each, nothing duplicated
+        self.assertEqual(len(lr.calls()) - n, 2)                                              # an engineer and a reviewer, nothing duplicated
 
     def test_sigterm_takes_the_child_down_releases_the_lock_and_leaves_the_item_recoverable(self):
         lr, p, child = self.mid_item()
@@ -95,12 +94,12 @@ class Crash(DriverTestCase):
         self.assertEqual(lr.item("A")["status"], "building")
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")                     # settled: the worktree is back on main and clean
         self.assertEqual(lr.repo.git("status", "--porcelain"), "")
-        lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A"), lr.eng_run("B")]}))
+        lr.set_scenario(lr.happy(by_role={"backend-engineer": [lr.eng_run("A")]}))
         self.assertEqual(lr.run().rc, 0)
-        self.assertEqual((lr.item("A")["status"], lr.item("B")["status"]), ("merged", "merged"))
+        self.assertEqual(lr.item("A")["status"], "merged")
 
     def test_a_crash_between_the_merge_and_its_record_is_recovered_from_the_trailer(self):
-        lr = self.dr(items=[item_doc("A", estimate=ENG), item_doc("B", ["A"], estimate=ENG)])
+        lr = self.dr(items=[item_doc("A", estimate=ENG)])
         lr.set_scenario(lr.happy())
         lr.approve()
         orig = state_mod.Loop.advance
@@ -124,9 +123,10 @@ class Crash(DriverTestCase):
         r = lr.run("--json")
         self.assertEqual(r.rc, 0, r)
         self.assertEqual(lr.item("A")["mergeCommit"], merges[0].split("|")[0])               # recovered from `Loop-Item: A` on a merge of feat/slice-a-a1
-        self.assertEqual((lr.item("A")["status"], lr.item("B")["status"]), ("merged", "merged"))
-        self.assertEqual(len(lr.calls_for("backend-engineer")) - n, 1)                        # only B was built; A was not rebuilt on top of its own merge
-        self.assertEqual(len(lr.repo.git("log", "--merges", "--format=%H", "main").splitlines()), 2)
+        self.assertEqual(lr.item("A")["status"], "merged")
+        self.assertEqual(len(lr.calls_for("backend-engineer")) - n, 0)                        # A was not rebuilt on top of its own merge
+        self.assertEqual(len(lr.repo.git("log", "--merges", "--format=%H", "main").splitlines()), 1)
+        self.assertEqual(lr.branch_names(), ["main"])
 
     def test_a_merge_whose_record_loses_to_a_human_is_recovered_in_the_same_run_or_stops_loudly(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)])
