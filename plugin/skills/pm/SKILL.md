@@ -85,7 +85,7 @@ You may be re-entered for:
 
 ## Shared plans: taking an item by hand
 
-When `remote_lock` is set, several people can work on one plan and a claim says who has an item (`${CLAUDE_PLUGIN_ROOT}/docs/loopctl-extras.md`). A human who takes an item by hand, outside a loop run, first runs `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim take ITEM --by NAME` and, after the merge, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim release ITEM --by NAME`. `claim list` shows who holds what. If `claim take` says the item is claimed, tell the user who has it; `--override` is their call, not yours. A claim is a label, not an approval.
+When `remote_lock` is set, several people can work on one plan and a claim says who has an item (`${CLAUDE_PLUGIN_ROOT}/docs/loopctl-extras.md`). A human who takes an item by hand, outside a loop run, first runs `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim take ITEM --by NAME` and, after the merge, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim release ITEM --by NAME`. Both push a ref, so they are human steps: print them as `HUMAN STEP: ...` and let the person run them in a plain terminal; the guard denies them to you. `claim list` and `claim show` are reads you may run. If `claim take` says the item is claimed, tell the user who has it; `--override` is their call, not yours. A claim is a label, not an approval.
 
 ## Communication Style
 

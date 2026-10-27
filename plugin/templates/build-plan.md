@@ -7,6 +7,8 @@ The build plan is the durable spine of a loop-engineering run. It has **two file
 
 The Planner writes both. The Orchestrator edits the JSON and regenerates the markdown.
 
+> **The v2 form.** With `loopctl` (opt-in) the plan is a tracked, immutable directory instead: `plan/plan.json` and one file per item in `plan/items/<id>.json` (template `${CLAUDE_PLUGIN_ROOT}/templates/plan-item.json`, spec `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`). Item status then lives on the `refs/loopctl/state/<plan>` git ref, not in a file. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl migrate-plan` converts a `build-plan.json`; the prose loop below keeps using the JSON shape.
+
 ---
 
 ## `build-plan.json` shape

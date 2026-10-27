@@ -27,6 +27,8 @@ Infrastructure apply, deploy and destroy are never automated at any level (H4). 
 | MCP is a tool plane | [mcp.md](mcp.md) |
 | Untrusted content and prompt injection | [untrusted-content.md](untrusted-content.md) |
 | Git escalation paths | [git-escalation.md](git-escalation.md) |
+| The guard suite: what each guard denies, who may run which `loopctl` command, what the guards cannot see | [guards.md](guards.md) |
+| Infrastructure CI: source check, preview plan, apply, drift | [infra-ci.md](infra-ci.md) |
 | Claude Code version floor, range, pin and canary | [version-policy.md](version-policy.md) |
 | Running an unknown repo's commands for the first time | [first-run-probe.md](first-run-probe.md) |
 
@@ -62,8 +64,8 @@ The doctor prints every term, whether or not it binds, with the reason. Out of t
 | L1 | Supervised local loop | nothing |
 | L2 | Push-branch | a bot identity (a machine-user PAT that expires within 14 days is allowed here); a clean credential audit that includes your own gh, git and SSH credentials; the sandbox configured fail-closed and attested; the deployment surface attested with no ungated deploy on a bot-pushable ref; a liveness canary; held-out tests run by the driver or only in CI; GitHub, with protection on the default branch |
 | L3 | Draft-PR factory | L2, plus the bot as a GitHub App; rulesets where the bot never bypasses; code-owner review; required checks (verify, evidence, secrets scan); CODEOWNERS covering the guardrail paths; split CI; no web tools for the conductor; managed settings or a credential-free container; for infrastructure projects, an apply gate the bot cannot trigger |
-| L4 | Async factory | L3, plus the evidence gate (a human-committed `docs/baseline/evidence.json`), a tested Claude Code version, a spend ceiling, loopctl installed |
-| L5 | Low-risk auto-merge | L4, plus the promotion bar attested, mutation testing on, and no deploy on main without a human gate |
+| L4 | Async factory | L3, plus the evidence gate (a human-committed `docs/baseline/evidence.json`), a tested Claude Code version, a spend ceiling (`run_budget_usd`), loopctl installed, a `notify_command` that works, and an external watchdog that has checked in ([../unattended.md](../unattended.md)) |
+| L5 | Low-risk auto-merge | L4, plus the promotion bar attested, mutation testing on, `merge_policy: auto-low-risk` with a non-empty `low_risk_paths`, and no deploy on main without a human gate. Auto-merge is not built: `merge_policy` stays advice and a person merges ([../loopctl-extras.md](../loopctl-extras.md)) |
 
 Two caps hold at every level. A credential the agent can reach caps at L1. A deploy that fires on a bot-pushable ref with no human gate caps at L1; one that fires on main with no human gate caps at L4.
 
@@ -73,9 +75,9 @@ It sees what is stored and what is configured. It cannot see what your running p
 
 ## What this kit ships and what only you can do
 
-Shipped and tested offline: the doctor, `ci_lint.py`, the SessionStart canary hook (`session_start.py`), the sandboxed first-run probe (`probe_run.py`), ruleset JSON, the CODEOWNERS template, OIDC trust policy examples, a devcontainer template, a managed-settings example, a sandbox snippet, an MCP lockdown example, a label-guard workflow, and two dry-run-by-default scripts for the GitHub side.
+Shipped and tested offline: the doctor, `ci_lint.py`, the guard suite (on by default, [guards.md](guards.md)), the SessionStart canary hook (`session_start.py`), the sandboxed first-run probe (`probe_run.py`), ruleset JSON, the CODEOWNERS template, OIDC trust policy examples, a devcontainer template, a managed-settings example, a sandbox snippet, an MCP lockdown example, the workflow templates ([split-ci.md](split-ci.md), [infra-ci.md](infra-ci.md)), and two dry-run-by-default scripts for the GitHub side.
 
-Only a human can: create the bot and its credential, apply the rulesets (`${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-boundary.sh`, dry run first), attest the deployment surface and the sandbox, install managed settings, pin the Claude Code CLI, run the canary, and commit the evidence file. Nothing in this kit merges, applies, deploys or runs `claude`. The live halves of the boundary fixtures (the real ruleset rejecting a bot push, a real CI job not creating a marker file) are verified by `${CLAUDE_PLUGIN_ROOT}/scripts/github/verify-boundary.sh` and by hand, and are listed as pending in the changelog fragment.
+Only a human can: create the bot and its credential, apply the rulesets (`${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-boundary.sh`, dry run first), attest the deployment surface and the sandbox, install managed settings, pin the Claude Code CLI, run the canary, and commit the evidence file. Nothing in this kit merges, applies or deploys. The one program that starts `claude` is the opt-in driver `loopctl run`, which a human starts from a plain terminal. No agent pushes: the push, the remote lock, a merge approval and every other grant of authority are human steps the conductor prints. The live halves of the boundary fixtures (the real ruleset rejecting a bot push, a real CI job not creating a marker file) are verified by `${CLAUDE_PLUGIN_ROOT}/scripts/github/verify-boundary.sh` and by hand, and are listed as pending in the changelog fragment.
 
 ## Files
 
@@ -86,5 +88,8 @@ Only a human can: create the bot and its credential, apply the rulesets (`${CLAU
 | `${CLAUDE_PLUGIN_ROOT}/scripts/session_start.py` | SessionStart: version check and liveness canary |
 | `${CLAUDE_PLUGIN_ROOT}/scripts/probe_run.py` | the sandboxed first-run probe |
 | `${CLAUDE_PLUGIN_ROOT}/scripts/github/` | `apply-boundary.sh`, `verify-boundary.sh`, `boundary.py` |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/guards/` | the guard suite: [guards.md](guards.md) |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/infra/`, `${CLAUDE_PLUGIN_ROOT}/templates/infra/` | source policy, gate checks and the `infra.*` lint rules; infrastructure workflows, OIDC, policy, MCP deny list: [infra-ci.md](infra-ci.md) |
 | `${CLAUDE_PLUGIN_ROOT}/templates/security/` | rulesets, CODEOWNERS, OIDC, IAM, devcontainer, managed settings, sandbox, MCP, gitignore |
+| `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/README.md` | which OIDC trust policy goes with which role, and why the two apply trusts are alternatives |
 | `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/label-guard.yml` | removes approval labels applied by non-approvers |

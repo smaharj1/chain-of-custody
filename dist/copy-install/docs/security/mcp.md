@@ -9,7 +9,7 @@ An MCP server is a set of tools the agent can call. A server that can deploy, ru
 - `.mcp.json`, `.claude-plugin/**` and `plugin/**` are H3 paths (a code owner reviews them) and are in the integrity glob for the test-integrity gate.
 - Ambient deploy plugins (for example a "deploy on AWS" plugin) are disabled in factory profiles.
 
-`.claude/templates/security/mcp-lockdown.settings.json` has the settings; `.claude/templates/security/mcp.json.example` is a `.mcp.json` with one named documentation server.
+`.claude/templates/security/mcp-lockdown.settings.json` has the settings. It is the same list as `.claude/templates/infra/mcp-deploy-deny.settings.json` (`mcp__*__run_script`, `mcp__*deploy*` and the other deploy-class patterns such as `*apply*`, `*destroy*`, `*terminate*`, `*provision*`, `*rollout*`, `*change_set*` and stack create, update and delete); keep one copy in step with the other. The guard denies the same classes at run time ([guards.md](guards.md)). `.claude/templates/security/mcp.json.example` is a `.mcp.json` with one named documentation server.
 
 ## What the doctor checks
 

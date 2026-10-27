@@ -7,7 +7,7 @@ one section per item; results: `docs/design/probe-results.template.md`).
 
 How to read the "Encoded in" lines: every path named exists in the 2.0.0 tree. A line that says *not
 built* names something the build did not make; a line that says *unverified* names platform behaviour no
-probe has confirmed yet. The probe results (`docs/design/probe-results.md`, from the template) are still
+probe has confirmed yet. The probe results (`docs/design/probe-results.md` *(planned: a person creates it from the template)*) are still
 to be filled in by a person with the real `claude`; nothing here has been confirmed.
 
 Unknown never widens trust. Where a probe could only make the kit *less* restrictive, the build stays
@@ -68,7 +68,7 @@ Summary:
 ### V2. Do the rules files load in subagents? **Closed: yes [docs] (P21).**
 
 - **Assumption.** Rules load in subagents, so path-scoped rules can carry invariants (R9).
-- **Encoded in.** Phase 0b prose. The kit ships no `.claude/rules/` directory; a project's own rules files, and the drafts `/retro` proposes (`.claude/rules/<name>.md`), rely on this.
+- **Encoded in.** Phase 0b prose. The kit ships no rules directory; a project's own rules files (`.claude/rules/<topic>.md`) and the drafts `/retro` proposes (`.claude/rules/<name>.md`) rely on this.
 - **If otherwise.** Not applicable; no probe is shipped.
 
 ### V3. Workflow per-agent `isolation` and `subagent_type` (P12)
@@ -366,7 +366,7 @@ Summary:
 
 ---
 
-### Other platform names the build relies on (no V number)
+## Other platform names the build relies on (no V number)
 
 - **Notification hooks** (`.claude/templates/notify/notify-hooks.settings.json`, `.claude/scripts/notify.py`).
   The events `Notification`, `StopFailure` and `PermissionRequest`, and the input fields the hook reads

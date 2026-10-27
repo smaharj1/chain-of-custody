@@ -17,7 +17,15 @@ Append `${CLAUDE_PLUGIN_ROOT}/templates/security/gitignore.snippet` to your `.gi
 
 ## Never in artifacts
 
-Secrets never appear in briefs, reports, evidence, events, pull request bodies, memory or primers. The events writer redacts known secret formats (`kitlib/redact.py`). Run gitleaks or trufflehog on every loop commit and every evidence artifact, both as a pre-commit hook and as a required CI check; `secrets.scanner` warns when neither is configured, and the required-checks rule in [rulesets.md](rulesets.md) expects a `secrets-scan` check.
+Secrets never appear in briefs, reports, evidence, events, pull request bodies, memory or primers. The events writer redacts known secret formats (`kitlib/redact.py`). What the redaction recognises (`kitlib/redact.py`):
+
+- **Key names are identifiers, not words.** `DB_PASSWORD=`, `API_SECRET=`, `STRIPE_SECRET_KEY=`, `db_password=`, `apiSecret=`, `dbPassword:`, `clientsecret=` and `SECRETKEY=` all match. The suffix list is closed (`_key _id _value _secret _token _password _hash _salt _string _data _b64`), so `token_budget_per_item: 150000`, `input_tokens: 12` and `auth: required` stay readable.
+- **Token shapes** are redacted wherever they appear: `ghp_`, `gho_`, `ghs_`, `github_pat_`, `xox[abprs]-`, `AKIA...`, `AIza...`, `sk_live_`, `rk_live_`, `npm_`, `sk-ant-`, `sk-proj-` / `sk-svcacct-` / `sk-admin-`, `glpat-`, `whsec_`, PyPI `pypi-AgEIcHlwaS5vcmc...` tokens and `AccountKey=`.
+- **A placeholder excuses a value only as the whole value** (`changeme`, `<token>`, `example-password-1`). A placeholder-looking word inside a longer secret does not.
+
+The secrets gate G11 (`loopctl/gates/g11_secrets.py`) applies the same rules to what an item adds. Unquoted values count in `.env*`, yaml, ini, cfg, conf, properties and toml files, and in `KEY=value` lines elsewhere (at least eight characters, with a letter and a digit). Findings that are specific to the gate: `g11.untracked-overflow` (blocks: more than 50 untracked files were not scanned), `g11.ignored-config` (an ignored `conftest.py`, `*.pth`, `sitecustomize.py`, `pytest.ini`, `tox.ini`, `setup.cfg`, `.coveragerc` or executable file in the item worktree, or a tracked file marked assume-unchanged or skip-worktree: it can run code or change what is tested without showing up in the diff) and `g11.ignored-incomplete` (warning: the ignored-file listing was too long to read). `.env`, `.env.*`, `.envrc` and dependency and cache directories are not scanned for this.
+
+Run gitleaks or trufflehog on every loop commit and every evidence artifact, both as a pre-commit hook and as a required CI check; `secrets.scanner` warns when neither is configured, and the required-checks rule in [rulesets.md](rulesets.md) expects a `secrets-scan` check.
 
 ## What the doctor checks
 

@@ -134,7 +134,7 @@ Do not write the model you ran on or a tool-call count into the report: you cann
 
 You may run `git status`, `git diff`, `git log`, `git branch --show-current`, `git show`. You may **NOT** run any write git operation: `git commit`, `git push`, `git checkout`, `git branch -D`, `git merge`, `git rebase`, `git reset`, `git stash`, `git tag`, `gh pr create`, `gh pr merge`. Surface those as suggestions in your report; the user runs them. The conductor makes any WIP commit that separates your diff from another engineer's; you never commit.
 
-A `PreToolUse` hook (`.claude/hooks/guard-main-edit.sh`) blocks `Edit`/`Write`/`NotebookEdit` to app source while on `main`/`master`. If it fires, STOP and return `Status: NEEDS_CLARIFICATION` — ask the Tech Lead/user to create a feature branch. Do not run `git checkout -b` yourself.
+The guard suite (`${CLAUDE_PLUGIN_ROOT}/scripts/guards/`, rule `guard-main-edit:shared-branch`) blocks `Edit`/`Write`/`NotebookEdit` to app source while on `main`, `master` or another protected branch. If it fires, STOP and return `Status: NEEDS_CLARIFICATION` — ask the Tech Lead/user to create a feature branch. Do not run `git checkout -b` yourself.
 
 ## 9. Library Docs
 

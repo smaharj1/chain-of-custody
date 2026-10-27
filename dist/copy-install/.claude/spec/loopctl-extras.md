@@ -1,6 +1,6 @@
 # loopctl extras: remote lock, claims, manifest, G10, L5 classifier
 
-**Status**: Phase 11b. Implements report sections 10.3 "Remote lock" and 19.7 "Lock (Remote)" (RC-10, RC-12), 9 G10 (CO-25), 16.1 row 11 (F-25 multi-human claims, F-26 reproducibility, L5 for low-risk classes), 6.2 L5 and 6.1 H3, B5 (RC-1), and DEC-3, DEC-33, DEC-38. IMP-1 forms: the remote lock, claims and G10 are **OPT-IN** and **evidence-gated**; the manifest is a command; the L5 classifier is **built, with enabling DESIGN-ONLY**. Operator guide: `docs/loopctl-extras.md`. Config keys: `kitlib/schema/11b-loopctl-extras.json` (and `gates.g10` in `4b-gates.json`, next to `gates.g4`).
+**Status**: built. Implements report sections 10.3 "Remote lock" and 19.7 "Lock (Remote)" (RC-10, RC-12), 9 G10 (CO-25), 16.1 row 11 (F-25 multi-human claims, F-26 reproducibility, L5 for low-risk classes), 6.2 L5 and 6.1 H3, B5 (RC-1), and DEC-3, DEC-33, DEC-38. IMP-1 forms: the remote lock, claims and G10 are **OPT-IN** and **evidence-gated**; the manifest is a command; the L5 classifier is **built, with enabling DESIGN-ONLY**. Operator guide: `docs/loopctl-extras.md`. Config keys: `kitlib/schema/11b-loopctl-extras.json` (and `gates.g10` in `4b-gates.json`, next to `gates.g4`).
 
 Nothing here merges anything. `merge_policy` is `human` unless the base sha's config says otherwise, no code path runs `gh pr merge` or merges to the default branch, and `guards/g_git.py` denies `gh pr merge` and every push of `refs/loopctl/*` to every agent.
 

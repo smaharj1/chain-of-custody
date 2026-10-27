@@ -45,6 +45,8 @@ cp -R dist/copy-install/. /path/to/your/project/
 
 ## Upgrade a copy install: `/migrate`
 
+Coming from 1.x? Read [Migrating to v2](migrating-to-v2.md) first: it lists the order of steps and what changes for you.
+
 `${CLAUDE_PLUGIN_ROOT}/scripts/migrate.py` upgrades an install to the kit in another folder. It never asks you to hand-merge a file the kit and you did not both change, and it never overwrites a file you changed.
 
 ```
@@ -57,7 +59,7 @@ Your install has no kit history, so the base of each three-way merge comes from 
 
 | Class | Files | Rule |
 |---|---|---|
-| kit | agents, skills, scripts, spec, templates, the protocols in `context/`, hooks, docs | not touched by you: replaced. Touched by you and the kit: `git merge-file` three-way merge; clean result written, conflict left for you. Touched by you only: kept. Deleted by you: stays deleted. No longer shipped: removed if you never changed it, kept and listed if you did |
+| kit | agents, skills, scripts, spec, templates, the protocols in `context/`, docs (the v1 `hooks/` scripts are no longer shipped) | not touched by you: replaced. Touched by you and the kit: `git merge-file` three-way merge; clean result written, conflict left for you. Touched by you only: kept. Deleted by you: stays deleted. No longer shipped: removed if you never changed it, kept and listed if you did |
 | seed | `CLAUDE.md`, `loop.config.md`, the domain primers, `.claude/rules/` | yours once installed. Added when missing, replaced only if still byte-identical to the base template |
 | frozen | `.claude/settings.json` | a guardrail: added when missing, never changed |
 
@@ -67,17 +69,19 @@ Your own files (a custom agent, a skill, a rule) are not in the manifest and are
 
 **Conflicts.** For each one your file is left alone and the merge result with markers is written to `.claude/.migrate/conflicts/<path>`. Resolve it in your file, then `migrate.py --repo . --resolved <path>`; or take the kit's version with `--take-kit <path>` (your copy is backed up). A resolution is remembered only while the file stays as you left it. When you are done, commit and delete `.claude/.migrate/`.
 
-**What changes in v2 for an existing install.** The five v1 commands became skills: an unmodified `.claude/commands/*.md` is removed, a modified one stays (move your edits into the skill of the same name, then delete it). Your `settings.json` and `loop.config.md` are untouched; keys added since use their defaults, and `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` shows what the new version expects.
+**What changes in v2 for an existing install.** The five v1 commands became skills: an unmodified `.claude/commands/*.md` is removed, a modified one stays (move your edits into the skill of the same name, then delete it). The v1 shell hooks (`guard-git.sh` and `guard-main-edit.sh`, in `.claude/hooks/`) were removed in 2.0.0; an unmodified copy is removed, a modified one stays and is listed. Your `settings.json` and `loop.config.md` are untouched; keys added since use their defaults, and `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` shows what the new version expects. **Your `settings.json` still points at the removed hooks until you wire the guards** (next section), and a hook whose script is missing guards nothing, so do that step straight after applying the migration.
 
-## Activating the v2 guards (copy install)
+## The v2 guards are on by default
 
-The v2 guards (one Python hook entry point, a manifest, a self-test) are staged in `.claude/settings.v2.json`. Your `.claude/settings.json` still holds whatever you had, so nothing changes under you. Switching is a human step, because settings are a guardrail:
+The guard suite (one Python hook entry point, a manifest, a self-test; `${CLAUDE_PLUGIN_ROOT}/docs/security/guards.md`) replaced the v1 shell hooks in 2.0.0.
+
+- **A new copy install** (`dist/copy-install/`) already has them: its `.claude/settings.json` is the generated v2 wiring plus an empty permission allowlist. `.claude/settings.v2.json` is a generated copy of the same wiring, kept so an upgrade has something to read.
+- **The plugin** gets the same hooks from `hooks/hooks.json`, generated from the same manifest.
+- **An existing install** keeps whatever its `.claude/settings.json` held, because settings are a guardrail and `migrate.py` never changes them. Switching is a human step:
 
 1. Read `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/wiring.py --print`. It is the hooks block generated from `${CLAUDE_PLUGIN_ROOT}/scripts/guards/hooks.manifest.json`.
-2. In `.claude/settings.json`, replace the `hooks` block with that one. Keep your `permissions`.
+2. In `.claude/settings.json`, replace the `hooks` block with that one. Keep your `permissions`. (Any entry that still names `guard-git.sh` or `guard-main-edit.sh` goes.)
 3. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py`, start a new session, and check that the `kit session_start: canary` line appears. No canary line means the hooks are not firing.
-
-The release notes say if a later release does this for you. The plugin gets the same hooks from `hooks/hooks.json`, generated from the same manifest.
 
 ## What a mode is now
 

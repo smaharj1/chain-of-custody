@@ -17,8 +17,9 @@ docs/features/*
 # Historical CHANGELOG entries naming files that were moved or renamed since.
 docs/design/loop-engineering.md
 
-# Human-committed evidence gate (IMP-1): absent in the kit repo by design, so docs may name it.
+# Human-committed evidence gate (IMP-1) and the baseline result files the human fills: absent in the kit repo by design.
 docs/baseline/evidence.json
+docs/baseline/results/run-N.json
 
 # The hello-loop fixture's kit-overlay primers name files of the fixture project (the run's root), not the kit repo.
 tests/helpers.py
@@ -37,7 +38,11 @@ docs/choosing-your-stack.md
 .claude/probe/*
 docs/design/probe-results.md
 
-# 6-infra-ci: the policy file the infra CI templates read, in the user's project (not in the kit repo).
+# 6-infra-ci and later: workflows a user installs from .claude/templates/ into their own .github/workflows/, and the
+# policy file the infra CI templates read (all in the user's project, not in the kit repo).
+.github/workflows/infra-*.yml
+.github/workflows/label-guard.yml
+.github/workflows/verify.yml
 .claude/infra-policy.json
 
 # 11a-bootstrap-ops: files /bootstrap writes in a user's project (never tracked in the kit repo).

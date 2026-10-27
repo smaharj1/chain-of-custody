@@ -18,7 +18,7 @@ Everything bootstrap writes that you review lives in `.claude/bootstrap/` (ignor
 
 ## Before you start
 
-- The kit is installed (`.claude/` is in the repository root). Bootstrap does not install it; `/init` and `/migrate` do that in the packaging phase.
+- The kit is installed (`.claude/` is in the repository root). Bootstrap does not install it: copy `dist/copy-install/` or install the plugin and run `/init` (`${CLAUDE_PLUGIN_ROOT}/docs/packaging.md`); `/migrate` upgrades an older install.
 - For a new project, a folder with no code is fine. Bootstrap asks you to run `git init -b main` and the first commit yourself, because `git_autonomy` is `none` by default.
 - Have `gh` installed and logged in (`gh auth login`) **only for the remote phase, and only in your own terminal**. The agent never has your GitHub credentials.
 
@@ -44,7 +44,7 @@ Everything bootstrap writes that you review lives in `.claude/bootstrap/` (ignor
 | `${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-labels.sh` | The factory labels; the setup script calls it, and you can run it alone | **you** |
 | `${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py` | The receipt | the agent |
 
-All human-run scripts refuse to start when `CLAUDECODE` is set (a Claude Code session). That is a tripwire, not a lock: `env -u CLAUDECODE` removes it, and then the script cannot tell. What actually keeps an agent out is that it holds no GitHub credential, the guards deny `gh` mutations, and you read the dry run before you add `--apply`.
+All human-run scripts refuse to start when `CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT` is set (a Claude Code session; `${CLAUDE_PLUGIN_ROOT}/scripts/humanonly.py`). That is a tripwire, not a lock: `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` removes it, and then the script cannot tell. What actually keeps an agent out is that it holds no GitHub credential, the guards deny `gh` mutations, and you read the dry run before you add `--apply`.
 
 ## The config plan
 
@@ -103,7 +103,7 @@ Bootstrap asks whether this is a solo project or a team, and the answer sets thr
 - **Approvers:** `factory_approvers` lists the logins whose labels count. `label-guard.yml` removes `factory:*`, `plan-ok` and `preview` labels applied by anyone else, and `intake.yml` checks the same list itself. The setup script sets the matching `FACTORY_APPROVERS` repository variable.
 - **CODEOWNERS:** path-scoped review by named people or teams (`${CLAUDE_PLUGIN_ROOT}/templates/security/CODEOWNERS.template`). It is not the approver list: a label is not path-scoped.
 
-Two people running the loop at once is a different problem. What exists today: the local run lock covers one machine. Between machines, claim a piece of work by hand: put `factory:running` on the tracking issue and assign yourself, and take both off when you stop. A shared lock that does this for you (an advisory ref on the remote, `refs/loopctl/lock/<plan>`) arrives with the loopctl extras as an opt-in feature. It is coordination, not a security boundary: anyone with write access to the repository can move that ref.
+Two people running the loop at once is a different problem. What exists today: the local run lock covers one machine. Between machines, claim a piece of work by hand: put `factory:running` on the tracking issue and assign yourself, and take both off when you stop. A shared lock that does this for you is `loopctl remote-lock`, with `loopctl claim` for one item (`${CLAUDE_PLUGIN_ROOT}/docs/loopctl-extras.md`): an advisory ref on the remote, `refs/loopctl/lock/<plan>`, opt-in and behind the evidence gate. Taking it is a push, so it is a human step. It is coordination, not a security boundary: anyone with write access to the repository can move that ref.
 
 ## When something goes wrong
 

@@ -11,7 +11,16 @@ Any added top-level dependency is listed at the checkpoint or in the pull reques
 - its name distance from popular packages (slopsquatting and typosquatting);
 - that its licence is on the allowlist.
 
-The gate itself is part of the verification gates (loopctl, later phase). Until then the reviewer does these checks and the pull request body lists new dependencies.
+The gate is G9 (`loopctl/gates/g9_supply.py`, [../../.claude/spec/loopctl-gates.md](../../spec/loopctl-gates.md)) and runs under `loopctl`. Without loopctl the reviewer does these checks and the pull request body lists new dependencies.
+
+G9 also looks at where a dependency comes from, not only whether it is new:
+
+| Finding id | Severity | What it catches |
+|---|---|---|
+| `g9.source-changed` | error (warn when `ext.g9.allow` names the package) | an existing dependency whose spec moves to a git, tarball, `file:`, `link:`, `portal:`, `owner/repo`, PEP 508 direct-reference, `{ git\|path\|url\|registry = ... }` or Gemfile `git:` / `path:` / `source:` source. A plain version bump is not flagged |
+| `g9.index-changed` | error | a changed package index or resolver setting: `--index-url`, `-i`, `--extra-index-url`, `--find-links`, `--trusted-host`, `--pre`, `--no-index` in a requirements file; `registry=` lines in `.npmrc`, `.yarnrc*`, `pip.conf`, `uv.toml`, `.cargo/config*`; `[tool.uv]` index keys and sources, `tool.poetry.source`, `tool.pdm.source`; Cargo `[patch]`, `[replace]` and `[source]`; Gemfile `source`; go.mod `replace`; npm `overrides` / `resolutions` / `pnpm.overrides` that point at a non-registry source |
+
+An `--index-url` reached through `-r other.txt` is seen only when `other.txt` is itself a changed `requirements*.txt`.
 
 ## Install hygiene
 
@@ -30,4 +39,4 @@ An SBOM (syft) and build provenance attestations at release time (H5).
 
 ## What the doctor does here
 
-The doctor does not scan dependencies. It checks the things that make the scanner trustworthy: no registry or publish token reachable by the agent (`cred.env.registry`, `cred.files.*`), deploy-class publish commands inventoried in CI (`deploy.surface`), and workflows pinned and least-privilege (`ci_lint.py`: `ci.floating-action-tag` warns when an action is pinned to a tag rather than a commit SHA).
+The doctor does not scan dependencies. It checks the things that make the scanner trustworthy: no registry or publish token reachable by the agent (`cred.env.registry`, `cred.files.*`), deploy-class publish commands inventoried in CI (`deploy.surface`), and workflows pinned and least-privilege (`ci_lint.py`: `ci.floating-action-tag` warns when an action is pinned to a tag rather than a commit SHA, and `ci.docker-uses-unpinned` flags a `docker://` image without a digest; see [split-ci.md](split-ci.md)).

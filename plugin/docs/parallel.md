@@ -1,6 +1,6 @@
 # Parallel items (experimental, off by default)
 
-By default the loop builds one item at a time. `parallel_mode: worktree` lets the driver (`runner: driver`) build up to `max_parallel` items at once, each in its own git worktree, and merge them one at a time. It is OPT-IN and **refuses to start until the evidence gate has passed** (three clean fixture runs and one real feature, `docs/baseline/evidence.json`): a parallel run multiplies every fault the serial loop can have, so the kit does not let it be switched on before the serial loop has earned trust. Whether it is actually faster, at an equal defect rate, is the phase's exit criterion and needs live runs (see "What nobody has measured").
+By default the loop builds one item at a time. `parallel_mode: worktree` lets the driver (`runner: driver`) build up to `max_parallel` items at once, each in its own git worktree, and merge them one at a time. It is OPT-IN and **refuses to start until the evidence gate has passed** (three clean fixture runs and one real feature, `docs/baseline/evidence.json`): a parallel run multiplies every fault the serial loop can have, so the kit does not let it be switched on before the serial loop has earned trust. Whether it is actually faster, at an equal defect rate, is the exit criterion for parallel mode and needs live runs (see "What nobody has measured").
 
 The design is in `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-parallel.md`; this page is what you need to run it.
 
@@ -47,7 +47,7 @@ Each item gets `.claude/worktrees/<slug>-a<n>` on its own branch `feat/<slug>-a<
 | An autonomy checkpoint | no new item starts; the others finish and are integrated; then the run pauses (exit 0) |
 | A worker crashes | internal error, exit 2; the others drain and **every worktree is removed** (its work is saved on the item's branch) |
 
-After a hard crash (kill -9, power) the next `loopctl run` cleans up first: leases of the dead driver are reclaimed, its worktrees removed with their uncommitted work saved on the item's branch, items that were in progress go back to pending and their branches are renamed `dead/*` (kept for `orphan_retention_days`). `loopctl parallel cleanup` (dry run) shows what it would remove, `--apply` does it when no run holds the lock.
+After a hard crash (kill -9, power) the next `loopctl run` cleans up first: leases of the dead driver are reclaimed, its worktrees removed with their uncommitted work saved on the item's branch, items that were in progress go back to pending and their branches are renamed `dead/*` (kept for `orphan_retention_days`). `loopctl parallel cleanup` (dry run) shows what it would remove; `--apply` does it when no run holds the lock, and is a human step (an agent does not run it).
 
 ## Money
 
@@ -55,7 +55,7 @@ Each child gets `--max-budget-usd` equal to the remaining budget divided by the 
 
 ## Rejecting work that other items were built on
 
-`loopctl parallel cascade <item>` shows (dry run) what rejecting an item would do; `--apply --by <you> --reason "..."` does it: the items merged after it that depend on it are reverted in reverse merge order on the local integration branch, their down-migrations run on local databases only (never a `lossy` one), and they go back to pending with a fresh attempt. Items still being built on it are invalidated: their worker stops at its next safe point and the work is kept on `dead/*`. If any affected item has reached `main` (or delivery is a pull request), nothing is reverted: you get a revert plan file to run by hand. Each item can be cascaded three times; the fourth is parked as `cascade_loop`.
+`loopctl parallel cascade <item>` shows (dry run) what rejecting an item would do; `--apply --by <you> --reason "..."` does it (a human step: you run it in a plain terminal): the items merged after it that depend on it are reverted in reverse merge order on the local integration branch, their down-migrations run on local databases only (never a `lossy` one), and they go back to pending with a fresh attempt. Items still being built on it are invalidated: their worker stops at its next safe point and the work is kept on `dead/*`. If any affected item has reached `main` (or delivery is a pull request), nothing is reverted: you get a revert plan file to run by hand. Each item can be cascaded three times; the fourth is parked as `cascade_loop`.
 
 ## The WorktreeCreate and WorktreeRemove hooks
 
@@ -65,4 +65,4 @@ After a rebase every deterministic gate (`g5 g1 g3 g6 g9 g11 docs g10 g4` and `g
 
 ## What nobody has measured
 
-The kit's offline tests prove the mechanics: admission, leases, the schema mutex, port allocation, integration order, the footprint check, the cascade, cleanup after a crash. They cannot prove that a parallel run is **faster than a sequential one with the same defect rate**, which is the phase's exit criterion and needs live runs on the pinned CLI. Until you have those numbers, treat `parallel_mode: worktree` as an experiment: run it on the fixture first, compare wall time, rescues and spend with a serial run, and keep `max_parallel` at 2.
+The kit's offline tests prove the mechanics: admission, leases, the schema mutex, port allocation, integration order, the footprint check, the cascade, cleanup after a crash. They cannot prove that a parallel run is **faster than a sequential one with the same defect rate**, which is the exit criterion for parallel mode and needs live runs on the pinned CLI. Until you have those numbers, treat `parallel_mode: worktree` as an experiment: run it on the fixture first, compare wall time, rescues and spend with a serial run, and keep `max_parallel` at 2.

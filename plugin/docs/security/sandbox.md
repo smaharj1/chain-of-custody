@@ -68,13 +68,13 @@ Hooks are guardrails, and a guardrail that did not load is worse than none becau
 2. compares `claude --version` with `claude_code_min` and `claude_code_tested_max` in `.claude/KIT_VERSION` ([version-policy.md](version-policy.md)): a loud banner at L0 to L2, and a **refusal at L3 and above** (no nonce is written);
 3. announces a HALT and keeps the returned context under 1 KiB.
 
-It is advisory and never blocks: every path exits 0. Before loopctl exists, the conductor's prose checks that the context line is there and the file matches; with no nonce it does not dispatch. loopctl enforces the same from Phase 4. The nonce file is writable by the agent's user unless the sandbox denies it, so the canary proves "the hook ran", not "the agent is honest".
+It is advisory and never blocks: every path exits 0. In the prose loop the conductor checks that the context line is there and the file matches; with no nonce it does not dispatch. With `loopctl` (`begin`, the driver) loopctl enforces the same. The nonce file is writable by the agent's user unless the sandbox denies it, so the canary proves "the hook ran", not "the agent is honest".
 
-Wiring (the release stage adds it to `settings.json`; this phase does not edit that file):
+Wiring: `.claude/settings.json` carries it as the `session-start-canary` entry of the guard wiring (generated from `${CLAUDE_PLUGIN_ROOT}/scripts/guards/hooks.manifest.json`, [guards.md](guards.md)); the plugin form has the same entry. The hook command is:
 
 ```
 "SessionStart": [{"hooks": [{"type": "command", "timeout": 10,
     "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/session_start.py\""}]}]
 ```
 
-`onFailure: block` on blocking-capable hooks, and the guards' own fail-closed handling, are Phase 2. `onFailure` has no effect on Stop, SubagentStop, TaskCompleted, TeammateIdle or async hooks, so those stay advisory and the loop re-validates them.
+`onFailure: block` on blocking-capable hooks, and the guards' own fail-closed handling, are part of the guard suite ([guards.md](guards.md)). `onFailure` has no effect on Stop, SubagentStop, TaskCompleted, TeammateIdle or async hooks, so those stay advisory and the loop re-validates them.

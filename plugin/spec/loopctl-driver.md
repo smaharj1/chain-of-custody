@@ -1,6 +1,6 @@
 # loopctl driver: `runner: driver`
 
-**Status**: Phase 4c, OPT-IN and experimental (IMP-1). Implements report sections 10.6, 11.1 (item 2), 11.2, 11.3, 11.6, 14.2 and the serial cases of 15 item 5 (`docs/design/review-2026-10.md`) under IMP-14, IMP-21, IMP-24 and IMP-25 (`docs/design/v2-implementation-decisions.md`). The state, the lock, the ledger, the failure taxonomy and the gate runner are Phase 4a (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`); the gates themselves are Phase 4b.
+**Status**: built, OPT-IN and experimental (IMP-1). Implements report sections 10.6, 11.1 (item 2), 11.2, 11.3, 11.6, 14.2 and the serial cases of 15 item 5 (`docs/design/review-2026-10.md`) under IMP-14, IMP-21, IMP-24 and IMP-25 (`docs/design/v2-implementation-decisions.md`). The state, the lock, the ledger, the failure taxonomy and the gate runner are `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`; the gates themselves are `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-gates.md`. Later layers attach to the driver and are specified in their own files: unattended runs (`${CLAUDE_PLUGIN_ROOT}/docs/unattended.md`), parallel items (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl-parallel.md`), the learning loop (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl-learning.md`) and the remote lock and claims (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl-extras.md`).
 
 `runner: sequential` (the default) means the prose loop runs the item and `loopctl run` only prints the hand-off. `runner: driver` means `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl run`, started once by a human, does the conductor's deterministic work and launches a child `claude -p` session for every piece of judgement work. **No agent ever launches `claude`** (CS-2): the exec guard denies it, and this is the one process that does.
 
@@ -96,9 +96,17 @@ Before every launch the driver asks the ledger for the REMAINING budget (`--max-
 - **A competing write** to the state is retried by the store with the driver's mutation re-applied; if the item moved on, the driver's step is refused and the run stops. Nothing a human wrote is overwritten.
 - **Checkpoints.** `autonomy: per-feature` pauses after every merge, `per-milestone` at a milestone boundary, and an infra item always. The pause is in the state (`header.parked = checkpoint`); the next start needs `loopctl approve checkpoint <item> --by <name>` (or `--choice stop`).
 
+## The four unattended hooks
+
+With `autonomy: unattended` the driver is otherwise unchanged; `unattended.Supervisor.attach` fills four hooks (`${CLAUDE_PLUGIN_ROOT}/docs/unattended.md`): `observers` see every event (for notifications and the progress record), `stop_hooks` are asked with HALT and the lock (a stall storm, a demotion, a run-level stall), `cost_hook` may price a child that printed nothing (an estimate, marked `estimated: true`) and `finishers` run once at the end of the run with its exit code (the closing message). The remote lock and claims attach through `stop_hooks` and `item_filters`.
+
+## Events a reader may rely on
+
+`stop`, `park`, `budget_stop`, `fail`, `checkpoint_answered`, `merged`, `demoted`, `cost_estimated`, `integration_verify`, `lock_taken_over`, `report_warning` (a soft trailer problem under `report_trailers: warn`: item, role, mode, kinds, count) and `gate` (with `ids`, the finding ids of the round), all in `<git-common-dir>/loopctl/events/loopctl.jsonl` with `source: driver`. Parallel runs add `admit`, `rebased`, `footprint_violation`, `drain` and the others listed in `loopctl-parallel.md`.
+
 ## Config read
 
-`runner`, `run_budget_usd`, `item_budget_usd`, `day_budget_usd`, `dispatch_timeout_min`, `max_platform_retries`, `max_transient_retries`, `platform_backoff_base_s`, `lock_stale_min`, `max_retries_per_item`, `max_consecutive_failures`, `max_design_rounds`, `autonomy`, `autonomy_level`, `security_review`, `model_profile`, `delivery`, `always_human_paths`, `roster`, `verify_*`, `verify_env_allow`, `gates.*`. No key is registered by this phase.
+`runner`, `run_budget_usd`, `item_budget_usd`, `day_budget_usd`, `dispatch_timeout_min`, `max_platform_retries`, `max_transient_retries`, `platform_backoff_base_s`, `lock_stale_min`, `max_retries_per_item`, `max_consecutive_failures`, `max_design_rounds`, `autonomy`, `autonomy_level`, `security_review`, `model_profile`, `delivery`, `always_human_paths`, `roster`, `verify_*`, `verify_env_allow`, `gates.*`, `report_trailers`, `parallel_mode`, `max_parallel`, `lease_ttl_s`, `pipeline_host`, `remote_lock`. The driver registers no key of its own; the other keys are owned by the layers above.
 
 Test seams (honoured only when the binary is the fake): `KIT_FAKE_CLAUDE_HARNESS=1` allows the driver to run with `CLAUDECODE` set (never with a real binary: the file must carry the fake's marker); `KIT_DRIVER_TEST_TIMING` is a JSON object of `poll_s stall_s wall_s canary_wait_s term_grace_s beat_s`.
 
@@ -108,4 +116,4 @@ Test seams (honoured only when the binary is the fake): `KIT_FAKE_CLAUDE_HARNESS
 
 ## Not built here
 
-Pushing a branch or opening a PR (the item stops at `awaiting_human`; `pr_prepare` prints the human's commands), parallel items (Phase 8), notifications and the unattended mode (Phase 7), a measured cost for a child that printed nothing, the architect and design-critic stages (the plan item is the design), the remote lock (Phase 11).
+Pushing a branch or opening a PR (the item stops at `awaiting_human`; `pr_prepare` prints the human's commands, and no agent pushes), a measured cost for a child that printed nothing (the unattended supervisor estimates it), the architect and design-critic stages (the plan item is the design), the Workflow pipeline host (`pipeline_host: workflow` is refused; design only, `${CLAUDE_PLUGIN_ROOT}/spec/pipeline-host-workflow.md`), and auto-merge (L5 is not built). Parallel items, the notifications and the unattended mode, the remote lock and claims are built as opt-in layers (see the status line).

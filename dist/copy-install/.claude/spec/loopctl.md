@@ -1,6 +1,6 @@
 # loopctl: the deterministic half of the loop
 
-**Status**: Phase 4a (core). Implements report sections 9, 10 and 15 item 5/6 (`docs/design/review-2026-10.md`) under IMP-1, 11, 20-22, 24, 25 (`docs/design/v2-implementation-decisions.md`). Gates are Phase 4b, the driver Phase 4c.
+**Status**: built (core). Implements report sections 9, 10 and 15 item 5/6 (`docs/design/review-2026-10.md`) under IMP-1, 11, 20-22, 24, 25 (`docs/design/v2-implementation-decisions.md`). The layers on top have their own files: gates `loopctl-gates.md`, the driver `loopctl-driver.md`, parallel items `loopctl-parallel.md`, the learning loop `loopctl-learning.md`, the remote lock, claims, G10 and the manifest `loopctl-extras.md`; unattended runs are in `docs/unattended.md`.
 
 `python3 .claude/scripts/loopctl <command>` is one Python 3.9 standard-library program that owns every *deterministic* decision the LLM conductor used to make from prose: state transitions, counters and caps, the lock, topological order, gate execution, the spend ledger, reconciliation, abort. The conductor keeps judgment: design, briefs, integration conflicts, summaries for humans.
 
@@ -8,8 +8,8 @@ It is **OPT-IN** (IMP-1). The V1 prose loop in `.claude/skills/orchestrate/SKILL
 
 | Tier | Commands | Needs |
 |---|---|---|
-| Read | `validate status render doctor audit report help version`, `lock status`, `evidence --check`, `cost --projection`, `reconcile --dry-run`, `migrate-plan --check\|--dry-run`, `run --dry-run`, `abort --dry-run` | nothing; they write nothing |
-| Tier 1 writes | `lock acquire\|release\|steal`, `migrate-plan --write`, `halt`, `resume` | nothing (a kill switch and a lock must always work) |
+| Read | `validate status render doctor audit report help version retro harness gaps merge-class`, `lock status`, `evidence --check`, `cost --projection`, `reconcile --dry-run`, `migrate-plan --check\|--dry-run`, `run --dry-run`, `abort --dry-run`, `unattended check\|status\|promotion\|intake`, `parallel check\|status\|leases\|--dry-run`, `calibration report\|scan`, `remote-lock status`, `claim list\|show`, `manifest show\|verify` | nothing; they write nothing |
+| Tier 1 writes | `lock acquire\|release\|steal`, `migrate-plan --write`, `halt`, `resume`, `unattended watch\|notify-test\|intake --write`, `parallel` (other than the reads), `calibration scan --write\|record`, `gaps --write`, `manifest write`, `remote-lock acquire\|renew\|release\|steal`, `claim take\|release` (the last two groups need `remote_lock` and are human only, below) | nothing (a kill switch and a lock must always work) |
 | Tier 2 writes | `approve begin advance fail clarify park gate spend run abort reconcile --apply` | `loopctl_tier2: true` in the loop.config **at the base sha** |
 
 Orthogonal to the tiers is **who may run** a command, one table in `kitlib/loopctl_table.py` that `loopctl/cli.py` and `guards/g_exec.py` both import:

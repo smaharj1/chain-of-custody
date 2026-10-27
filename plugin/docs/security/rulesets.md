@@ -46,6 +46,18 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/github/verify-boundary.sh --repo OWNER/NAME --run
 | `gh.squash-setting` | squash commits do not use the PR title and description |
 | `gh.bot-permissions` | the bot holds a permission it must not (see [bot-identity.md](bot-identity.md)) |
 
+### Which checks to require
+
+The doctor insists on `verify`, `evidence` and a secrets scan ([split-ci.md](split-ci.md) lists the workflows). The others depend on what you turned on:
+
+| Check | Require it when |
+|---|---|
+| `heldout` | `runner: sequential`. The held-out tests have no safe home inside a session there, so CI is where they run (`heldout.yml`, fed by `heldout-sync.yml`). Under `runner: driver` loopctl runs them itself and the job is a second opinion, so it is optional |
+| `infra-check` | the repository holds infrastructure code ([infra-ci.md](infra-ci.md)) |
+| `mutation`, `g10-product` | you set `gates.g4` or `gates.g10` to `on` (both are opt-in and evidence-gated) |
+
+Pin each required check to the GitHub Actions app (`gh.required-checks-source`). A check that is not required only advises.
+
 ## Platform requirements (private repositories)
 
 Every server-side control is a GitHub feature, so **L2 and above need a GitHub-hosted repository**; another forge stays at L1 until this table has rows for it. For a private repository the doctor reads visibility and plan from the API when it can, and otherwise asks you to attest. Unknown means unavailable.

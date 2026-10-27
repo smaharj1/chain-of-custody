@@ -40,7 +40,7 @@ Never assume a tool exists because it did on the maintainer's machine. The Orche
 
 ## `.claude/launch.json`
 
-The desktop app's preview reads `.claude/launch.json` to know how to start the dev server. It is **user-local** (paths, ports and commands differ per machine), so it is gitignored and never committed (`README.md` lists it with the other ignored files). When it exists, the browser-preview capability uses it; when it does not, the Orchestrator starts the app from `local-dev.md` instead. A future `/bootstrap` may generate it.
+The desktop app's preview reads `.claude/launch.json` to know how to start the dev server. It is **user-local** (paths, ports and commands differ per machine), so it is gitignored and never committed (`README.md` lists it with the other ignored files). When it exists, the browser-preview capability uses it; when it does not, the Orchestrator starts the app from `local-dev.md` instead. `/bootstrap` can generate it (`${CLAUDE_PLUGIN_ROOT}/docs/bootstrap.md`).
 
 ## Documentation tools are optional
 

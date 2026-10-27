@@ -61,7 +61,9 @@ The fingerprint is a hash of every deploy-surface file (the H3 floor list, workf
 | A deploy fires on main with gate `none` | **L4**: no auto-merge (L5 is refused) |
 | Everything gated or attested as not deploying | no cap |
 
-Release automation (release-please, changesets) is a deploy trigger on many repositories: its pull requests and tags are H5 and are never auto-merged at any level.
+Release automation (release-please, changesets) is a deploy trigger on many repositories: its pull requests and tags are H5 and are never auto-merged at any level ([../release-automation.md](../release-automation.md)).
+
+The operations workflows the kit ships (`intake`, `dependency-check`, `smoke`; [../ops.md](../ops.md)) are not deploys: they hold no cloud credential, open issues and comments only, and the `smoke` job's HTTP check only reads `SMOKE_URL`. The infrastructure apply workflow is a deploy by design and is attested like any other ([infra-ci.md](infra-ci.md)).
 
 ## Gating a deploy properly
 

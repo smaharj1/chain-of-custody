@@ -5,7 +5,7 @@ Per-project settings belong to the project (A28). The kit ships templates and ne
 | File | What it is | Used by |
 |---|---|---|
 | `interactive.settings.json` | An allow template with **named scripts only** (`Bash(npm run test:*)`, not `Bash(npm:*)`), an `ask` list for the git writes, the deny block, `enableAllProjectMcpServers: false`, and the sandbox profile | A human merging it into their `.claude/settings.json`. Replace the example scripts with the project's own |
-| `headless-child.settings.json` | The profile a driver child is started with, as `--settings <file>`: `permissions.defaultMode: dontAsk`, an explicit allow list, the deny block (which includes `Workflow`, RC-17), no project MCP servers, the sandbox on, `env: {}` for the driver to fill, and the kit hooks (a child does not inherit them, V5) | `loopctl run` (Phase 4c) |
+| `headless-child.settings.json` | The profile a driver child is started with, as `--settings <file>`: `permissions.defaultMode: dontAsk`, an explicit allow list, the deny block (which includes `Workflow`, RC-17), no project MCP servers, the sandbox on, `env: {}` for the driver to fill, and the kit hooks (a child does not inherit them, V5) | `loopctl run` (the driver) |
 | `critic.settings.json` | The same, for a critic child: Edit, Write, MultiEdit and NotebookEdit denied, no installs | the driver, for `code-reviewer`, `design-critic`, `security-reviewer` |
 | `deny-baseline.json` | The deny block alone | `python3 .claude/scripts/doctor.py` diffs the effective settings against it (`guards.deny-drift`) |
 
@@ -26,4 +26,4 @@ It is a typo guard (P25): permission deny rules are not a security boundary, and
 - **MCP lockdown.** The deny block already refuses the deploy-class patterns (`mcp__*__run_script`, `mcp__*deploy*`, `mcp__*apply*`, `mcp__*destroy*`, `mcp__*terminate*`, `mcp__*provision*`, `mcp__*rollout*`, `mcp__*change_set*`, create/update/delete stack); the fuller snippet (`enabledMcpjsonServers`, per-server denies) is `.claude/templates/security/mcp-lockdown.settings.json`, which carries the same list as `.claude/templates/infra/mcp-deploy-deny.settings.json`.
 - **Modes never edit settings.** They print a snippet for the human (CO-16).
 
-To make the staged v2 wiring live, merge the hooks block of `.claude/settings.v2.json` into `.claude/settings.json` in one reviewed commit and remove the v1 hooks; the doctor's `guards.wiring` check says when it is consistent.
+`.claude/settings.json` of a new copy install already carries this wiring (the hooks block of `.claude/settings.v2.json`). An upgraded project merges that block into its own `.claude/settings.json` in one reviewed commit, dropping any entry that names the removed v1 hooks `guard-git.sh` and `guard-main-edit.sh`; the doctor's `guards.wiring` and `guards.v1-residue` checks say when it is consistent.

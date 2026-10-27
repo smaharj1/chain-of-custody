@@ -1,6 +1,6 @@
 # Interactive PR delivery
 
-How a feature built in the interactive lane (`/pm`, `/architect`, `/tech-lead`) leaves your machine as a draft pull request, with the audit trail inside the PR. Nothing here is the autonomous loop: that comes later, with `loopctl`. Nothing here pushes: **you** run the last two commands.
+How a feature built in the interactive lane (`/pm`, `/architect`, `/tech-lead`) leaves your machine as a draft pull request, with the audit trail inside the PR. This page is the interactive lane. The autonomous loop (`loopctl`, the driver) builds the same audit block with `loopctl audit render` and stops an item that needs a pull request at `awaiting_human`; it does not push either. Nothing here pushes: **you** run the last two commands.
 
 The agent-facing version of this page is `${CLAUDE_PLUGIN_ROOT}/context/delivery.md`. This page is for the person who installs and runs it.
 
@@ -10,7 +10,7 @@ The agent-facing version of this page is `${CLAUDE_PLUGIN_ROOT}/context/delivery
 /tech-lead  ->  branch feat/<slug>  ->  one WIP commit per engineer  ->  code review on each
             ->  verify.py (build, lint, typecheck, tests, smoke; definition from the base sha)
             ->  pr_prepare.py init + fill  ->  pr_prepare.py prepare
-            ->  YOU run:  git push ...   and   gh pr create --draft --body-file ...
+            ->  HUMAN STEP, you run:  git push ...   and   gh pr create --draft --body-file ...
             ->  CI: verify (untrusted), optional claude-review (trusted)  ->  CI-fix if red (max 2)
             ->  YOU merge (squash, "PR title and description")
 ```
@@ -85,7 +85,7 @@ git push --set-upstream origin feat/<slug>
 gh pr create --draft --base main --head feat/<slug> --title '...' --body-file .../.claude/pr/<slug>.md
 ```
 
-When the branch is already pushed it prints a plain `git push origin feat/<slug>` and, with `--pr N`, `gh pr edit N --title ... --body-file ...`. It never prints a force push. With `delivery: local` it prints `git switch main` and `git merge --no-ff feat/<slug>`; with `push-branch`, only the push. Run them in your own terminal, or in the session with `!` at L0 and L1.
+When the branch is already pushed it prints a plain `git push origin feat/<slug>` and, with `--pr N`, `gh pr edit N --title ... --body-file ...`. It never prints a force push. With `delivery: local` it prints `git switch main` and `git merge --no-ff feat/<slug>`; with `push-branch`, only the push. Run them in your own terminal, or in the session with `!` at L0 and L1. The Tech Lead and the Orchestrator print each as a line `HUMAN STEP: <command>` and wait for you to say it is done; they never run it. From L2 up use a terminal outside the agent's session, because the push needs your own credentials.
 
 It refuses (exit 1, no commands) for: an unfilled `<fill: ...>` marker or empty audit field; Verify not PASS; an engineer or code review that is not approved; an acceptance criterion without evidence and PASS; Doc Delta or Primer Delta written as NONE without a `checked:` line, or dropped from an engineer report; a stale `Head sha`; an uncommitted tree; a saved verify result that is not a complete, trusted pass for this exact HEAD; a diff touching a path a human must review (migrations, `.github/`, `.claude/`, lockfiles, test and CI config, deploy files, plus `always_human_paths` from the base config) while the body says NONE; more CI-fix commits than `max_ci_fix_attempts`, or one that edits workflows, tests or lockfiles; a remote branch the local one has diverged from; a protected or malformed branch name; approver-only labels (`factory:*`, `plan-ok`, `preview`); a secret-shaped string in the body.
 
@@ -93,7 +93,7 @@ Result, schema `pr_prepare.v1` (`--json`): `ok`, `branch`, `base`, `base_sha`, `
 
 ## The audit block
 
-`${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md` is the template. The block records, per PR: feature, lane, delivery, branch, base and head shas, design-critic verdict, the verify run, security review, human-gated paths, CI-fix commits, waivers and the CI evidence link, then the engineers table, the acceptance matrix, Doc Delta, Primer Delta and notes. The PR body is the durable record (DEC-10): squash merges drop commit trailers, so set the repository's squash message to "PR title and description" (`${CLAUDE_PLUGIN_ROOT}/docs/security/rulesets.md`).
+`${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md` is the template. The block records, per PR: feature, lane, delivery, branch, base and head shas, design-critic verdict, the verify run, security review, human-gated paths, CI-fix commits, waivers and the CI evidence link, then the engineers table, the acceptance matrix, Doc Delta, Primer Delta and notes. Under `loopctl`, `loopctl audit render ITEM` builds the block from state, plan, gate results, reports, the spend ledger and git, and leaves a `<fill: ...>` marker where it does not hold the fact; `loopctl audit check ITEM --body FILE` validates a body with the same rules plus cross-checks against state and git. The Notes carry a `Manifest:` line: the hash of the reproducibility manifest that `loopctl manifest write ITEM --head <head sha>` stored for this head, and whether it still verifies against git (`Manifest: <hash> (seal and ... re-read from git at the recorded commits: they hold)`, or `... DOES NOT HOLD (...)`, or `Manifest: none written for this head` because the manifest is optional). Because the hash sits in the PR body, where the writer of the manifest cannot edit it, `loopctl manifest verify --expect-hash <hash>` has a trusted channel. `audit check` raises the error `audit.manifest-broken` when a stored manifest does not verify (or the hash in the Notes is not the stored one), and the warnings `audit.manifest-absent` (a manifest exists but the Notes have no `Manifest:` line) and `audit.manifest-unknown` (the Notes name a hash this machine has no manifest for). The PR body is the durable record (DEC-10): squash merges drop commit trailers, so set the repository's squash message to "PR title and description" (`${CLAUDE_PLUGIN_ROOT}/docs/security/rulesets.md`).
 
 ## Limits
 

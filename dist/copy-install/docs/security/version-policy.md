@@ -46,4 +46,4 @@ Neither tool runs `claude` inside a Claude Code session. `session_start.py` is t
 - **A canary on every CLI release** (a scheduled CI job): a hook-input schema snapshot, the liveness canary (a guard must fire on a planted call), the bypass corpus, and the safety eval cases at threshold 1.0. When it passes, it opens a pull request that bumps `claude_code_tested_max`; a human merges it.
 - **Schema drift fails closed**: a guard that sees an unknown hook-input shape denies, and the canary opens an issue.
 
-The canary and its CI job belong to Phase 2 and later; recording the result is pending-human. Until a human has run it, `claude_code_tested_max` stays `none`, which independently keeps L3 and above off.
+The canary job is not shipped as a workflow; running it and recording the result is pending-human ([../v2-pending-human.md](../v2-pending-human.md)). Until a human has run it, `claude_code_tested_max` stays `none`, which independently keeps L3 and above off.

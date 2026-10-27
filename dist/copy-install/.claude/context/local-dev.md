@@ -70,6 +70,7 @@
 <!-- exit $rc -->
 <!-- ``` -->
 <!-- Replace <demo-target-route> per item (its falsifiable acceptance assertion's route/endpoint). -->
+`python3 .claude/scripts/verify.py` runs this harness (`verify_run`) or boots the dev server itself (`verify_dev`) in its own process group and checks `verify_ports` before and after.
 
 ## Auto-Demo Navigation
 

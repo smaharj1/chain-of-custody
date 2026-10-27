@@ -32,7 +32,7 @@ This mode is for a person at the keyboard. **If this session was launched with a
 
 ## What it does not do
 
-- It does not write hooks. A plugin's `hooks/hooks.json` supplies the guards; a copy install has them in its settings (activating the v2 guards there is a separate human step, `docs/packaging.md`).
+- It does not write hooks. A plugin's `hooks/hooks.json` supplies the guards; a copy install has them in its settings (a new copy install ships the v2 wiring; an upgraded one wires it by hand, `docs/packaging.md`).
 - It does not touch the allow or ask lists. `/fewer-permission-prompts` can propose allows for the interactive lane; a human reviews them. The loop's headless allowlist is never built that way.
 - It does not set up GitHub. That is `/bootstrap`.
 

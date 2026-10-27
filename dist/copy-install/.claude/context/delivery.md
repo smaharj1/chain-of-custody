@@ -1,6 +1,6 @@
 # Delivery (interactive lane): branch, commit, verify, audit block, human push
 
-> Shared kit rule, not a project primer. Read by the Tech Lead (`/tech-lead`) and, for the design side, the Architect. Report: §16.1 Phase 3, §19.7 (trailers, CI-fix, revert detection, Doc Delta, labels), DEC-1, DEC-10, DEC-22, DEC-37, IMP-25. The autonomous `/orchestrate` loop does not use this file; its delivery moves to `loopctl` later.
+> Shared kit rule, not a project primer. Read by the Tech Lead (`/tech-lead`) and, for the design side, the Architect. Report: §16.1 Phase 3, §19.7 (trailers, CI-fix, revert detection, Doc Delta, labels), DEC-1, DEC-10, DEC-22, DEC-37, IMP-25. The autonomous `/orchestrate` loop does not use this file; with `loopctl`, an item that needs a pull request stops at `awaiting_human` and `pr_prepare.py` prints the same commands for a person to run (`docs/delivery.md`).
 
 ## The two dials
 
@@ -15,10 +15,10 @@ Both live in `.claude/loop.config.md` and are read **at the base sha** (the merg
 
 ## What never changes at any setting
 
-- **Agents never push, never open or merge a PR, never change GitHub settings, never create tags.** Not you, not an engineer. `git push` is blocked by the repo's guard hook; do not look for a way around it.
+- **Agents never push, never open or merge a PR, never change GitHub settings, never create tags.** Not you, not an engineer. `git push` and `gh pr create` are denied by the guards (`.claude/scripts/guards/`), for the conductor too; do not look for a way around it. The push, the remote lock and claims are **HUMAN STEPS**: you print them and wait.
 - You never run `git rebase`, `git reset`, `git stash`, `git merge`, `git commit --amend`, `--no-verify`, a force of any kind, or `gh` against GitHub. A fix is a new commit.
 - Engineers stay git-read-only (engineer-protocol §8). Only you commit, and only when `git_autonomy` is `branch+commit`.
-- `python3 .claude/scripts/pr_prepare.py` never pushes either. It validates, then **prints** the commands. The user runs them: in a terminal, or in this session with `!` at L0 and L1. From L2 up, use a terminal outside the agent's session, because the push needs the user's own credentials (`docs/security/credentials.md`).
+- `python3 .claude/scripts/pr_prepare.py` never pushes either. It validates, then **prints** the commands. The user runs them: in a terminal, or in this session with `!` at L0 and L1. You print each one as a line `HUMAN STEP: <command>` (the same wording the Orchestrator uses) and never run it yourself. From L2 up, use a terminal outside the agent's session, because the push needs the user's own credentials (`docs/security/credentials.md`).
 - Approver-only labels (`factory:*`, `plan-ok`, `preview`) are never yours to apply or request (label-guard removes them; RC-20).
 
 ## The flow, Lane A (full feature)
@@ -55,8 +55,8 @@ Both live in `.claude/loop.config.md` and are read **at the base sha** (the merg
    git push --set-upstream origin feat/<slug>
    gh pr create --draft --base main --head feat/<slug> --title '...' --body-file .claude/pr/<slug>.md
    ```
-   Show the user those lines and stop. If you change any code after the body is written, rerun verify and update `Head sha`; the check catches a stale block.
-8. **Hand-off message.** Say what was built per engineer (A.8 steps 1-3), list the human-gated paths (the user must read those closely), and give the commands. Record telemetry (tech-lead section C).
+   Show the user those lines, each as `HUMAN STEP: <command>`, and stop. If you change any code after the body is written, rerun verify and update `Head sha`; the check catches a stale block.
+8. **Hand-off message.** Say what was built per engineer (A.8 steps 1-3), list the human-gated paths (the user must read those closely), and give the commands as `HUMAN STEP:` lines. Record telemetry (tech-lead section C).
 
 Lane B (quick) is the same minus the design critic and reports: branch `quick/<short-name>`, `Lane` is `quick`, one engineer row with report `inline`, review `SKIPPED (trivial change)` only when the mechanical rule in B.3 holds.
 
