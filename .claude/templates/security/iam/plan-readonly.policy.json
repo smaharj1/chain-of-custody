@@ -22,9 +22,14 @@
     {
       "Sid": "NeverReadSecretValues",
       "Effect": "Deny",
-      "Action": ["secretsmanager:GetSecretValue", "ssm:GetParameter*", "kms:Decrypt", "s3:GetObject"],
-      "Resource": "*",
-      "Condition": {"StringNotEquals": {"aws:ResourceArn": ["arn:aws:s3:::acme-terraform-state/*"]}}
+      "Action": ["secretsmanager:GetSecretValue", "ssm:GetParameter*", "kms:Decrypt"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadObjectsOnlyInTheStateBucket",
+      "Effect": "Deny",
+      "Action": ["s3:GetObject"],
+      "NotResource": ["arn:aws:s3:::acme-terraform-state/*"]
     }
   ]
 }

@@ -34,24 +34,29 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           APPROVERS: ${{ vars.FACTORY_APPROVERS }}
         run: |
-          case "$LABEL" in
+          # Compare the way gate.py does (infra/gate.py): lower case, a leading @ ignored. GitHub treats label names and logins as
+          # case-insensitive, so a label spelled Factory:GO, or an approver listed as Alice while she acts as alice, must not slip past a
+          # byte-for-byte comparison.
+          label_lc="$(printf '%s' "$LABEL" | tr '[:upper:]' '[:lower:]')"
+          sender_lc="$(printf '%s' "$SENDER" | tr '[:upper:]' '[:lower:]' | sed 's/^@*//')"
+          case "$label_lc" in
             factory:requested) exit 0 ;;
             factory:*|plan-ok|preview) ;;
             *) exit 0 ;;
           esac
           approved=no
-          old_ifs="$IFS"; IFS=','
-          for a in $APPROVERS; do
-            a="$(echo "$a" | tr -d ' ')"
-            if [ -n "$a" ] && [ "$a" = "$SENDER" ]; then approved=yes; fi
+          set -f
+          for a in $(printf '%s' "$APPROVERS" | tr ',' ' '); do
+            a="$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]' | sed 's/^@*//')"
+            if [ -n "$a" ] && [ "$a" = "$sender_lc" ]; then approved=yes; fi
           done
-          IFS="$old_ifs"
+          set +f
           if [ "$approved" = yes ]; then
             echo "label $LABEL applied by approver $SENDER: kept"
             exit 0
           fi
           echo "label $LABEL applied by $SENDER, who is not in FACTORY_APPROVERS: removing"
           gh api -X DELETE "repos/$REPO/issues/$NUMBER/labels/$(printf '%s' "$LABEL" | sed 's/:/%3A/g')" || true
-          if [ "$LABEL" = "factory:go" ]; then
+          if [ "$label_lc" = "factory:go" ]; then
             gh api -X POST "repos/$REPO/issues/$NUMBER/labels" -f "labels[]=factory:requested" || true
           fi
