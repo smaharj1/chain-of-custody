@@ -84,6 +84,17 @@ class Decide(unittest.TestCase):
         d = failure.decide(r, "verifying", Cfg(), "transient", "flaky_test")
         self.assertEqual(d.action, "discard")            # third: treated as an item failure, and the verify cap is spent too
 
+    def test_an_escalated_transient_is_an_item_failure_judged_by_the_normal_retry_rule(self):
+        cfg = Cfg()
+        cfg.v["max_transient_retries"] = 0               # every transient escalates at once; the retry cap is 2
+        r = rec()
+        for n in (1, 2):
+            d = failure.decide(r, "verifying", cfg, "transient", "flaky_test")
+            self.assertEqual((d.fclass, d.action, d.to_status), ("item", "retry", "building"), n)        # recorded as item, and it still gets its retries (LC-11)
+            r["counters"] = d.counters
+        d = failure.decide(r, "verifying", cfg, "transient", "flaky_test")
+        self.assertEqual(d.action, "discard")            # only the cap exhausts it
+
     def test_item_failures_use_their_own_counter_per_loop(self):
         r = rec()
         d = failure.decide(r, "verifying", Cfg(), "item", "tests_failed", ["AC-A-1"])

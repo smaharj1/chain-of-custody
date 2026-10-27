@@ -60,6 +60,24 @@ class Status(LoopTestCase):
         self.assertIn("loopctl approve item A --by <you>", out)
         self.assertIn("loopctl resume", out)
 
+    def test_every_human_only_step_prints_a_copy_paste_line_with_the_head(self):
+        lr = self.lr(items=[item_doc("A"), item_doc("B")])
+        loop = lr.fast_start()
+        loop.begin("A", lr.session)
+        lr.walk("A", "design_review", "building", "verifying", "reviewing", "awaiting_human")
+        head = lr.item("A")["headSha"]
+        pend = lr.ctl("status", "--pending-human", "--json").json["pending"]
+        item = [p for p in pend if p["kind"] == "approve-item"][0]
+        self.assertEqual(item["human_step"], "HUMAN STEP: python3 .claude/scripts/loopctl approve item A --by <you>   (head %s)" % head[:12])
+        out = lr.ctl("status", "--pending-human").out
+        self.assertIn("HUMAN STEP: python3 .claude/scripts/loopctl approve item A --by <you>   (head %s)" % head[:12], out)
+        # every command it prints that is human-only is what the shared table calls human
+        from kitlib import loopctl_table
+        for p in pend:
+            if p.get("human_step"):
+                argv = p["human_step"].split("loopctl ", 1)[1].split("   (")[0].split()
+                self.assertEqual(loopctl_table.classify(argv)[0], "human", p["human_step"])
+
     def test_pending_human_covers_blocked_env_breaker_cost_and_revert_plans(self):
         lr = self.lr(items=[item_doc("A"), item_doc("B"), item_doc("C")], extra_cfg="max_retries_per_item: 0\nmax_consecutive_failures: 1\nrun_budget_usd: 1")
         loop = lr.fast_start()
