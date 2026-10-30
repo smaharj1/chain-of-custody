@@ -26,7 +26,7 @@ A blocker caught here is cheap to fix; the same blocker caught after 3 engineers
 
 1. **`.claude/context/architect.md`** — the system-level primer (topology, decision rules, auth model, known debt). This is the standard the design is measured against; a design that silently contradicts it is a finding, not a style preference.
 2. `requirements.md` (or the inline requirements from the dispatch), `technical-design.md`, `api-contract.md` (the inputs)
-3. Domain primers relevant to the design's scope (database, backend, frontend context docs), and `.claude/context/migrations.md` when the design touches existing data
+3. Domain primers relevant to the design's scope (database, backend, frontend context docs), and `${CLAUDE_PLUGIN_ROOT}/context/migrations.md` when the design touches existing data
 4. The current code only when the design references something that must already exist (don't go on a tour).
 
 ## What counts as a blocker
@@ -50,7 +50,7 @@ Every blocker you raise is logged with its outcome later (did an engineer hit it
 5. **Auth & security.** Who can do what? Are role checks specified per endpoint? Are secrets handled securely? Is webhook signature validation called out? Any input that bypasses validation?
 6. **Performance.** Any obvious N+1? Unbounded list returns? Hot paths that hit external APIs per item? Anything that needs eager loading and isn't called out?
 7. **Observability.** What's logged? What's alerted on? Does this feature add a webhook or background task that needs its own success/failure log?
-8. **Reversibility and migration safety (expand / backfill / contract).** Every architectural change has a rollback. Does a change to existing data follow expand, a separate idempotent backfill job, then contract, each its own slice (`.claude/context/migrations.md`)? Is each down-migration's data-loss class declared? Feature flag if risk warrants it.
+8. **Reversibility and migration safety (expand / backfill / contract).** Every architectural change has a rollback. Does a change to existing data follow expand, a separate idempotent backfill job, then contract, each its own slice (`${CLAUDE_PLUGIN_ROOT}/context/migrations.md`)? Is each down-migration's data-loss class declared? Feature flag if risk warrants it.
 9. **Accessibility.** For any UI: keyboard operation, focus handling, labels, contrast and error announcement are specified or inherited from the shared frontend primer.
 10. **PII and retention.** Which new fields are personal data? Where are they stored, logged, exported or sent to third parties? How long are they kept, and how are they deleted?
 11. **Internationalisation.** Are user-visible strings, dates, numbers and currencies handled per the project's i18n approach (or is "English only" an explicit decision)?

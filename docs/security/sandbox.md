@@ -4,7 +4,7 @@ The OS sandbox is what makes the agent's shell unable to do the things the crede
 
 ## The sandbox profile
 
-`.claude/templates/security/sandbox.settings.json` is a snippet to merge into your project (or, better, managed) settings:
+`${CLAUDE_PLUGIN_ROOT}/templates/security/sandbox.settings.json` is a snippet to merge into your project (or, better, managed) settings:
 
 | Setting | Value | Why |
 |---|---|---|
@@ -27,7 +27,7 @@ The snippet also repeats the file rules as `Read(...)` / `Edit(...)` deny rules 
 For a linked git worktree the common git directory is outside the worktree path (`.git` is a file there), so the relative `.git/...` entries do not reach it. Add the absolute paths for `hooks`, `config`, `info` and `loopctl/sessions`. The command prints the lines for this checkout and writes nothing; paste them into `.claude/settings.local.json`:
 
 ```
-python3 .claude/scripts/guards/wiring.py --sandbox-snippet
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/wiring.py --sandbox-snippet
 ```
 
 In a linked worktree the snippet also names the `.git` pointer file itself (`<worktree>/.git`, a file inside the project directory that reads `gitdir: <common>/worktrees/x`). Without that entry a sandboxed command can rewrite it, and every hook then computes a different git directory, with a session registry the agent wrote. It cannot be in the static template: in a plain checkout `.git` is a directory, and denying the directory would break git. The doctor row `sandbox.git-pointer` warns when `.git` is a file that is not denied (a warning, not a level cap) and is skipped in a plain checkout.
@@ -47,18 +47,18 @@ Until then the sandbox cap holds the level at **L1**. A devcontainer, container 
 
 ## Containers and separate OS users
 
-The sandbox is not the only way. A credential-free container, or a separate OS user that has none of your credentials, achieves B2 and B3 together (see [credentials.md](credentials.md)). `.claude/templates/security/devcontainer/devcontainer.json` drops all capabilities, forwards no credentials, mounts nothing and runs as an unprivileged user. `devcontainer.lint` flags credential mounts, privileged flags, host namespaces, a docker daemon, `${localEnv:...}` forwarding of credential variables and root.
+The sandbox is not the only way. A credential-free container, or a separate OS user that has none of your credentials, achieves B2 and B3 together (see [credentials.md](credentials.md)). `${CLAUDE_PLUGIN_ROOT}/templates/security/devcontainer/devcontainer.json` drops all capabilities, forwards no credentials, mounts nothing and runs as an unprivileged user. `devcontainer.lint` flags credential mounts, privileged flags, host namespaces, a docker daemon, `${localEnv:...}` forwarding of credential variables and root.
 
 ## Managed settings (L3 and above)
 
 Project settings are writable by the agent. Managed settings are not, if you install them as another user (V21 is the open question of whether the same OS user could override them: assume it can, so use a separate OS user or a container for L3).
 
-`.claude/templates/security/managed-settings.example.json` has the recipe:
+`${CLAUDE_PLUGIN_ROOT}/templates/security/managed-settings.example.json` has the recipe:
 
 - `allowManagedHooksOnly: true`: only the hooks in the managed file run.
 - `permissions.disableBypassPermissionsMode: "disable"`. This key is valid in any settings file; **only the managed copy survives a child's `--settings`**, so a child launched with `--settings '{"disableAllHooks":true}'` cannot undo it (RC-31).
 - `enableAllProjectMcpServers: false` and a deny list for `Workflow`, `mcp__*__run_script` and `mcp__*deploy*`.
-- The kit's hooks installed as managed hooks. The example's SessionStart command points at `/opt/chain-of-custody/scripts/session_start.py`: **copy `.claude/scripts/` to a directory the agent's user cannot write** and point the managed hooks there. A managed hook that runs a script from the repository runs whatever the agent put there.
+- The kit's hooks installed as managed hooks. The example's SessionStart command points at `/opt/chain-of-custody/scripts/session_start.py`: **copy `${CLAUDE_PLUGIN_ROOT}/scripts/` to a directory the agent's user cannot write** and point the managed hooks there. A managed hook that runs a script from the repository runs whatever the agent put there.
 
 Where managed settings live: `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS, `/etc/claude-code/managed-settings.json` on Linux. `managed.settings` reads them if it can see them; otherwise set `managed_settings_verified` (or `agent_isolation: container`).
 
@@ -66,7 +66,7 @@ Where managed settings live: `/Library/Application Support/ClaudeCode/managed-se
 
 Hooks are guardrails, and a guardrail that did not load is worse than none because everything looks fine. In untrusted `-p` contexts (a fresh clone, CI, cloud) project `permissions.allow` and subagent frontmatter hooks are not applied.
 
-`.claude/scripts/session_start.py` is the SessionStart hook that proves hooks load. It:
+`${CLAUDE_PLUGIN_ROOT}/scripts/session_start.py` is the SessionStart hook that proves hooks load. It:
 
 1. writes a random nonce for the session to `<git-common-dir>/loopctl/nonces/<session_id>` (through `kitlib.runstate`) and returns it in the session context as `canary session=<id> nonce=<hex>`;
 2. compares `claude --version` with `claude_code_min` and `claude_code_tested_max` in `.claude/KIT_VERSION` ([version-policy.md](version-policy.md)): a loud banner at L0 to L2, and a **refusal at L3 and above** (no nonce is written);
@@ -74,7 +74,7 @@ Hooks are guardrails, and a guardrail that did not load is worse than none becau
 
 It is advisory and never blocks: every path exits 0. In the prose loop the conductor checks that the context line is there and the file matches; with no nonce it does not dispatch. With `loopctl` (`begin`, the driver) loopctl enforces the same. The nonce file is writable by the agent's user unless the sandbox denies it, so the canary proves "the hook ran", not "the agent is honest".
 
-Wiring: `.claude/settings.json` carries it as the `session-start-canary` entry of the guard wiring (generated from `.claude/scripts/guards/hooks.manifest.json`, [guards.md](guards.md)); the plugin form has the same entry. The hook command is:
+Wiring: `.claude/settings.json` carries it as the `session-start-canary` entry of the guard wiring (generated from `${CLAUDE_PLUGIN_ROOT}/scripts/guards/hooks.manifest.json`, [guards.md](guards.md)); the plugin form has the same entry. The hook command is:
 
 ```
 "SessionStart": [{"hooks": [{"type": "command", "timeout": 10,

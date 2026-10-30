@@ -1,13 +1,13 @@
 # Settings templates (report section 7.2)
 
-Per-project settings belong to the project (A28). The kit ships templates and never overwrites a project's `settings.json` on upgrade (CO-33). Everything in this directory except this file is **generated** from `.claude/scripts/guards/hooks.manifest.json` and the sandbox profile by `python3 .claude/scripts/guards/wiring.py --write`; `--check` (run by the tests) fails when they drift. Do not edit them by hand.
+Per-project settings belong to the project (A28). The kit ships templates and never overwrites a project's `settings.json` on upgrade (CO-33). Everything in this directory except this file is **generated** from `${CLAUDE_PLUGIN_ROOT}/scripts/guards/hooks.manifest.json` and the sandbox profile by `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/wiring.py --write`; `--check` (run by the tests) fails when they drift. Do not edit them by hand.
 
 | File | What it is | Used by |
 |---|---|---|
 | `interactive.settings.json` | An allow template with **named scripts only** (`Bash(npm run test:*)`, not `Bash(npm:*)`), an `ask` list for the git writes, the deny block, `enableAllProjectMcpServers: false`, and the sandbox profile | A human merging it into their `.claude/settings.json`. Replace the example scripts with the project's own |
 | `headless-child.settings.json` | The profile a driver child is started with, as `--settings <file>`: `permissions.defaultMode: dontAsk`, an explicit allow list, the deny block (which includes `Workflow`, RC-17), no project MCP servers, the sandbox on, `env: {}` for the driver to fill, and the kit hooks (a child does not inherit them, V5) | `loopctl run` (the driver) |
 | `critic.settings.json` | The same, for a critic child: Edit, Write, MultiEdit and NotebookEdit denied, no installs | the driver, for `code-reviewer`, `design-critic`, `security-reviewer` |
-| `deny-baseline.json` | The deny block alone | `python3 .claude/scripts/doctor.py` diffs the effective settings against it (`guards.deny-drift`) |
+| `deny-baseline.json` | The deny block alone | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` diffs the effective settings against it (`guards.deny-drift`) |
 
 ## The deny block
 
@@ -17,13 +17,13 @@ It is a typo guard (P25): permission deny rules are not a security boundary, and
 
 ## Sandbox
 
-`sandbox.enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, no `docker` in `excludedCommands`, the network allowlist with `169.254.0.0/16` denied, `denyRead` on credential directories and `denyWrite` on the whole H6 write set: `.git/hooks`, `.git/config`, `.git/info`, the session registry `.git/loopctl/sessions`, every settings file, `.claude/hooks|scripts|agents|skills|commands|rules|templates`, `.claude/loop.config.md`, CI definitions, `.mcp.json`, CODEOWNERS (the list is `SANDBOX_DENY_WRITE` in `guards/paths.py`; docs/security/sandbox.md says what it does not cover). In a linked worktree add the absolute git-dir paths: `python3 .claude/scripts/guards/wiring.py --sandbox-snippet`. The source is `.claude/templates/security/sandbox.settings.json`; the key names follow the report and are unverified against a live CLI (V19). Mandatory from L2.
+`sandbox.enabled: true`, `failIfUnavailable: true`, `allowUnsandboxedCommands: false`, no `docker` in `excludedCommands`, the network allowlist with `169.254.0.0/16` denied, `denyRead` on credential directories and `denyWrite` on the whole H6 write set: `.git/hooks`, `.git/config`, `.git/info`, the session registry `.git/loopctl/sessions`, every settings file, `.claude/hooks|scripts|agents|skills|commands|rules|templates`, `.claude/loop.config.md`, CI definitions, `.mcp.json`, CODEOWNERS (the list is `SANDBOX_DENY_WRITE` in `guards/paths.py`; ${CLAUDE_PLUGIN_ROOT}/docs/security/sandbox.md says what it does not cover). In a linked worktree add the absolute git-dir paths: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/wiring.py --sandbox-snippet`. The source is `${CLAUDE_PLUGIN_ROOT}/templates/security/sandbox.settings.json`; the key names follow the report and are unverified against a live CLI (V19). Mandatory from L2.
 
 ## Not in these files
 
 - **Model pinning and fork mode.** `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (when a model profile is pinned) and the fork-mode and background-task variables go into the child's `env` block, per runner, written by the driver (report 11.3, 11.4). The template leaves `env` empty.
-- **Managed settings** for L3 and above (`allowManagedHooksOnly`, `permissions.disableBypassPermissionsMode`, the kit hooks as managed hooks): `.claude/templates/security/managed-settings.example.json`.
-- **MCP lockdown.** The deny block already refuses the deploy-class patterns (`mcp__*__run_script`, `mcp__*deploy*`, `mcp__*apply*`, `mcp__*destroy*`, `mcp__*terminate*`, `mcp__*provision*`, `mcp__*rollout*`, `mcp__*change_set*`, create/update/delete stack); the fuller snippet (`enabledMcpjsonServers`, per-server denies) is `.claude/templates/security/mcp-lockdown.settings.json`, which carries the same list as `.claude/templates/infra/mcp-deploy-deny.settings.json`.
+- **Managed settings** for L3 and above (`allowManagedHooksOnly`, `permissions.disableBypassPermissionsMode`, the kit hooks as managed hooks): `${CLAUDE_PLUGIN_ROOT}/templates/security/managed-settings.example.json`.
+- **MCP lockdown.** The deny block already refuses the deploy-class patterns (`mcp__*__run_script`, `mcp__*deploy*`, `mcp__*apply*`, `mcp__*destroy*`, `mcp__*terminate*`, `mcp__*provision*`, `mcp__*rollout*`, `mcp__*change_set*`, create/update/delete stack); the fuller snippet (`enabledMcpjsonServers`, per-server denies) is `${CLAUDE_PLUGIN_ROOT}/templates/security/mcp-lockdown.settings.json`, which carries the same list as `${CLAUDE_PLUGIN_ROOT}/templates/infra/mcp-deploy-deny.settings.json`.
 - **Modes never edit settings.** They print a snippet for the human (CO-16).
 
 `.claude/settings.json` of a new copy install already carries this wiring (the hooks block of `.claude/settings.v2.json`). An upgraded project merges that block into its own `.claude/settings.json` in one reviewed commit, dropping any entry that names the removed v1 hooks `guard-git.sh` and `guard-main-edit.sh`; the doctor's `guards.wiring` and `guards.v1-residue` checks say when it is consistent.

@@ -14,7 +14,7 @@ You operate at senior staff level. **Quality over speed.** Migrations are foreve
 
 ## Protocol
 
-**Read `.claude/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the database-specific overlay.
+**Read `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the database-specific overlay.
 
 ## Domain Required Reading
 
@@ -38,7 +38,7 @@ You operate at senior staff level. **Quality over speed.** Migrations are foreve
 
 Run commands from your project's schema/migration directory.
 
-The project's actual commands are documented in **`.claude/context/database.md` → Migration Location and Commands** — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, **derive the commands from the repo** (the ORM and migration tool in the package manifest, the migration config, CI), run them on the ephemeral/dev database named in your brief, and report what you used in `## Primer Delta` so the primer gets fixed. Examples of what you will find, not defaults to assume:
+The project's actual commands are documented in **`.claude/context/database.md` → Migration Location and Commands** — the primer is the source of truth (agent-derived and kept true per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`). If that section is still a template, **derive the commands from the repo** (the ORM and migration tool in the package manifest, the migration config, CI), run them on the ephemeral/dev database named in your brief, and report what you used in `## Primer Delta` so the primer gets fixed. Examples of what you will find, not defaults to assume:
 
 - Drizzle: generate, then migrate. Prisma: `migrate dev`. Alembic: `upgrade head`, `downgrade -1`, `upgrade head`.
 - Then the project's lint.
@@ -51,7 +51,7 @@ Whatever the tool, the sequence is **up, down, up** on the ephemeral database, p
 - Status fields: use string types with allowed values + transitions documented in the model docstring. Avoid DB-level enums unless the project convention dictates otherwise.
 - Money fields: use fixed-precision types (integer cents or decimal). Never floats.
 - Down migration must work — test it locally (up, down, up) before declaring done.
-- **Declare the down-migration's data-loss class** in the report: `none`, `lossy-recoverable` or `lossy` (`.claude/context/migrations.md`). A `lossy` down is human-gated; call out the irreversibility explicitly.
+- **Declare the down-migration's data-loss class** in the report: `none`, `lossy-recoverable` or `lossy` (`${CLAUDE_PLUGIN_ROOT}/context/migrations.md`). A `lossy` down is human-gated; call out the irreversibility explicitly.
 - Don't break existing data. **Expand, then backfill, then contract**, each its own item: your migration is the expand (additive) or the contract (after the backfill is verified). A backfill is a **separate, batched, idempotent, resumable job**, never a loop inside the migration file. If your brief asks for more than one stage in a single migration, return `NEEDS_CLARIFICATION` unless the design bounds the table as tiny.
 - Match conventions in your primer + the most recent migration file.
 

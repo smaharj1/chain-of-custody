@@ -5,14 +5,14 @@
 **Authored by**: Tech Lead
 **Date**: <YYYY-MM-DD>
 **Iteration**: 1
-**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md` (default 2). One cap name across the kit. There is no tool-call budget (`.claude/context/engineer-protocol.md` section 4).
+**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md` (default 2). One cap name across the kit. There is no tool-call budget (`${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` section 4).
 **Report path**: `docs/features/<slug>/reports/<engineer>.md` (write your own report here; the conductor does not re-type it)
 
 ---
 
 ## Required Reading (in order)
 
-1. `.claude/context/engineer-protocol.md` (the shared rulebook — read first)
+1. `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` (the shared rulebook — read first)
 2. `.claude/context/<your-domain>.md` (your primer — Tech Lead: replace this with the actual path, e.g. `backend.md`)
 3. `.claude/context/shared-frontend.md` (frontend engineers only)
 4. `docs/features/<slug>/requirements.md` *(loop mode: requirements arrive inline in the dispatch prompt instead — treat them as equivalent)*

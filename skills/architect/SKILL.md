@@ -28,12 +28,12 @@ You can also be invoked for **design rethinks** when an engineer escalates block
 1. **`.claude/context/architect.md`** — your system-level primer (infra, topology, decision rules, known debt). **Read this every session.**
 2. `.claude/CLAUDE.md` (already loaded)
 3. The engineer-domain primers in `.claude/context/` for awareness — read in detail only when designing for that domain.
-4. `.claude/context/primer-protocol.md` — you are one of the roles that writes primers (Phase A.0 + Phase C); this is how.
-5. `.claude/context/migrations.md` — when the design touches a table that already holds data.
+4. `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md` — you are one of the roles that writes primers (Phase A.0 + Phase C); this is how.
+5. `${CLAUDE_PLUGIN_ROOT}/context/migrations.md` — when the design touches a table that already holds data.
 
 ## Phase A.0 — Primer Readiness (before you design)
 
-Check the primers for the domains this feature touches. If any is still a template (placeholder comments, `TODO(primer)`), **derive it now** from the codebase per `.claude/context/primer-protocol.md`, then design. Do **not** ask the user to fill it in — assume they can't. Ten minutes of reading the repo buys every later role a real primer; designing against a template is how a design ends up describing a codebase that doesn't exist.
+Check the primers for the domains this feature touches. If any is still a template (placeholder comments, `TODO(primer)`), **derive it now** from the codebase per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`, then design. Do **not** ask the user to fill it in — assume they can't. Ten minutes of reading the repo buys every later role a real primer; designing against a template is how a design ends up describing a codebase that doesn't exist.
 
 ## Phase A — Design Dialogue (the brainstorm)
 
@@ -68,10 +68,10 @@ When the user signals the design is finalized:
 
 ### Write `docs/features/<slug>/technical-design.md`
 
-Use the template at `.claude/templates/technical-design.md`. Sections:
+Use the template at `${CLAUDE_PLUGIN_ROOT}/templates/technical-design.md`. Sections:
 
 - Overview
-- Data model changes (per-table schema diff, with notes for the Database Engineer). Any change to a column or table that already holds data follows **expand → backfill → contract** (`.claude/context/migrations.md`): three separate slices, with the data-loss class of each down-migration declared in the Migration Notes
+- Data model changes (per-table schema diff, with notes for the Database Engineer). Any change to a column or table that already holds data follows **expand → backfill → contract** (`${CLAUDE_PLUGIN_ROOT}/context/migrations.md`): three separate slices, with the data-loss class of each down-migration declared in the Migration Notes
 - Slices (see below)
 - API endpoints (high-level — full shapes go in `api-contract.md`)
 - Frontend impact (per-app summary)
@@ -88,15 +88,15 @@ The design ends with a `## Slices` section: an ordered DAG of **PR-sized slices*
 - at most 2 engineers preferred (3 at most), at most 1 migration;
 - at most `max_item_loc` estimated changed lines (default 400 in `.claude/loop.config.md`); a slice you size `L` must be split;
 - described by what it touches (domains, paths, whether it changes the schema or dependencies) and a risk note (auth, payments, uploads, user input);
-- marked **human-gated** when it touches a path a human must review before merge (migrations, auth or payments code, infrastructure, `.github/`, `.claude/`, lockfiles or dependency manifests, test or CI config, deploy files; the list is in `.claude/context/delivery.md`). The Tech Lead lists those paths in the PR audit block, and the reviewer reads them first.
+- marked **human-gated** when it touches a path a human must review before merge (migrations, auth or payments code, infrastructure, `.github/`, `.claude/`, lockfiles or dependency manifests, test or CI config, deploy files; the list is in `${CLAUDE_PLUGIN_ROOT}/context/delivery.md`). The Tech Lead lists those paths in the PR audit block, and the reviewer reads them first.
 
-Order them walking skeleton first, then thicken. Expand, backfill and contract of one migration are three slices. The format is in `.claude/templates/technical-design.md`.
+Order them walking skeleton first, then thicken. Expand, backfill and contract of one migration are three slices. The format is in `${CLAUDE_PLUGIN_ROOT}/templates/technical-design.md`.
 
-Slices are also the delivery units. By default the interactive lane ships a feature as one PR (`delivery` in `.claude/loop.config.md`; `.claude/context/delivery.md`). If slices should merge separately, say so in the slice order: the Tech Lead then stacks one branch and PR per slice, each based on the previous slice's branch. Name the docs the feature must update (README, API reference, environment variables, runbook) in the design, so each brief can carry them and the engineers' `## Doc Delta` has something to be checked against.
+Slices are also the delivery units. By default the interactive lane ships a feature as one PR (`delivery` in `.claude/loop.config.md`; `${CLAUDE_PLUGIN_ROOT}/context/delivery.md`). If slices should merge separately, say so in the slice order: the Tech Lead then stacks one branch and PR per slice, each based on the previous slice's branch. Name the docs the feature must update (README, API reference, environment variables, runbook) in the design, so each brief can carry them and the engineers' `## Doc Delta` has something to be checked against.
 
 ### Write `docs/features/<slug>/api-contract.md`
 
-Use the template at `.claude/templates/api-contract.md`. For each endpoint specify:
+Use the template at `${CLAUDE_PLUGIN_ROOT}/templates/api-contract.md`. For each endpoint specify:
 
 - Method + path
 - Auth requirement (role)
@@ -125,7 +125,7 @@ A blocker caught by the critic costs minutes. The same blocker caught after engi
 
 ## Phase C — Update Primers (when applicable)
 
-If your design introduces a new pattern (a new layer, convention, or technique) that engineers will follow on future work, **update the relevant primer** at `.claude/context/<domain>.md` to capture it (per `.claude/context/primer-protocol.md`). Add a canonical exemplar pointer once the engineer ships the new pattern. Drift between primers and reality is the enemy.
+If your design introduces a new pattern (a new layer, convention, or technique) that engineers will follow on future work, **update the relevant primer** at `.claude/context/<domain>.md` to capture it (per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`). Add a canonical exemplar pointer once the engineer ships the new pattern. Drift between primers and reality is the enemy.
 
 Same contract in escalation mode (Phase E): if the rethink changes a durable pattern, the primer changes with it.
 
@@ -152,7 +152,7 @@ When the user invokes you because an engineer escalated:
 - Decisions are **explicit and justified**, not handwaved.
 - **Tradeoffs are acknowledged**, not hidden — every option has pros/cons.
 - API contract is **precise enough** that backend + frontend can implement independently without talking to each other.
-- Migration plan is **reversible** (or irreversibility is called out explicitly) and follows **expand → backfill → contract**, each stage its own slice, each down-migration's data-loss class declared (`.claude/context/migrations.md`).
+- Migration plan is **reversible** (or irreversibility is called out explicitly) and follows **expand → backfill → contract**, each stage its own slice, each down-migration's data-loss class declared (`${CLAUDE_PLUGIN_ROOT}/context/migrations.md`).
 - **Edge cases listed**, not glossed.
 - "Future work" boxes if scope creeps; don't silently expand.
 - For library/framework choices: ground in current docs (a documentation tool if available, else `WebFetch`), not memory.

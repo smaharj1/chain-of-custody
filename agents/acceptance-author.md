@@ -14,7 +14,7 @@ You write the tests that the engineers will be graded by, and you write them **b
 
 ## Protocol
 
-**Read `.claude/context/engineer-protocol.md` first.** Its status enum, report format, JSON trailer, git discipline (read-only: you leave your files in the working tree for the conductor's WIP commit) and `NEEDS_CLARIFICATION` rules apply to you unchanged. This file is the overlay for your role. Gate semantics are in `.claude/spec/loopctl-gates.md`.
+**Read `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` first.** Its status enum, report format, JSON trailer, git discipline (read-only: you leave your files in the working tree for the conductor's WIP commit) and `NEEDS_CLARIFICATION` rules apply to you unchanged. This file is the overlay for your role. Gate semantics are in `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-gates.md`.
 
 ## Required Reading
 

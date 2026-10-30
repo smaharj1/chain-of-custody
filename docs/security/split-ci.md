@@ -20,11 +20,11 @@ A pull request is code execution in CI. No job that runs pull-request-supplied c
 | `label-guard` | `pull_request_target` / `issues`, `labeled` | nothing | `issues: write`, `pull-requests: write` | none | removes `factory:*`, `plan-ok` and `preview` labels applied by anyone outside `factory_approvers` |
 | `drift` | schedule | `main` | `contents: read`, `id-token: write`, `issues: write` | OIDC read-only role | `plan -detailed-exitcode`; opens an issue on drift; never applies |
 
-The kit ships these workflows in `.claude/templates/github/workflows/`: `label-guard.yml`, `verify.yml`, `claude-review.yml`, `heldout.yml` with `heldout-sync.yml`, `mutation.yml`, `g10-product.yml`, `intake.yml`, `dependency-check.yml` and `smoke.yml`. The infrastructure workflows (`infra-check`, `infra-plan`, `infra-apply`, `infra-drift`) are in `.claude/templates/infra/workflows/` and are described in [infra-ci.md](infra-ci.md). All are written to pass `ci_lint.py`; copy them, pin each action to a commit SHA, and see [../ops.md](../ops.md) for the three operations workflows.
+The kit ships these workflows in `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/`: `label-guard.yml`, `verify.yml`, `claude-review.yml`, `heldout.yml` with `heldout-sync.yml`, `mutation.yml`, `g10-product.yml`, `intake.yml`, `dependency-check.yml` and `smoke.yml`. The infrastructure workflows (`infra-check`, `infra-plan`, `infra-apply`, `infra-drift`) are in `${CLAUDE_PLUGIN_ROOT}/templates/infra/workflows/` and are described in [infra-ci.md](infra-ci.md). All are written to pass `ci_lint.py`; copy them, pin each action to a commit SHA, and see [../ops.md](../ops.md) for the three operations workflows.
 
 ## ci_lint.py
 
-`python3 .claude/scripts/ci_lint.py [--repo DIR] [--json]` lints `.github/workflows` with the kit's restricted YAML reader. Exit 0 means no errors and nothing unparsed; warnings do not fail. A workflow the reader cannot parse is reported as **`ci.unparsed`: manual review, never as passed**, and the raw text is still scanned for deploy commands and for `id-token: write` with a pull request trigger.
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py [--repo DIR] [--json]` lints `.github/workflows` with the kit's restricted YAML reader. Exit 0 means no errors and nothing unparsed; warnings do not fail. A workflow the reader cannot parse is reported as **`ci.unparsed`: manual review, never as passed**, and the raw text is still scanned for deploy commands and for `id-token: write` with a pull request trigger.
 
 | Rule | Severity | Catches |
 |---|---|---|

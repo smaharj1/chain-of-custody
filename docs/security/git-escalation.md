@@ -15,7 +15,7 @@ An engineer with only "read-only git" can still escalate if it can write the fil
 
 - **B3:** the sandbox denies writes to `$(git rev-parse --git-common-dir)/{hooks,config,info}`. The sandbox snippet lists `.git/hooks`, `.git/config` and `.git/info`; for a linked worktree, add the absolute path of the common git directory ([sandbox.md](sandbox.md)).
 - The conductor runs git as `git -c core.hooksPath=<kit hooks dir> -c core.fsmonitor=false ...`.
-- `loopctl`'s own git calls ignore the user's global and system git config and switch off hooks, the pager, the editor and external diff drivers (`.claude/scripts/loopctl/lgit.py`), so a planted repository config cannot make a loopctl call run code. It does not hash `.git/config` at run start; the sandbox `denyWrite` above is the control.
+- `loopctl`'s own git calls ignore the user's global and system git config and switch off hooks, the pager, the editor and external diff drivers (`${CLAUDE_PLUGIN_ROOT}/scripts/loopctl/lgit.py`), so a planted repository config cannot make a loopctl call run code. It does not hash `.git/config` at run start; the sandbox `denyWrite` above is the control.
 - The guard-git guardrail blocks `-c core.*`, `-c alias.*`, `git config` writes, `GIT_*` assignments, `--no-verify`, `update-ref`, `filter-branch`, `replace`, `tag -f` and `gh api` with any method other than GET ([guards.md](guards.md)).
 - `npm ci --ignore-scripts` by default ([supply-chain.md](supply-chain.md)).
 - `.gitattributes`, `.husky/**`, `.envrc` and `package.json` scripts join the test-integrity set.

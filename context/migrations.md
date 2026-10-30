@@ -39,4 +39,4 @@ The loop **proves** `up -> down -> up` on an ephemeral database for classes `non
 - Down migration must exist and work (test it locally), **except** where the class is `lossy` and the item says why no down can exist; then the item's acceptance includes a snapshot or backup note for the human.
 - Migrations are numbered or timestamped by the tooling; never renumber a migration that has merged.
 - Index creation on a large table uses the engine's non-blocking form (Postgres: `CREATE INDEX CONCURRENTLY`, which cannot run inside a transaction; say so in the item).
-- API versioning follows the same logic: add the new field, support both, remove the old after clients move. The design-critic checks both (`.claude/agents/design-critic.md`).
+- API versioning follows the same logic: add the new field, support both, remove the old after clients move. The design-critic checks both (`${CLAUDE_PLUGIN_ROOT}/agents/design-critic.md`).

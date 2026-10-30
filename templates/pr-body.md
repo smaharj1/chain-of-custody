@@ -1,4 +1,4 @@
-<!-- kit:pr-body v1. The conductor fills this in. `python3 .claude/scripts/pr_prepare.py check` refuses it while any fill marker remains or a field is empty. NONE and PENDING are valid only where a field says so. This comment is invisible on GitHub. -->
+<!-- kit:pr-body v1. The conductor fills this in. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py check` refuses it while any fill marker remains or a field is empty. NONE and PENDING are valid only where a field says so. This comment is invisible on GitHub. -->
 # <fill: PR title, one line, at most 72 characters>
 
 ## Summary

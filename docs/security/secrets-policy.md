@@ -10,7 +10,7 @@ One policy replaces the four contradictory statements the v1 kit had (report sec
 
 ## Files and ignores
 
-Append `.claude/templates/security/gitignore.snippet` to your `.gitignore`. It ignores `.env*` except `.env.example`, key files (`*.pem`, `*.key`, `*.p12`, `id_rsa*`), `.netrc`, `.pypirc`, Terraform state and plans, and the kit's per-user files.
+Append `${CLAUDE_PLUGIN_ROOT}/templates/security/gitignore.snippet` to your `.gitignore`. It ignores `.env*` except `.env.example`, key files (`*.pem`, `*.key`, `*.p12`, `id_rsa*`), `.netrc`, `.pypirc`, Terraform state and plans, and the kit's per-user files.
 
 - `.worktreeinclude` lists only `.env.local` and `.env.test`.
 - `.env.production*`, `*.pem`, `*.key` and cloud credential directories are never copied into a worktree. They are covered by the sandbox `denyRead` list, because a `Read(**/.env*)` deny rule alone is bypassed by `cat`.

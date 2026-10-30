@@ -24,15 +24,15 @@ This mode is for a person at the keyboard. **If this session was launched with a
 
 ## Steps
 
-1. **Look.** Say what kind of install this is: a plugin (`${CLAUDE_PLUGIN_ROOT}` is set, the scripts are in the plugin) or a copy install (`.claude/scripts/` exists in the project). Check that `.claude/settings.json` is plain JSON.
+1. **Look.** Say what kind of install this is: a plugin (`${CLAUDE_PLUGIN_ROOT}` is set, the scripts are in the plugin) or a copy install (`${CLAUDE_PLUGIN_ROOT}/scripts/` exists in the project). Check that `.claude/settings.json` is plain JSON.
 2. **Choose.** For a plugin install the script can also write three choices into `.claude/loop.config.md` (they are H6 keys): `protected_branches` (a comma list; `main` and `master` are always protected), `integration_branch`, `main_edit_allow` (path globs that may be edited while on a protected branch). Ask with `AskUserQuestion` only for what the user cares about; the defaults are fine. The plugin's install prompt may already have set them.
-3. **Dry run.** Run `python3 .claude/scripts/init_project.py --repo . [--option KEY=VALUE ...]`. It changes nothing and prints a diff for each file. Read it to the user in plain words: what gets added (the deny list: infrastructure mutators, `sudo`, pushes to protected branches, secrets files, the kit's own guardrail paths; the sandbox profile), what stays theirs, and any value of theirs it kept.
-4. **Hand over.** Give the exact command for a plain terminal, not this session: `python3 .claude/scripts/init_project.py --repo . [--option ...] --apply`. It backs `settings.json` up to `.claude/settings.json.pre-init` first. Then stop and wait.
-5. **Check.** When the user says it ran: `python3 .claude/scripts/doctor.py` and report the level in the doctor's own words. Tell them to review `git diff` and commit the files themselves.
+3. **Dry run.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py --repo . [--option KEY=VALUE ...]`. It changes nothing and prints a diff for each file. Read it to the user in plain words: what gets added (the deny list: infrastructure mutators, `sudo`, pushes to protected branches, secrets files, the kit's own guardrail paths; the sandbox profile), what stays theirs, and any value of theirs it kept.
+4. **Hand over.** Give the exact command for a plain terminal, not this session: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py --repo . [--option ...] --apply`. It backs `settings.json` up to `.claude/settings.json.pre-init` first. Then stop and wait.
+5. **Check.** When the user says it ran: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` and report the level in the doctor's own words. Tell them to review `git diff` and commit the files themselves.
 
 ## What it does not do
 
-- It does not write hooks. A plugin's `hooks/hooks.json` supplies the guards; a copy install has them in its settings (a new copy install ships the v2 wiring; an upgraded one wires it by hand, `docs/packaging.md`).
+- It does not write hooks. A plugin's `hooks/hooks.json` supplies the guards; a copy install has them in its settings (a new copy install ships the v2 wiring; an upgraded one wires it by hand, `${CLAUDE_PLUGIN_ROOT}/docs/packaging.md`).
 - It does not touch the allow or ask lists. `/fewer-permission-prompts` can propose allows for the interactive lane; a human reviews them. The loop's headless allowlist is never built that way.
 - It does not set up GitHub. That is `/bootstrap`.
 

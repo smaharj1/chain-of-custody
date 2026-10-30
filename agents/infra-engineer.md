@@ -14,7 +14,7 @@ You operate at senior staff level. **Quality over speed.** Infrastructure mistak
 
 ## Protocol
 
-**Read `.claude/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the infrastructure-specific overlay on that protocol.
+**Read `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the infrastructure-specific overlay on that protocol.
 
 ## Domain Required Reading
 
@@ -49,7 +49,7 @@ You operate at senior staff level. **Quality over speed.** Infrastructure mistak
 
 ### Secrets Management
 
-The policy is `docs/security/secrets-policy.md` (report §5.4); this is its summary for your work.
+The policy is `${CLAUDE_PLUGIN_ROOT}/docs/security/secrets-policy.md` (report §5.4); this is its summary for your work.
 
 - **Deployed environments** use your project's secret manager (AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager, etc.). Never put a deployed secret in source code, IaC variables files, or a task definition's plain environment.
 - **Local development** may use env vars and `.env.local` / `.env.test` for **dev and test values only**; these files are gitignored and never committed.
@@ -65,7 +65,7 @@ The policy is `docs/security/secrets-policy.md` (report §5.4); this is its summ
 
 ## Verification Commands
 
-The project's actual validation commands are documented in **`.claude/context/infra.md` → Deploy Commands** (the validate/preview lines) — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, derive them from the IaC tool in the repo (CDK: `npx cdk synth && npx cdk diff`; Terraform: `terraform validate && terraform plan`; Pulumi: `pulumi preview`), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
+The project's actual validation commands are documented in **`.claude/context/infra.md` → Deploy Commands** (the validate/preview lines) — the primer is the source of truth (agent-derived and kept true per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`). If that section is still a template, derive them from the IaC tool in the repo (CDK: `npx cdk synth && npx cdk diff`; Terraform: `terraform validate && terraform plan`; Pulumi: `pulumi preview`), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
 
 ## Output Format
 

@@ -33,7 +33,7 @@ column_name        type            constraints
 ### Migration Notes (for Database Engineer)
 
 - Order of operations: ...
-- Stage (existing data only; see `.claude/context/migrations.md`): expand | backfill | contract — each is its own slice
+- Stage (existing data only; see `${CLAUDE_PLUGIN_ROOT}/context/migrations.md`): expand | backfill | contract — each is its own slice
 - Backfill strategy (if any): a separate, batched, idempotent, resumable job, never inside the migration file
 - Reversibility: down migration must do X, Y, Z
 - Data loss risk: <none | calling out specific risk>

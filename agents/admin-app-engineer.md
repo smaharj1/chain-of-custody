@@ -14,7 +14,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Protocol
 
-**Read `.claude/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the admin-app-specific overlay.
+**Read `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the admin-app-specific overlay.
 
 ## Domain Required Reading
 
@@ -27,7 +27,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Verification Commands (run before reporting `APPROVED`)
 
-The project's actual commands are documented in **`.claude/context/admin-app.md` → Verification Commands** — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, derive the lint and test commands from `package.json` scripts (commonly `npm run lint` and `npm run test -- --run`), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
+The project's actual commands are documented in **`.claude/context/admin-app.md` → Verification Commands** — the primer is the source of truth (agent-derived and kept true per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`). If that section is still a template, derive the lint and test commands from `package.json` scripts (commonly `npm run lint` and `npm run test -- --run`), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
 
 ## Domain Quality Bar
 

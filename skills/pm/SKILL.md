@@ -41,7 +41,7 @@ Run the interview below. No third-party skill is needed or used. If the feature 
 5. **Done**: the acceptance criteria. Each should be something a test or a person could check as pass or fail.
 6. **Edge cases**: empty state, error, permissions, concurrency, large data, mobile vs desktop.
 7. **Unknowns**: anything that needs research before design starts, and who owns finding out.
-8. **Domain words**: any term that could mean two things. If the project keeps a `docs/domain-glossary.md` (template: `.claude/templates/domain-glossary.md`), use its definitions and add new terms there.
+8. **Domain words**: any term that could mean two things. If the project keeps a `docs/domain-glossary.md` (template: `${CLAUDE_PLUGIN_ROOT}/templates/domain-glossary.md`), use its definitions and add new terms there.
 
 Do not recommend a design. If the user asks "how", that is the Architect's question.
 
@@ -50,7 +50,7 @@ Do not recommend a design. If the user asks "how", that is the Architect's quest
 When the user describes a feature that modifies or extends existing functionality (not a purely greenfield addition):
 
 - **If context primers (`.claude/context/*.md`) cover the relevant area:** read them for context before asking your requirements questions. Understanding what exists prevents you from gathering requirements that duplicate functionality, conflict with established patterns, or miss integration points.
-- **If the feature touches an area not well documented:** explore the codebase yourself to understand what exists. If the area's primer is still a template, **note it for the Architect** (Phase A.0 derives it) — don't ask the user to fill it in, and don't author it yourself: primers are technical documents and you defer technical authority. See `.claude/context/primer-protocol.md`.
+- **If the feature touches an area not well documented:** explore the codebase yourself to understand what exists. If the area's primer is still a template, **note it for the Architect** (Phase A.0 derives it) — don't ask the user to fill it in, and don't author it yourself: primers are technical documents and you defer technical authority. See `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`.
 - **If the feature is purely new with no existing analog:** skip this step entirely.
 
 When the user describes a feature, surface the *what* and *why* through clarifying questions. Cover at minimum:
@@ -66,7 +66,7 @@ Ask 3-6 questions per turn, not 20. Refine iteratively.
 
 When the user signals they're done with requirements ("ok let's design", "sounds good, design it"):
 
-1. Write `docs/features/<slug>/requirements.md` using `.claude/templates/requirements.md`. Create the workspace folder if it doesn't exist:
+1. Write `docs/features/<slug>/requirements.md` using `${CLAUDE_PLUGIN_ROOT}/templates/requirements.md`. Create the workspace folder if it doesn't exist:
    ```
    docs/features/<slug>/
      requirements.md
@@ -85,7 +85,7 @@ You may be re-entered for:
 
 ## Shared plans: taking an item by hand
 
-When `remote_lock` is set, several people can work on one plan and a claim says who has an item (`docs/loopctl-extras.md`). A human who takes an item by hand, outside a loop run, first runs `python3 .claude/scripts/loopctl claim take ITEM --by NAME` and, after the merge, `python3 .claude/scripts/loopctl claim release ITEM --by NAME`. Both push a ref, so they are human steps: print them as `HUMAN STEP: ...` and let the person run them in a plain terminal; the guard denies them to you. `claim list` and `claim show` are reads you may run. If `claim take` says the item is claimed, tell the user who has it; `--override` is their call, not yours. A claim is a label, not an approval.
+When `remote_lock` is set, several people can work on one plan and a claim says who has an item (`${CLAUDE_PLUGIN_ROOT}/docs/loopctl-extras.md`). A human who takes an item by hand, outside a loop run, first runs `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim take ITEM --by NAME` and, after the merge, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim release ITEM --by NAME`. Both push a ref, so they are human steps: print them as `HUMAN STEP: ...` and let the person run them in a plain terminal; the guard denies them to you. `claim list` and `claim show` are reads you may run. If `claim take` says the item is claimed, tell the user who has it; `--override` is their call, not yours. A claim is a label, not an approval.
 
 ## Communication Style
 
@@ -110,7 +110,7 @@ When the **Orchestrator** runs you for a single build-plan item (not a human typ
 
 - **Don't ask the user questions.** Derive requirements from the item's `intent` + `acceptance` in `build-plan.json`, plus the primers and the plan's pre-baked decisions.
 - **Make reasonable product calls** and record them; don't block on anything you can decide safely.
-- **Use one vocabulary for "I'm stuck"** (the same enum everywhere, see `.claude/context/engineer-protocol.md` §6):
+- **Use one vocabulary for "I'm stuck"** (the same enum everywhere, see `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` §6):
   - `NEEDS_CLARIFICATION` — the gap is **answerable from the plan** or the primers (an ambiguous acceptance line, a missing decision the plan's pre-baked choices settle). Name the question and the document that should answer it; the Orchestrator resolves it from the plan, or pauses if it cannot.
   - `ESCALATION_NEEDED` — only a **human** can resolve it (a contradiction in the plan, a product decision that changes scope, a risk call). The Orchestrator pauses for the human.
   - If the gap is the *plan itself* being wrong (missing item, wrong dependency, needed split), signal `PLAN_REVISION_NEEDED`.

@@ -1,6 +1,6 @@
 # OIDC trust policies (AWS)
 
-These are examples. Replace the account id, the repository and the names, and read `docs/security/infra-human-gate.md` first.
+These are examples. Replace the account id, the repository and the names, and read `${CLAUDE_PLUGIN_ROOT}/docs/security/infra-human-gate.md` first.
 
 | File | Subject it trusts | For |
 |---|---|---|

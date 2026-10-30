@@ -7,7 +7,7 @@ The build plan is the durable spine of a loop-engineering run. It has **two file
 
 The Planner writes both. The Orchestrator edits the JSON and regenerates the markdown.
 
-> **The v2 form.** With `loopctl` (opt-in) the plan is a tracked, immutable directory instead: `plan/plan.json` and one file per item in `plan/items/<id>.json` (template `.claude/templates/plan-item.json`, spec `.claude/spec/loopctl.md`). Item status then lives on the `refs/loopctl/state/<plan>` git ref, not in a file. `python3 .claude/scripts/loopctl migrate-plan` converts a `build-plan.json`; the prose loop below keeps using the JSON shape.
+> **The v2 form.** With `loopctl` (opt-in) the plan is a tracked, immutable directory instead: `plan/plan.json` and one file per item in `plan/items/<id>.json` (template `${CLAUDE_PLUGIN_ROOT}/templates/plan-item.json`, spec `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`). Item status then lives on the `refs/loopctl/state/<plan>` git ref, not in a file. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl migrate-plan` converts a `build-plan.json`; the prose loop below keeps using the JSON shape.
 
 ---
 
@@ -69,7 +69,7 @@ pending ──► in_progress ──► verifying ──► done
 - **Eligibility**: an item is eligible only when every `dependsOn` item is `done`.
 - **Validation** (at write-time and every load): every `dependsOn` ID exists; the graph is acyclic; every JSON item maps to exactly one `BUILD_PLAN.md` row.
 - **First item, greenfield**: must be "a locally-runnable app you can see in a browser + test harness + one passing smoke test." `/orchestrate` refuses to start without a runnable/test baseline.
-- **Slicing** (Planner, validated again on load): no item sized `L`; each item is one user-visible vertical slice with at most 3 acceptance checks, at most 1 migration, at most 2-3 engineers and at most `max_item_loc` estimated changed lines. Migration-bearing work follows expand, a separate backfill item, then contract (`.claude/context/migrations.md`).
+- **Slicing** (Planner, validated again on load): no item sized `L`; each item is one user-visible vertical slice with at most 3 acceptance checks, at most 1 migration, at most 2-3 engineers and at most `max_item_loc` estimated changed lines. Migration-bearing work follows expand, a separate backfill item, then contract (`${CLAUDE_PLUGIN_ROOT}/context/migrations.md`).
 - **Approvals are recorded**, not only said: the plan approval and each checkpoint answer append an `{type: "approval", ...}` record to `.claude/loop.jsonl`.
 - **Infra/deploy items**: sequenced as a later milestone; the loop won't start them until the app runs locally (`infra_gated_behind_local`).
 - **State ownership**: the **Planner** writes `goal`, `createdAt` (display-only), `milestone`, `title`, `slug`, `size`, `dependsOn`, `intent`, `acceptance`, `requiresEnv`. The **Orchestrator** owns `status`, `blockReason`, `branch` (set when work starts), `mergeCommit`, `verifyEvidence`, `downMigrationRef`, `reworkNotes`, and `securityWaiver`. A user-approved reset of a non-`done` item to `pending` (at the Orchestrator's unblock step, or via a checkpoint **reject**) is a legitimate Orchestrator write — users do not hand-edit this file. `verifyEvidence = { testsExit, runExit, logRef }` lives on the item; the raw command output it summarizes lives in `.claude/loop.jsonl` (pointed to by `logRef`). `build-plan.json` and `BUILD_PLAN.md` are **commit-intended** durable state (unlike the gitignored telemetry files).

@@ -1,6 +1,6 @@
 # Pipeline host: `workflow` (DESIGN-ONLY)
 
-**Status**: not built, on purpose. `pipeline_host: workflow` is registered in the config (`kitlib/schema/8-parallel.json`, evidence-gated) so the value has a name, but the doctor reports it as an **error** (`parallel.pipeline-host`) and `loopctl run` refuses to start with it (`parallel.pipeline-host` preflight row), whether or not the evidence gate has passed. Nothing sits behind the value. Report sections 11.1 item 3, 11.2, 12.1, 13 (P13, A21) and 16.1 row 8; `docs/design/v2-implementation-decisions.md` IMP-1 ("Workflow pipeline host: DESIGN-ONLY (V3, V23 unverified)") and IMP-7.
+**Status**: not built, on purpose. `pipeline_host: workflow` is registered in the config (`kitlib/schema/8-parallel.json`, evidence-gated) so the value has a name, but the doctor reports it as an **error** (`parallel.pipeline-host`) and `loopctl run` refuses to start with it (`parallel.pipeline-host` preflight row), whether or not the evidence gate has passed. Nothing sits behind the value. Report sections 11.1 item 3, 11.2, 12.1, 13 (P13, A21) and 16.1 row 8; `${CLAUDE_PLUGIN_ROOT}/docs/design/v2-implementation-decisions.md` IMP-1 ("Workflow pipeline host: DESIGN-ONLY (V3, V23 unverified)") and IMP-7.
 
 This file is the design an implementer would start from once the probes below are answered. It is short because most of what a Workflow host needs is already built for the other two hosts.
 

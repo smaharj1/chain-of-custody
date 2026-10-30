@@ -2,7 +2,7 @@
 
 How a feature built in the interactive lane (`/pm`, `/architect`, `/tech-lead`) leaves your machine as a draft pull request, with the audit trail inside the PR. This page is the interactive lane. The autonomous loop (`loopctl`, the driver) builds the same audit block with `loopctl audit render` and stops an item that needs a pull request at `awaiting_human`; it does not push either. Nothing here pushes: **you** run the last two commands.
 
-The agent-facing version of this page is `.claude/context/delivery.md`. This page is for the person who installs and runs it.
+The agent-facing version of this page is `${CLAUDE_PLUGIN_ROOT}/context/delivery.md`. This page is for the person who installs and runs it.
 
 ## What you get
 
@@ -20,7 +20,7 @@ Three dials in `.claude/loop.config.md`. All are H6-protected and read at the ba
 | Key | Default | Set it to |
 |---|---|---|
 | `git_autonomy` | `none` | `branch+commit` to let the Tech Lead create the branch and the WIP commits |
-| `delivery` | `local` | `draft-pr` once your rulesets and required checks are in place (`python3 .claude/scripts/doctor.py --level`) |
+| `delivery` | `local` | `draft-pr` once your rulesets and required checks are in place (`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level`) |
 | `max_ci_fix_attempts` | `2` | leave it |
 
 With the defaults nothing changes from v1.
@@ -36,14 +36,14 @@ With the defaults nothing changes from v1.
    ```bash
    echo '.claude/pr/' >> .gitignore
    ```
-4. Copy the workflows you want into `.github/workflows/`: `verify.yml` (recommended; make the job `verify` a required check, pinned to the GitHub Actions app) and, optionally, `claude-review.yml`. Pin each `uses:` to a commit SHA. `python3 .claude/scripts/ci_lint.py` must stay free of errors. `docs/security/split-ci.md` explains why they look the way they do.
+4. Copy the workflows you want into `.github/workflows/`: `verify.yml` (recommended; make the job `verify` a required check, pinned to the GitHub Actions app) and, optionally, `claude-review.yml`. Pin each `uses:` to a commit SHA. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py` must stay free of errors. `${CLAUDE_PLUGIN_ROOT}/docs/security/split-ci.md` explains why they look the way they do.
 5. For `claude-review.yml`: set the secret `ANTHROPIC_API_KEY` (spend-capped workspace) and the variable `CLAUDE_CODE_VERSION` (the version your canary passed). A maintainer comments `/review` on a PR to run it. The CLI flags in the file are the ones the report names; check them once against your pinned version.
 6. The first PR that installs the kit cannot pass `verify` (the base has no `verify.py` yet). A human merges that one; every later PR is protected.
 
 ## verify.py
 
 ```
-python3 .claude/scripts/verify.py [--base REV] [--item ID --items-file FILE] [--route /path]... [--json] [--keep-going] [--only STAGES]
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/verify.py [--base REV] [--item ID --items-file FILE] [--route /path]... [--json] [--keep-going] [--only STAGES]
 ```
 
 Stages, in order: `build`, `lint`, `typecheck`, `item-tests`, `tests`, `smoke`. Each runs in its own session under an allowlisted environment (`PATH`, `HOME`, locale and toolchain locators; no token, key or cloud variable of your shell), and its whole process group is killed afterwards. A process that outlives its stage is reported as a leak; a verify port still bound after the smoke stage is a leak too.
@@ -72,10 +72,10 @@ It does not parse acceptance criteria (G1, G3), compare skip counts against the 
 ## pr_prepare.py
 
 ```
-python3 .claude/scripts/pr_prepare.py init      # write .claude/pr/<slug>.md from the template, pre-filled
-python3 .claude/scripts/pr_prepare.py check     # validate the body and the git state
-python3 .claude/scripts/pr_prepare.py prepare   # check, then print the commands for your delivery setting
-python3 .claude/scripts/pr_prepare.py reverts --sha <commit>... | --prs-json FILE --pr N
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py init      # write .claude/pr/<slug>.md from the template, pre-filled
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py check     # validate the body and the git state
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py prepare   # check, then print the commands for your delivery setting
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py reverts --sha <commit>... | --prs-json FILE --pr N
 ```
 
 It runs read-only git only and never runs `gh`. When `prepare` is clean it prints, for `delivery: draft-pr`:
@@ -93,11 +93,11 @@ Result, schema `pr_prepare.v1` (`--json`): `ok`, `branch`, `base`, `base_sha`, `
 
 ## The audit block
 
-`.claude/templates/pr-body.md` is the template. The block records, per PR: feature, lane, delivery, branch, base and head shas, design-critic verdict, the verify run, security review, human-gated paths, CI-fix commits, waivers and the CI evidence link, then the engineers table, the acceptance matrix, Doc Delta, Primer Delta and notes. Under `loopctl`, `loopctl audit render ITEM` builds the block from state, plan, gate results, reports, the spend ledger and git, and leaves a `<fill: ...>` marker where it does not hold the fact; `loopctl audit check ITEM --body FILE` validates a body with the same rules plus cross-checks against state and git. The Notes carry a `Manifest:` line: the hash of the reproducibility manifest that `loopctl manifest write ITEM --head <head sha>` stored for this head, and whether it still verifies against git (`Manifest: <hash> (seal and ... re-read from git at the recorded commits: they hold)`, or `... DOES NOT HOLD (...)`, or `Manifest: none written for this head` because the manifest is optional). Because the hash sits in the PR body, where the writer of the manifest cannot edit it, `loopctl manifest verify --expect-hash <hash>` has a trusted channel. `audit check` raises the error `audit.manifest-broken` when a stored manifest does not verify (or the hash in the Notes is not the stored one), and the warnings `audit.manifest-absent` (a manifest exists but the Notes have no `Manifest:` line) and `audit.manifest-unknown` (the Notes name a hash this machine has no manifest for). The PR body is the durable record (DEC-10): squash merges drop commit trailers, so set the repository's squash message to "PR title and description" (`docs/security/rulesets.md`).
+`${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md` is the template. The block records, per PR: feature, lane, delivery, branch, base and head shas, design-critic verdict, the verify run, security review, human-gated paths, CI-fix commits, waivers and the CI evidence link, then the engineers table, the acceptance matrix, Doc Delta, Primer Delta and notes. Under `loopctl`, `loopctl audit render ITEM` builds the block from state, plan, gate results, reports, the spend ledger and git, and leaves a `<fill: ...>` marker where it does not hold the fact; `loopctl audit check ITEM --body FILE` validates a body with the same rules plus cross-checks against state and git. The Notes carry a `Manifest:` line: the hash of the reproducibility manifest that `loopctl manifest write ITEM --head <head sha>` stored for this head, and whether it still verifies against git (`Manifest: <hash> (seal and ... re-read from git at the recorded commits: they hold)`, or `... DOES NOT HOLD (...)`, or `Manifest: none written for this head` because the manifest is optional). Because the hash sits in the PR body, where the writer of the manifest cannot edit it, `loopctl manifest verify --expect-hash <hash>` has a trusted channel. `audit check` raises the error `audit.manifest-broken` when a stored manifest does not verify (or the hash in the Notes is not the stored one), and the warnings `audit.manifest-absent` (a manifest exists but the Notes have no `Manifest:` line) and `audit.manifest-unknown` (the Notes name a hash this machine has no manifest for). The PR body is the durable record (DEC-10): squash merges drop commit trailers, so set the repository's squash message to "PR title and description" (`${CLAUDE_PLUGIN_ROOT}/docs/security/rulesets.md`).
 
 ## Limits
 
-- This is not autonomy level L2. The push is yours, with your own credentials; the agent holds none (`docs/security/credentials.md`). No agent pushes, the Orchestrator included: it prints what you run (`pr_prepare.py` prints the push and PR commands, the `HUMAN STEP` lines in `/orchestrate` print the rest) and waits. The remote lock and claims (`loopctl remote-lock`, `claim`) are pushes too and are human-only.
+- This is not autonomy level L2. The push is yours, with your own credentials; the agent holds none (`${CLAUDE_PLUGIN_ROOT}/docs/security/credentials.md`). No agent pushes, the Orchestrator included: it prints what you run (`pr_prepare.py` prints the push and PR commands, the `HUMAN STEP` lines in `/orchestrate` print the rest) and waits. The remote lock and claims (`loopctl remote-lock`, `claim`) are pushes too and are human-only.
 - A merge approval is for one head. `loopctl approve item` records the head it was given for; if the branch moves afterwards (a CI fix, a rebase) the approval is void and you approve the new head. The approval attests the item's diff, not what the integration branch becomes once other items have merged.
 - Nothing reads GitHub. CI results, review comments and revert PRs reach the Tech Lead because you paste them (or save `gh` output you ran yourself and pass it with `--prs-json`).
 - The saved verify result and the engineer reports are files in your working tree: they catch mistakes and stale work, not a determined forger. The evidence that counts is the CI check run on the PR (DEC-10); the audit block links it once the PR exists.

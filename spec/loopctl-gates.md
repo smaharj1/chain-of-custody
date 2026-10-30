@@ -1,8 +1,8 @@
 # loopctl gates: what each one checks, reads and refuses
 
-**Status**: built. Implements report section 9 (`docs/design/review-2026-10.md`) under IMP-1, IMP-22 and IMP-24 (`docs/design/v2-implementation-decisions.md`) on the plug-in contract of `.claude/spec/loopctl.md`. The driver that runs gates in a loop is `.claude/spec/loopctl-driver.md`; G10 and the `docs` gate were added later (below).
+**Status**: built. Implements report section 9 (`${CLAUDE_PLUGIN_ROOT}/docs/design/review-2026-10.md`) under IMP-1, IMP-22 and IMP-24 (`${CLAUDE_PLUGIN_ROOT}/docs/design/v2-implementation-decisions.md`) on the plug-in contract of `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`. The driver that runs gates in a loop is `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-driver.md`; G10 and the `docs` gate were added later (below).
 
-A gate is a module in `.claude/scripts/loopctl/gates/` with `NAME`, `OWNER_METRIC` and `run(ctx) -> GateResult`. The runner (`gates/__init__.py`) applies the `gates.<name>: on | report | off` toggle **from the base sha** and turns a crashing or lying gate into an `error`. Run one by hand with `python3 .claude/scripts/loopctl gate <name> <item>`; `loopctl advance` refuses a move whose required gates (`REQUIRED_FOR`) have not passed for this head.
+A gate is a module in `${CLAUDE_PLUGIN_ROOT}/scripts/loopctl/gates/` with `NAME`, `OWNER_METRIC` and `run(ctx) -> GateResult`. The runner (`gates/__init__.py`) applies the `gates.<name>: on | report | off` toggle **from the base sha** and turns a crashing or lying gate into an `error`. Run one by hand with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl gate <name> <item>`; `loopctl advance` refuses a move whose required gates (`REQUIRED_FOR`) have not passed for this head.
 
 | Gate | Form | Default | Needed at | Checks | Owner metric |
 |---|---|---|---|---|---|
@@ -21,7 +21,7 @@ A gate is a module in `.claude/scripts/loopctl/gates/` with `NAME`, `OWNER_METRI
 | **G10** product | OPT-IN, experimental | **off**, evidence-gated | CI (`g10-product.yml`) or local | your own commands for accessibility, performance, PII tagging and observability (`g10_a11y_cmd`, `g10_perf_cmd`, `g10_pii_cmd`, `g10_observability_cmd`), each printing one `g10.v1` JSON line with `checked >= 1` and `violations: 0`; a check program the item changed is refused (`g10.tool-edited`). No tool is bundled. Contract tests against `api-contract.md` are design-only ([loopctl-extras.md](loopctl-extras.md)) | per-check regressions caught |
 | G8 | a view | | | `loopctl status --matrix` | |
 
-Failure classes follow the taxonomy of `.claude/spec/loopctl.md`: a broken machine is `env` (parked, not retried), a busy port or a timeout is `transient`, a failing test or a policy breach is `item`. A finding named `reward_hack: true` (an edited pinned acceptance test) is what the driver turns into a discard.
+Failure classes follow the taxonomy of `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`: a broken machine is `env` (parked, not retried), a busy port or a timeout is `transient`, a failing test or a policy breach is `item`. A finding named `reward_hack: true` (an edited pinned acceptance test) is what the driver turns into a discard.
 
 ## What the plan declares (`ext`, read from the plan at the base sha)
 

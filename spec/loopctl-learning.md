@@ -1,8 +1,8 @@
 # loopctl learning loop: retro, gaps, calibration, report conformance, Docs Delta, harness review
 
-**Status**: built, FULL in warn mode; `report_trailers: block` is a person's switch. Implements report sections 9 ("Critic calibration", G7 owner metric), 16.1 row 10, 16.2 (the pruning rule) and 19.7 (L-32 Primer Delta, L-33 brief gaps, L-34 blocker definition, F-29 learning loop, F-30 Doc Delta), DEC-28 and DEC-29, under H6. Operator guide: `docs/learning.md`. The release procedure: `docs/harness-review.md`. The mode: `.claude/skills/retro/SKILL.md`.
+**Status**: built, FULL in warn mode; `report_trailers: block` is a person's switch. Implements report sections 9 ("Critic calibration", G7 owner metric), 16.1 row 10, 16.2 (the pruning rule) and 19.7 (L-32 Primer Delta, L-33 brief gaps, L-34 blocker definition, F-29 learning loop, F-30 Doc Delta), DEC-28 and DEC-29, under H6. Operator guide: `${CLAUDE_PLUGIN_ROOT}/docs/learning.md`. The release procedure: `${CLAUDE_PLUGIN_ROOT}/docs/harness-review.md`. The mode: `${CLAUDE_PLUGIN_ROOT}/skills/retro/SKILL.md`.
 
-Code: `.claude/scripts/loopctl/learning/` (`data`, `retro`, `trailers`, `gaps`, `calibration`, `harness`, `docsdelta`, `commands`), `loopctl/report.py` (the hard and soft problems), `loopctl/gates/docs_delta.py`, `tools/evals/ablate.py`.
+Code: `${CLAUDE_PLUGIN_ROOT}/scripts/loopctl/learning/` (`data`, `retro`, `trailers`, `gaps`, `calibration`, `harness`, `docsdelta`, `commands`), `loopctl/report.py` (the hard and soft problems), `loopctl/gates/docs_delta.py`, `tools/evals/ablate.py`.
 
 ## The rules the package keeps
 
@@ -36,7 +36,7 @@ Reads, open to any caller: `retro`, `harness`, `gaps` (without `--write`), `cali
 
 ## The Docs Delta gate
 
-`NAME = "docs"`, `DEFAULT_MODE = "report"`, `REQUIRED_FOR = (verifying -> reviewing)`, run with the verify gates after G11. Pure judgement in `learning/docsdelta.py`; `docs/learning.md` section 5 lists what satisfies it and what cannot.
+`NAME = "docs"`, `DEFAULT_MODE = "report"`, `REQUIRED_FOR = (verifying -> reviewing)`, run with the verify gates after G11. Pure judgement in `learning/docsdelta.py`; `${CLAUDE_PLUGIN_ROOT}/docs/learning.md` section 5 lists what satisfies it and what cannot.
 
 ## Not built here
 

@@ -1,10 +1,10 @@
 # loopctl: the deterministic half of the loop
 
-**Status**: built (core). Implements report sections 9, 10 and 15 item 5/6 (`docs/design/review-2026-10.md`) under IMP-1, 11, 20-22, 24, 25 (`docs/design/v2-implementation-decisions.md`). The layers on top have their own files: gates `loopctl-gates.md`, the driver `loopctl-driver.md`, parallel items `loopctl-parallel.md`, the learning loop `loopctl-learning.md`, the remote lock, claims, G10 and the manifest `loopctl-extras.md`; unattended runs are in `docs/unattended.md`.
+**Status**: built (core). Implements report sections 9, 10 and 15 item 5/6 (`${CLAUDE_PLUGIN_ROOT}/docs/design/review-2026-10.md`) under IMP-1, 11, 20-22, 24, 25 (`${CLAUDE_PLUGIN_ROOT}/docs/design/v2-implementation-decisions.md`). The layers on top have their own files: gates `loopctl-gates.md`, the driver `loopctl-driver.md`, parallel items `loopctl-parallel.md`, the learning loop `loopctl-learning.md`, the remote lock, claims, G10 and the manifest `loopctl-extras.md`; unattended runs are in `${CLAUDE_PLUGIN_ROOT}/docs/unattended.md`.
 
-`python3 .claude/scripts/loopctl <command>` is one Python 3.9 standard-library program that owns every *deterministic* decision the LLM conductor used to make from prose: state transitions, counters and caps, the lock, topological order, gate execution, the spend ledger, reconciliation, abort. The conductor keeps judgment: design, briefs, integration conflicts, summaries for humans.
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl <command>` is one Python 3.9 standard-library program that owns every *deterministic* decision the LLM conductor used to make from prose: state transitions, counters and caps, the lock, topological order, gate execution, the spend ledger, reconciliation, abort. The conductor keeps judgment: design, briefs, integration conflicts, summaries for humans.
 
-It is **OPT-IN** (IMP-1). The V1 prose loop in `.claude/skills/orchestrate/SKILL.md` is still the default (`runner: sequential`, `loopctl_tier2: false`), so unproven Tier 2 code never runs unless a human chooses it. If the baseline shows three or fewer control-flow rescues (kill criteria, `docs/baseline/kill-criteria.md`), Tier 2 is deprecated and Tier 1 stays.
+It is **OPT-IN** (IMP-1). The V1 prose loop in `${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md` is still the default (`runner: sequential`, `loopctl_tier2: false`), so unproven Tier 2 code never runs unless a human chooses it. If the baseline shows three or fewer control-flow rescues (kill criteria, `${CLAUDE_PLUGIN_ROOT}/docs/baseline/kill-criteria.md`), Tier 2 is deprecated and Tier 1 stays.
 
 | Tier | Commands | Needs |
 |---|---|---|
@@ -39,7 +39,7 @@ plan/plan.json          {"schema": "loopctl.plan.v1", "name", "goal", "created"?
 plan/items/<id>.json    one file per item (no merge conflicts in a machine-owned file, CS-22)
 ```
 
-Item (`loopctl.item.v1`; template `.claude/templates/plan-item.json`; unknown fields are errors):
+Item (`loopctl.item.v1`; template `${CLAUDE_PLUGIN_ROOT}/templates/plan-item.json`; unknown fields are errors):
 
 | Field | Meaning |
 |---|---|
@@ -128,7 +128,7 @@ A gate is a module `loopctl/gates/<file>.py` with `NAME` (the `gates.<NAME>` tog
 
 ## Audit, reconcile, abort
 
-- `audit render <item>` builds the PR audit block from state, plan, gate results, engineer reports, the ledger and git, in the shape of `.claude/templates/pr-body.md`, leaving `<fill: ...>` where it has no fact; `audit check` runs `pr_prepare.validate_body` plus cross-checks (stale head sha, missing ACs, a PASS the state contradicts, CI-fix count, waivers, the cost line).
+- `audit render <item>` builds the PR audit block from state, plan, gate results, engineer reports, the ledger and git, in the shape of `${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md`, leaving `<fill: ...>` where it has no fact; `audit check` runs `pr_prepare.validate_body` plus cross-checks (stale head sha, missing ACs, a PASS the state contradicts, CI-fix count, waivers, the cost line).
 - `reconcile` recovers a merge lost to a crash (exact `Loop-Item` trailer on a merge of `feat/<slug>-a<n>`; for an item a human must approve, only when a merge approval for that merge's second parent stands in the state, else the finding `reconcile.recover-unapproved`), detects missing merge commits and human reverts, resets orphaned in-flight items, sweeps orphan branches, folds in recorded PR facts (`--prs`) and the ruleset bypass log (`--rule-suites`).
 - `abort` sets HALT, lists merged items after `--rollback-to` in reverse merge order, and for items **not yet on main** runs `db_migrate_down` (never a `lossy` one) then `git revert -m 1` in the loop worktree. After merge to main it executes nothing and writes a revert plan for a human (report section 10.7, RC-14).
 

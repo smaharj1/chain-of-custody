@@ -32,7 +32,7 @@ The information is in the repo. Read it.
 Two hard limits:
 
 - **Never assert what the code doesn't show.** An unsupported claim in a primer is worse than an absent one — engineers treat primers as fact.
-- **Execution-critical commands must be proven, not guessed.** The run/test/reset commands in `local-dev.md` (and their `loop.config.md` counterparts) get **proven once, in the sandboxed probe** (`.claude/context/probe-protocol.md`: command list shown to the human first, network off, explicit go) before you write them down. Never run an unknown repo's scripts in the host shell. A plausible-looking wrong command surfaces later as a mystery hard-stop mid-run.
+- **Execution-critical commands must be proven, not guessed.** The run/test/reset commands in `local-dev.md` (and their `loop.config.md` counterparts) get **proven once, in the sandboxed probe** (`${CLAUDE_PLUGIN_ROOT}/context/probe-protocol.md`: command list shown to the human first, network off, explicit go) before you write them down. Never run an unknown repo's scripts in the host shell. A plausible-looking wrong command surfaces later as a mystery hard-stop mid-run.
 
 ## Greenfield: no code to read yet
 
@@ -86,7 +86,7 @@ Update in place. Primers are living documents, not append-only logs — replace 
 
 ## Rules: invariants that must hold on every edit
 
-A primer is read on purpose, at the start of a task. Some facts must hold even when nobody re-reads the primer: "validation errors are `422`, never `400`", "SQL uses the production dialect's quoting", "route handlers never touch the database directly". Put those few invariants in short, **path-scoped rule files** under `.claude/rules/<topic>.md` (template: `.claude/templates/rule.md`), not in a primer. Rules are loaded automatically for the paths they name, **including inside subagents**, so an engineer sees them whether or not its brief mentioned them.
+A primer is read on purpose, at the start of a task. Some facts must hold even when nobody re-reads the primer: "validation errors are `422`, never `400`", "SQL uses the production dialect's quoting", "route handlers never touch the database directly". Put those few invariants in short, **path-scoped rule files** under `.claude/rules/<topic>.md` (template: `${CLAUDE_PLUGIN_ROOT}/templates/rule.md`), not in a primer. Rules are loaded automatically for the paths they name, **including inside subagents**, so an engineer sees them whether or not its brief mentioned them.
 
 - One invariant per file, a few lines each, with the `paths:` it applies to. A rule that needs a page of explanation belongs in the primer, with the rule pointing at it.
 - Primers stay the custody-visible read (the exemplars, the layering, the "why"); rules carry only what must never be violated.

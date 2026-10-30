@@ -26,4 +26,4 @@ The pattern `pnpm dev & pid=$! ... kill $pid` leaks: it kills the package-manage
 
 ## Local-friendly service modes and secrets
 
-Auth, payments and email run in a local-friendly mode (a dev auth instance with a seeded user, payment test keys, email logged to the console). **Only dev and test values appear locally.** They live in `.env.local` / `.env.test`, which are gitignored; they are never committed, never pasted into briefs, reports or PR bodies, and production secrets are never present on the machine. The full policy is `docs/security/secrets-policy.md`.
+Auth, payments and email run in a local-friendly mode (a dev auth instance with a seeded user, payment test keys, email logged to the console). **Only dev and test values appear locally.** They live in `.env.local` / `.env.test`, which are gitignored; they are never committed, never pasted into briefs, reports or PR bodies, and production secrets are never present on the machine. The full policy is `${CLAUDE_PLUGIN_ROOT}/docs/security/secrets-policy.md`.

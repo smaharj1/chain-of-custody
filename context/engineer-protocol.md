@@ -1,6 +1,6 @@
 # Engineer Protocol — Shared by All Engineer Subagents
 
-> **You are an engineer subagent.** This protocol is the operational rulebook common to every engineer role. Your domain agent file references this; read this first, then your domain primer, then your brief. (It's a shared rulebook, not an agent definition — agent definitions live in `.claude/agents/`.)
+> **You are an engineer subagent.** This protocol is the operational rulebook common to every engineer role. Your domain agent file references this; read this first, then your domain primer, then your brief. (It's a shared rulebook, not an agent definition — agent definitions live in `${CLAUDE_PLUGIN_ROOT}/agents/`.)
 >
 > **Quality bar**: senior staff level. Quality over speed. No shortcuts.
 
@@ -134,11 +134,11 @@ Do not write the model you ran on or a tool-call count into the report: you cann
 
 You may run `git status`, `git diff`, `git log`, `git branch --show-current`, `git show`. You may **NOT** run any write git operation: `git commit`, `git push`, `git checkout`, `git branch -D`, `git merge`, `git rebase`, `git reset`, `git stash`, `git tag`, `gh pr create`, `gh pr merge`. Surface those as suggestions in your report; the user runs them. The conductor makes any WIP commit that separates your diff from another engineer's; you never commit.
 
-The guard suite (`.claude/scripts/guards/`, rule `guard-main-edit:shared-branch`) blocks `Edit`/`Write`/`NotebookEdit` to app source while on `main`, `master` or another protected branch. If it fires, STOP and return `Status: NEEDS_CLARIFICATION` — ask the Tech Lead/user to create a feature branch. Do not run `git checkout -b` yourself.
+The guard suite (`${CLAUDE_PLUGIN_ROOT}/scripts/guards/`, rule `guard-main-edit:shared-branch`) blocks `Edit`/`Write`/`NotebookEdit` to app source while on `main`, `master` or another protected branch. If it fires, STOP and return `Status: NEEDS_CLARIFICATION` — ask the Tech Lead/user to create a feature branch. Do not run `git checkout -b` yourself.
 
 ## 9. Library Docs
 
-For any library API question: if a documentation tool is available to you, use it; otherwise use `WebFetch` on the library's own docs. Don't trust training-data memory for library APIs — they change. Your `tools:` list names exactly what you have; no documentation MCP is assumed (`.claude/context/platform-notes.md` says how a project adds one).
+For any library API question: if a documentation tool is available to you, use it; otherwise use `WebFetch` on the library's own docs. Don't trust training-data memory for library APIs — they change. Your `tools:` list names exactly what you have; no documentation MCP is assumed (`${CLAUDE_PLUGIN_ROOT}/context/platform-notes.md` says how a project adds one).
 
 ## 10. Subagent Constraints
 

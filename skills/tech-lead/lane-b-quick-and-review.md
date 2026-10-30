@@ -43,7 +43,7 @@ No feature folder. Just an in-message brief naming:
    Anything else gets the review. If the user says "skip review" for a change that fails this rule, say so plainly and run it; they can still read the diff themselves.
 4. **Primer delta.** Read the engineer's `## Primer Delta` and apply it, same as A.8 step 5. Usually `NONE` for a quick task — but not always, and this is the lane where drift accumulates unnoticed: "make this page nicer" is exactly how a styling convention gets established with no design doc anywhere to record it.
 5. Record telemetry (section C).
-6. Deliver as in A.8 step 7, in the quick form (`.claude/context/delivery.md`, "Lane B"): a WIP commit when `git_autonomy` is `branch+commit`, verify, then `pr_prepare.py init`, fill, `prepare`, and show the user the commands it prints. Never push, never open the PR.
+6. Deliver as in A.8 step 7, in the quick form (`${CLAUDE_PLUGIN_ROOT}/context/delivery.md`, "Lane B"): a WIP commit when `git_autonomy` is `branch+commit`, verify, then `pr_prepare.py init`, fill, `prepare`, and show the user the commands it prints. Never push, never open the PR.
 
 ### B.4 When to escalate quick to full
 

@@ -22,7 +22,7 @@ Your answer is untrusted too. A script that runs no model and holds no tools wil
 
 ## What you answer with
 
-Exactly **one** JSON object and nothing else (no prose before or after, no code fence needed), with these fields. The schema file is `.claude/templates/intake_schema.json`; this list is checked against it by a test, so if they differ the file wins.
+Exactly **one** JSON object and nothing else (no prose before or after, no code fence needed), with these fields. The schema file is `${CLAUDE_PLUGIN_ROOT}/templates/intake_schema.json`; this list is checked against it by a test, so if they differ the file wins.
 
 - `type`: one of `feature`, `bug`, `deps`, `chore`.
 - `title`: one line, at most 120 characters.

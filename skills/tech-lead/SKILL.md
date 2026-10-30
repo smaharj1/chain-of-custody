@@ -26,17 +26,17 @@ If you're unsure which lane: ask one short question. ("Is this a feature or a sm
 ## Required Reading at Mode Switch
 
 - `.claude/CLAUDE.md` (already loaded)
-- `.claude/context/engineer-protocol.md` — to know what subagents expect from your briefs and reports
-- `.claude/context/primer-protocol.md` — you write primers in two places (pre-dispatch readiness, and A.8 step 5 after a pattern ships); this is how
-- `.claude/context/model-profiles.md` — which model each dispatch gets (`model_profile` in `.claude/loop.config.md`, default `quality`: no per-invocation model needed)
-- `.claude/context/delivery.md` — how finished work leaves the machine: `git_autonomy` and `delivery` from `.claude/loop.config.md`, the WIP commit per engineer, the verify run, the PR audit block, and the commands the human runs. Read it once per session; steps A.5, A.6, A.8 and B.3 below refer to it
+- `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` — to know what subagents expect from your briefs and reports
+- `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md` — you write primers in two places (pre-dispatch readiness, and A.8 step 5 after a pattern ships); this is how
+- `${CLAUDE_PLUGIN_ROOT}/context/model-profiles.md` — which model each dispatch gets (`model_profile` in `.claude/loop.config.md`, default `quality`: no per-invocation model needed)
+- `${CLAUDE_PLUGIN_ROOT}/context/delivery.md` — how finished work leaves the machine: `git_autonomy` and `delivery` from `.claude/loop.config.md`, the WIP commit per engineer, the verify run, the PR audit block, and the commands the human runs. Read it once per session; steps A.5, A.6, A.8 and B.3 below refer to it
 - Awareness of each domain primer (`.claude/context/<domain>.md`) so you know which engineer handles what
 
 You do **not** memorize the engineer-domain primers — engineers read those. You read the primers' tables of contents enough to route work correctly.
 
 ### Primer readiness (both lanes, before any dispatch)
 
-An engineer dispatched against a template primer has no exemplar to match and will invent a pattern — which your code review then flags as a finding. So: once you know which engineers this task needs, check their domain primers. Any that is still a template, **derive from the codebase** per `.claude/context/primer-protocol.md` before dispatching. Scope it to the domains you're actually dispatching; don't derive them all speculatively. **Never ask the user to fill one in** — assume they can't answer technical questions.
+An engineer dispatched against a template primer has no exemplar to match and will invent a pattern — which your code review then flags as a finding. So: once you know which engineers this task needs, check their domain primers. Any that is still a template, **derive from the codebase** per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md` before dispatching. Scope it to the domains you're actually dispatching; don't derive them all speculatively. **Never ask the user to fill one in** — assume they can't answer technical questions.
 
 ---
 
@@ -51,7 +51,7 @@ An engineer dispatched against a template primer has no exemplar to match and wi
 
 ## Shared plans: taking an item by hand
 
-When `remote_lock` is set, several people can work on one plan and a claim says who has an item (`docs/loopctl-extras.md`). A human who takes an item by hand, outside a loop run, first runs `python3 .claude/scripts/loopctl claim take ITEM --by NAME` and, after the merge, `python3 .claude/scripts/loopctl claim release ITEM --by NAME`. Both push a ref, so they are human steps: print them as `HUMAN STEP: ...` and let the person run them in a plain terminal; the guard denies them to you. `claim list` and `claim show` are reads you may run. If `claim take` says the item is claimed, tell the user who has it; `--override` is their call, not yours. A claim is a label, not an approval.
+When `remote_lock` is set, several people can work on one plan and a claim says who has an item (`${CLAUDE_PLUGIN_ROOT}/docs/loopctl-extras.md`). A human who takes an item by hand, outside a loop run, first runs `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim take ITEM --by NAME` and, after the merge, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl claim release ITEM --by NAME`. Both push a ref, so they are human steps: print them as `HUMAN STEP: ...` and let the person run them in a plain terminal; the guard denies them to you. `claim list` and `claim show` are reads you may run. If `claim take` says the item is claimed, tell the user who has it; `--override` is their call, not yours. A claim is a label, not an approval.
 
 ## Default Session Behavior
 
@@ -66,9 +66,9 @@ When the **Orchestrator** runs your dispatch logic for a single build-plan item,
 - **Frontend dispatch gate (A.3)**: dispatch frontends only after Backend reaches `APPROVED`, or its `CONTRACT_DEVIATION` is resolved (re-read `api-contract.md`, regenerate frontend briefs first).
 - **Review with the independent reviewer.** Because the conductor authored the work, dispatch the **`code-reviewer` Agent** (clean context) on each engineer diff, exactly as in the interactive lanes. `CHANGES_REQUESTED` → resume the engineer by `agent_id`, capped by `max_retries_per_item`.
 - **Run security review on sensitive items.** Per `security_review` in `.claude/loop.config.md`: dispatch the **`security-reviewer` Agent** on items touching auth / payments / uploads / user input (or every item if configured). `SECURITY_BLOCKED` (any Critical/High) → hard-stop (`security_blocked`); the item does not reach `done`.
-- **Map engineer signals to loop control** (per `.claude/spec/loop-engineering.md` §6.1): `NEEDS_CLARIFICATION` → answer from the plan into the brief's `## Clarifications` and resume (hard-stop only if the plan cannot answer); `CONTRACT_INCONSISTENCY` → hard-stop; `CONTRACT_DEVIATION` → re-read contract + regenerate frontend briefs + continue; `DESIGN_DEVIATION` → record + flag for ratification + continue; `PARTIAL` (engineer not converging) → resume or split the remaining scope within `max_retries_per_item`, else the retry table in the orchestrate skill (`.claude/skills/orchestrate/loop.md`); review retries capped by `max_retries_per_item`.
+- **Map engineer signals to loop control** (per `${CLAUDE_PLUGIN_ROOT}/spec/loop-engineering.md` §6.1): `NEEDS_CLARIFICATION` → answer from the plan into the brief's `## Clarifications` and resume (hard-stop only if the plan cannot answer); `CONTRACT_INCONSISTENCY` → hard-stop; `CONTRACT_DEVIATION` → re-read contract + regenerate frontend briefs + continue; `DESIGN_DEVIATION` → record + flag for ratification + continue; `PARTIAL` (engineer not converging) → resume or split the remaining scope within `max_retries_per_item`, else the retry table in the orchestrate skill (`${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/loop.md`); review retries capped by `max_retries_per_item`.
 - **Infra is never fully autonomous** — an infra-touching item forces a checkpoint regardless of the autonomy dial.
-- **Delivery is not yours here.** The Orchestrator owns branches, merges and verification in the loop (`.claude/skills/orchestrate/SKILL.md`); skip A.8 step 7 and the `git_autonomy` WIP commits. `.claude/context/delivery.md` is for the interactive lanes.
+- **Delivery is not yours here.** The Orchestrator owns branches, merges and verification in the loop (`${CLAUDE_PLUGIN_ROOT}/skills/orchestrate/SKILL.md`); skip A.8 step 7 and the `git_autonomy` WIP commits. `${CLAUDE_PLUGIN_ROOT}/context/delivery.md` is for the interactive lanes.
 
 The two interactive lanes above are for a human invoking `/tech-lead` directly.
 

@@ -12,7 +12,7 @@ Server-side policy is the part of the boundary the agent cannot reach from insid
 
 ## Applying it
 
-The templates are in `.claude/templates/security/rulesets/`:
+The templates are in `${CLAUDE_PLUGIN_ROOT}/templates/security/rulesets/`:
 
 | File | Use |
 |---|---|
@@ -23,12 +23,12 @@ The templates are in `.claude/templates/security/rulesets/`:
 Apply them with the script, which is a dry run unless you add `--apply`, prints every `gh api` call it would make, and refuses to run inside a Claude Code session:
 
 ```
-.claude/scripts/github/apply-boundary.sh --repo OWNER/NAME --variant solo
-.claude/scripts/github/apply-boundary.sh --repo OWNER/NAME --variant solo --apply
-.claude/scripts/github/verify-boundary.sh --repo OWNER/NAME --run
+${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-boundary.sh --repo OWNER/NAME --variant solo
+${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-boundary.sh --repo OWNER/NAME --variant solo --apply
+${CLAUDE_PLUGIN_ROOT}/scripts/github/verify-boundary.sh --repo OWNER/NAME --run
 ```
 
-`apply` also sets the squash-merge commit to "PR title and description" (so the audit block in the PR body survives a squash, CS-20), makes workflow tokens read-only and unable to approve pull requests, and can create one Environment with reviewers and self-review prevention. It does not create the bot, and it does not write CODEOWNERS: copy `.claude/templates/security/CODEOWNERS.template` to `.github/CODEOWNERS`, replace every placeholder, and commit it through a pull request.
+`apply` also sets the squash-merge commit to "PR title and description" (so the audit block in the PR body survives a squash, CS-20), makes workflow tokens read-only and unable to approve pull requests, and can create one Environment with reviewers and self-review prevention. It does not create the bot, and it does not write CODEOWNERS: copy `${CLAUDE_PLUGIN_ROOT}/templates/security/CODEOWNERS.template` to `.github/CODEOWNERS`, replace every placeholder, and commit it through a pull request.
 
 `verify-boundary.sh` records the settings as a fixture (`gh api` GET calls only), then runs the doctor on it. The doctor's GitHub checks, offline:
 

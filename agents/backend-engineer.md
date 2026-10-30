@@ -14,7 +14,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Protocol
 
-**Read `.claude/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the backend-specific overlay on that protocol.
+**Read `${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` first** (if it exists). It covers your workflow, brief-gap handling, turn limits, status enum, report format, git discipline, and tool constraints. Everything below is the backend-specific overlay on that protocol.
 
 ## Domain Required Reading
 
@@ -27,7 +27,7 @@ You operate at senior staff level — Google-quality bar. **Quality over speed.*
 
 ## Verification Commands (run all before reporting `APPROVED`)
 
-The project's actual commands are documented in **`.claude/context/backend.md` → Verification Commands** — the primer is the source of truth (agent-derived and kept true per `.claude/context/primer-protocol.md`). If that section is still a template, derive the lint and test commands from the repo (package manifests, CI config), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
+The project's actual commands are documented in **`.claude/context/backend.md` → Verification Commands** — the primer is the source of truth (agent-derived and kept true per `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md`). If that section is still a template, derive the lint and test commands from the repo (package manifests, CI config), run them, and report what you used in `## Primer Delta` so the primer gets fixed.
 
 ## Domain Quality Bar
 

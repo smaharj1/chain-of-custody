@@ -1,8 +1,8 @@
 # loopctl driver: `runner: driver`
 
-**Status**: built, OPT-IN and experimental (IMP-1). Implements report sections 10.6, 11.1 (item 2), 11.2, 11.3, 11.6, 14.2 and the serial cases of 15 item 5 (`docs/design/review-2026-10.md`) under IMP-14, IMP-21, IMP-24 and IMP-25 (`docs/design/v2-implementation-decisions.md`). The state, the lock, the ledger, the failure taxonomy and the gate runner are `.claude/spec/loopctl.md`; the gates themselves are `.claude/spec/loopctl-gates.md`. Later layers attach to the driver and are specified in their own files: unattended runs (`docs/unattended.md`), parallel items (`.claude/spec/loopctl-parallel.md`), the learning loop (`.claude/spec/loopctl-learning.md`) and the remote lock and claims (`.claude/spec/loopctl-extras.md`).
+**Status**: built, OPT-IN and experimental (IMP-1). Implements report sections 10.6, 11.1 (item 2), 11.2, 11.3, 11.6, 14.2 and the serial cases of 15 item 5 (`${CLAUDE_PLUGIN_ROOT}/docs/design/review-2026-10.md`) under IMP-14, IMP-21, IMP-24 and IMP-25 (`${CLAUDE_PLUGIN_ROOT}/docs/design/v2-implementation-decisions.md`). The state, the lock, the ledger, the failure taxonomy and the gate runner are `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`; the gates themselves are `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-gates.md`. Later layers attach to the driver and are specified in their own files: unattended runs (`${CLAUDE_PLUGIN_ROOT}/docs/unattended.md`), parallel items (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl-parallel.md`), the learning loop (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl-learning.md`) and the remote lock and claims (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl-extras.md`).
 
-`runner: sequential` (the default) means the prose loop runs the item and `loopctl run` only prints the hand-off. `runner: driver` means `python3 .claude/scripts/loopctl run`, started once by a human, does the conductor's deterministic work and launches a child `claude -p` session for every piece of judgement work. **No agent ever launches `claude`** (CS-2): the exec guard denies it, and this is the one process that does.
+`runner: sequential` (the default) means the prose loop runs the item and `loopctl run` only prints the hand-off. `runner: driver` means `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl run`, started once by a human, does the conductor's deterministic work and launches a child `claude -p` session for every piece of judgement work. **No agent ever launches `claude`** (CS-2): the exec guard denies it, and this is the one process that does.
 
 ## What a run does
 
@@ -53,7 +53,7 @@ Fixed argv, `shell=False`, nothing from the plan or a report on it; the prompt i
 
 ## A human-approved merge, and what is checked before and after it
 
-An approval (`kind: merge`) is bound to the item, its attempt and the `headSha` it was given for (`.claude/spec/loopctl.md`, Approvals). Before `git merge` the driver asks `Loop.preflight_merge`: no HALT or stop hook, this session still holds the lock, the item can still step to `merged`, its gates are fresh for the head and, where a human must approve, an unused approval for exactly that head exists. A refusal parks the item (`merge_refused`) and nothing is merged; the trailer recovery stays only for a genuine race after the merge.
+An approval (`kind: merge`) is bound to the item, its attempt and the `headSha` it was given for (`${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`, Approvals). Before `git merge` the driver asks `Loop.preflight_merge`: no HALT or stop hook, this session still holds the lock, the item can still step to `merged`, its gates are fresh for the head and, where a human must approve, an unused approval for exactly that head exists. A refusal parks the item (`merge_refused`) and nothing is merged; the trailer recovery stays only for a genuine race after the merge.
 
 The approval attests the item's DIFF, not the merged result: other items may have merged since the human looked. After `merge_approved` merges, the driver runs `g6` on the new integration tip (event `integration_verify`). If it is red the run stops with `integration_red` (`runStatus: stopped`, breaker +1, the item stays merged: no auto-revert) and the human fixes or reverts it, then `approve breaker`.
 
@@ -98,7 +98,7 @@ Before every launch the driver asks the ledger for the REMAINING budget (`--max-
 
 ## The four unattended hooks
 
-With `autonomy: unattended` the driver is otherwise unchanged; `unattended.Supervisor.attach` fills four hooks (`docs/unattended.md`): `observers` see every event (for notifications and the progress record), `stop_hooks` are asked with HALT and the lock (a stall storm, a demotion, a run-level stall), `cost_hook` may price a child that printed nothing (an estimate, marked `estimated: true`) and `finishers` run once at the end of the run with its exit code (the closing message). The remote lock and claims attach through `stop_hooks` and `item_filters`.
+With `autonomy: unattended` the driver is otherwise unchanged; `unattended.Supervisor.attach` fills four hooks (`${CLAUDE_PLUGIN_ROOT}/docs/unattended.md`): `observers` see every event (for notifications and the progress record), `stop_hooks` are asked with HALT and the lock (a stall storm, a demotion, a run-level stall), `cost_hook` may price a child that printed nothing (an estimate, marked `estimated: true`) and `finishers` run once at the end of the run with its exit code (the closing message). The remote lock and claims attach through `stop_hooks` and `item_filters`.
 
 ## Events a reader may rely on
 
@@ -116,4 +116,4 @@ Test seams (honoured only when the binary is the fake): `KIT_FAKE_CLAUDE_HARNESS
 
 ## Not built here
 
-Pushing a branch or opening a PR (the item stops at `awaiting_human`; `pr_prepare` prints the human's commands, and no agent pushes), a measured cost for a child that printed nothing (the unattended supervisor estimates it), the architect and design-critic stages (the plan item is the design), the Workflow pipeline host (`pipeline_host: workflow` is refused; design only, `.claude/spec/pipeline-host-workflow.md`), and auto-merge (L5 is not built). Parallel items, the notifications and the unattended mode, the remote lock and claims are built as opt-in layers (see the status line).
+Pushing a branch or opening a PR (the item stops at `awaiting_human`; `pr_prepare` prints the human's commands, and no agent pushes), a measured cost for a child that printed nothing (the unattended supervisor estimates it), the architect and design-critic stages (the plan item is the design), the Workflow pipeline host (`pipeline_host: workflow` is refused; design only, `${CLAUDE_PLUGIN_ROOT}/spec/pipeline-host-workflow.md`), and auto-merge (L5 is not built). Parallel items, the notifications and the unattended mode, the remote lock and claims are built as opt-in layers (see the status line).
