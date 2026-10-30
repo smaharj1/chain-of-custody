@@ -9,11 +9,18 @@ printed in full; passing modules print nothing.
 Modules start longest-first, using the durations of the previous run (kept in the git common dir, never tracked),
 so one slow module does not start last and set the wall time.
 
+The kit, the tests and the tools are compiled to bytecode once before the modules start: a test process (and every kit
+script it starts) then loads `.pyc` files instead of compiling the kit again, even where PYTHONDONTWRITEBYTECODE is set.
+
+The time budget is the one IMP-24 defines (docs/design/v2-implementation-decisions.md): the run prints the load average
+at the start and the CPU time of all test processes at the end, the numbers that definition asks for.
+
 Usage: tools/run_tests.py [-j N]   (tools/test.sh calls this when given no arguments)
 """
 from __future__ import annotations
 
 import argparse
+import compileall
 import json
 import os
 import re
@@ -85,6 +92,30 @@ def run_module(module: str) -> tuple:
     return module, ok, count, proc.stdout, time.monotonic() - start
 
 
+def precompile(root: str) -> None:
+    # quiet=2: a fixture that is deliberately not valid Python is not an error here
+    for sub in (os.path.join(".claude", "scripts"), "tests", "tools"):
+        path = os.path.join(root, sub)
+        if os.path.isdir(path):
+            compileall.compile_dir(path, quiet=2)
+
+
+def load_average() -> str:
+    try:
+        return "%.1f" % os.getloadavg()[0]
+    except (AttributeError, OSError):
+        return "n/a"
+
+
+def child_cpu() -> str:
+    try:
+        import resource
+    except ImportError:
+        return "n/a"
+    ru = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return "%.0fs (user %.0fs, sys %.0fs)" % (ru.ru_utime + ru.ru_stime, ru.ru_utime, ru.ru_stime)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 2)
@@ -99,7 +130,10 @@ def main(argv=None) -> int:
     previous = load_timings(tpath)
     # Unknown (new) modules first: they may be slow, and running them early costs nothing.
     order = sorted(modules, key=lambda m: -previous.get(m, float("inf")))
+    print("load average %s at start" % load_average())
+    sys.stdout.flush()
     start = time.monotonic()
+    precompile(REPO_ROOT)
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         results = sorted(pool.map(run_module, order))
     elapsed = time.monotonic() - start
@@ -116,6 +150,7 @@ def main(argv=None) -> int:
     total = sum(r[2] for r in results)
     print("-" * 70)
     print("Ran %d tests in %.3fs (%d modules, %d jobs)" % (total, elapsed, len(modules), args.jobs))
+    print("CPU time of the test processes: %s" % child_cpu())
     print()
     if failed:
         print("FAILED (%d module(s): %s)" % (len(failed), ", ".join(r[0] for r in failed)))

@@ -39,6 +39,17 @@
   `bootstrap/test_adversarial` and `kitlib/test_redact` (CPU-time bounds), `test_helpers` (SIGTERM race in the fake).
 - Tests added: 8 (`test_gitfast`) and 2 real-process tests (`test_runs_as_a_script` in bootstrap_config and infra gate); source_policy and
   pr_prepare keep one existing test on `real=True`. Tests removed or merged: none.
+- **Final review.** `tools/run_tests.py` compiles the kit, the tests and the tools to bytecode before the modules start, prints the
+  load average at start and the CPU time of all test processes at the end. The doctor tests and the gate tests route their read-only git
+  calls through the `gitfast` shim (`gitfast.run_argv`; checked with `TESTS_GITFAST=verify` over the doctor and gate modules, 1,068
+  tests, no mismatch). IMP-24 now defines the budget it measures: best of three runs on the reference machine started at a load average
+  below 2, with wall, CPU and load quoted. Measured at load about 2.8: 60.9 s wall, 436 s CPU.
+- **Measured and not done.** Further gitfast extensions (linked-worktree support, `show REV:PATH` errors, short-name resolution,
+  `remote get-url`) were measured at about 2% of CPU and about 1 s of wall time, and were not added because the emulated error and
+  negative answers could diverge from real git in ways verify mode cannot detect. Also no gain: `LC_ALL=C` in the environments that
+  lack it (git starts ~25% cheaper with a locale set, but only 2,195 of 19,120 launches lack one, ~2 CPU-s), `GIT_TEST_FSYNC=0`
+  (no change), `-j 14` (slower, and more CPU-bound tests time out). Under heavy unrelated load (Spotlight indexing, load average
+  9-27) the same tree takes 72-94 s and the CPU-time-bounded regex tests can fail; that is the case the load-average condition excludes.
 
 ## Upgrade impact
 None. Tests and test helpers only; no production file changed.

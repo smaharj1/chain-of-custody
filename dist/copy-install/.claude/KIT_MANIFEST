@@ -390,7 +390,7 @@
   },
   ".claude/scripts/kitlib/redact.py": {
    "class": "kit",
-   "sha256": "7f38e90a81e1d1684c3f3471228aa5d345adaf2b4462f515154ce46399205872"
+   "sha256": "6c71bf522d70bee1f8ff885801cabd394f20f504ab79fe6b0752be40e1217eaf"
   },
   ".claude/scripts/kitlib/registry.py": {
    "class": "kit",

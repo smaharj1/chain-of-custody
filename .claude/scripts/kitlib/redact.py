@@ -65,6 +65,10 @@ _PATTERNS = [
     # in running text `PASS: g6 passed` is a test verdict
     ("secret-assignment",
      re.compile(r"(?im)(?:^[ \t]*(?:export[ \t]+|-[ \t]+)?pass|\"pass\"|'pass')[ \t]*[:=][ \t]*(?!\[REDACTED)(" + _DQ + r"|" + _SQ + r"|[^\s,;\"'}\])]+)"), 1),
+    # ... or after a delimiter that makes it a key: a connection or query string (`;Pass=v`, `&pass=v`), a flow mapping (`{pass: v}`), `-e PASS=v`.
+    # A comma is not one: `x, pass: 3 passed` is prose
+    ("secret-assignment",
+     re.compile(r"(?i)(?:[;&?][ \t]*|\{[ \t]*|(?<![\w-])(?:-e|--env)[ \t]+[\"']?)pass[ \t]*[:=](?!=)[ \t]*(?!\[REDACTED)(" + _DQ + r"|" + _SQ + r"|[^\s,;\"'}\])]+)"), 1),
     # `--password VALUE`, `--db-token VALUE`: the value is the next word (a variable or another flag is not a value)
     ("cli-secret-arg",
      re.compile(r"(?i)(?<![\w-])--(?:[a-z0-9]+-){0,3}(?:password|passwd|passphrase|pass|secret|token|api-?key|access-?key|private-?key|auth-?key)[ \t]+(?![-$<\[]|\[REDACTED)"

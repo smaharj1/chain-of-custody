@@ -13,7 +13,7 @@ from doctorlib import (ci, codeowners, creds, deploy, github, levelcalc, secrets
 from doctorlib.model import Context, Result, default_run, run_checks
 
 from tests import REPO_ROOT
-from tests.helpers import BaseTestCase, TempRepo, inproc
+from tests.helpers import BaseTestCase, TempRepo, gitfast, inproc
 
 DOCTOR = os.path.join(REPO_ROOT, ".claude", "scripts", "doctor.py")
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
@@ -87,8 +87,8 @@ class FastRepo(TempRepo):
 
 def guarded_run(argv, timeout=10.0, env=None, cwd=None, input_text=None):
     """The default process seam in tests: real git, nothing else. `aws`, `gh`, `ssh`, `docker`, `sudo` and `claude` are never started."""
-    if argv and argv[0] == "git":
-        return default_run(argv, timeout, env, cwd, input_text)
+    if argv and argv[0] == "git":                                       # a read the repository's files answer starts no git (tests/helpers/gitfast.py)
+        return gitfast.run_argv(argv[1:], cwd, env, input_text, lambda: default_run(argv, timeout, env, cwd, input_text))
     if argv and argv[0] == "sudo":
         return 1, "", "sudo: a password is required"
     return 127, "", "not found (blocked in tests): %s" % (argv[0] if argv else "")
@@ -99,6 +99,8 @@ class BoundaryCase(BaseTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        gitfast.install()                                                   # the kit's own git reads (gitutil) too
+        self.addCleanup(gitfast.uninstall)
         self.fake_home = self.home()
         self.fs_root = self.tmpdir("kit-root-")
 

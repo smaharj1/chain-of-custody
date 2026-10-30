@@ -97,7 +97,7 @@ Details:
 - All kit scripts (`doctor`, `verify`, `loopctl`, guards, migrate, probes, tools) are **Python 3 stdlib only**. Shell is allowed only for thin human-run wrappers (`run-baseline.sh`, `apply-boundary.sh`).
 - **Minimum Python is 3.9.** Rationale: macOS's system `python3` under the Xcode command line tools is 3.9, and the guards run as fail-closed hooks, so a floor of 3.10 would block every tool call on a fresh Mac. Code must avoid `match`, parenthesised multi-item `with`, `X | Y` in runtime annotations (use `from __future__ import annotations`), `zip(strict=)`, `tomllib`, `str | None` outside annotations, and any API newer than 3.9. Build and local tests run on the Mac's 3.14.
 - Enforcement: `tests/test_py39_syntax.py` parses every `.py` under `.claude/scripts/`, `tools/` and `tests/` with `ast.parse(..., feature_version=(3, 9))` and greps for a small list of known post-3.9 APIs. The kit-tests CI workflow runs a 3.9 and a 3.13 job.
-- **Tests use stdlib `unittest`** (pytest is not installed and must not become a dependency). Table-driven corpora are JSON files driven through `subTest`. Run: `tools/test.sh` = `python3 -m unittest discover -s tests -t .`. The full suite must run offline in under 60 seconds with no sleeps over 2 seconds (see changelog.d/13a-test-speed.md, Test-writing guidance, for how to build repositories and call CLIs cheaply).
+- **Tests use stdlib `unittest`** (pytest is not installed and must not become a dependency). Table-driven corpora are JSON files driven through `subTest`. Run: `tools/test.sh` = `python3 -m unittest discover -s tests -t .`. The full suite must run offline with no sleeps over 2 seconds, and `tools/run_tests.py` must finish in under 60 s wall-clock as measured under IMP-24 item 1 (see changelog.d/13a-test-speed.md, Test-writing guidance, for how to build repositories and call CLIs cheaply).
 - macOS and Linux only. Windows is documented as unsupported (process groups, `fcntl`, shell wrappers).
 - No third-party YAML. Config uses a restricted YAML subset parsed by `kitlib/miniyaml.py` (IMP-11).
 - Node 22 and pnpm are not used by any kit tool. Docker is never required for tests; docker-dependent features degrade to "unavailable" with a doctor message.
@@ -368,7 +368,7 @@ The scripts accept `--dry-run` as the default, print every `gh api` call they wo
 
 A topic branch is merged only when all hold:
 
-1. `tools/test.sh` passes on the topic branch merged with the current `v2/integration` (offline, under 60 s; to stay inside the budget see changelog.d/13a-test-speed.md, Test-writing guidance).
+1. `tools/test.sh` passes on the topic branch merged with the current `v2/integration` (offline). Time budget: `tools/run_tests.py` finishes in under 60 s wall-clock, best of three consecutive runs on the reference machine (10-core Apple silicon) started with a 1-minute load average below 2. `run_tests.py` prints the load average at start and the child CPU seconds at the end; the topic branch's changelog fragment quotes wall, CPU and load average, and CPU may not grow more than 10% over the previous merge's figure without a stated reason. A run on a busier or smaller machine proves nothing either way. To stay inside the budget see changelog.d/13a-test-speed.md, Test-writing guidance.
 2. `tools/check-refs.py` and `tests/test_py39_syntax.py` pass.
 3. The leak check passes (hash test plus the conductor's grep).
 4. A `changelog.d/<topic>.md` exists (changes, upgrade impact, new keys, pending-human actions, docs impact).

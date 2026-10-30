@@ -56,8 +56,10 @@ class Manifest(LoopTestCase):
         self.assertTrue(v.json["ok"] and v.json["seal"] and v.json["anchored"])
         self.assertEqual(v.json["facts"], [])
         self.assertEqual(v.json["not_rederivable"], ["gates", "environment"])
-        self.assertIn("manifest written", lr.ctl("manifest", "write", "A").out)
-        self.assertIn("hash: " + doc["hash"], lr.ctl("manifest", "write", "A").out.replace("  ", " "))
+        again = lr.ctl("manifest", "write", "A").out
+        self.assertIn("manifest written", again)
+        # the hash covers `created`, so a write in a later second has a new one: compare with what this write stored
+        self.assertIn("hash: " + mf.read_file(path)["hash"], again.replace("  ", " "))
 
     def test_editing_the_recorded_hash_or_any_field_breaks_the_seal(self):
         lr, path, doc = self.written()

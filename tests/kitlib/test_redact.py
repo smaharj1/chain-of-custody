@@ -347,10 +347,13 @@ class RedactRound4(unittest.TestCase):
                 self.assertNotIn("Ef56Gh78", redact.redact(text))
 
     def test_pass_and_auth_key(self):
-        for text in ("db_pass: " + V, "MYSQL_PASS=" + V, "AUTH_KEY=" + V, "--pass " + V, "pass: " + V, "  - pass: " + V, "export PASS=" + V, '{"pass": "%s"}' % V):
+        for text in ("db_pass: " + V, "MYSQL_PASS=" + V, "AUTH_KEY=" + V, "--pass " + V, "pass: " + V, "  - pass: " + V, "export PASS=" + V, '{"pass": "%s"}' % V,
+                     "Server=db;User=u;Pass=" + V, "https://h/x?user=u&pass=" + V, "docker run -e PASS=" + V + " img", "run --env 'PASS=" + V + "'",
+                     "{pass: " + V + "}", "{ pass: '" + V + "' }"):
             with self.subTest(text):
                 self.assertNotIn(V, redact.redact(text))
-        for text in ("pass_through: required", "bypass: true", "passes: 12", "auth: required", "| Verify (G6) | PASS: g6 passed |", "the run says PASS: 3 tests"):
+        for text in ("pass_through: required", "bypass: true", "passes: 12", "auth: required", "| Verify (G6) | PASS: g6 passed |", "the run says PASS: 3 tests",
+                     "tests: pass=12 fail=0", "x, pass: 3 passed", "if a == pass"):
             with self.subTest(text):
                 self.assertEqual(redact.redact(text), text)
         self.assertEqual(redact.redact_obj({"pass": "x", "pass_count": 3}), {"pass": "[REDACTED:secret-key]", "pass_count": 3})

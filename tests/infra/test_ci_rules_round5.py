@@ -42,15 +42,24 @@ class VariableCommandIsBounded(unittest.TestCase):
               lambda n: ";sudo A=x $T -x " * (n // 16), lambda n: ";$(a)" * (n // 5), lambda n: ";`a`" * (n // 4), lambda n: ("A=x " * 5 + "$T -x -y\n") * (n // 40),
               lambda n: ";A=" + "x" * n, lambda n: "sudo " * (n // 5), lambda n: "$T " + "-xxxxxxxxxx " * (n // 12) + "plan")
 
-    def test_each_regex_alone_is_under_half_a_second_at_200_kb(self):
-        # linear: the slowest shape (`(A=x` repeated) takes about 0.12 s alone and doubles with the length; the old regex took 44 s. Half a
-        # second leaves room for a loaded machine running the suite in parallel
-        for rx in (VAR_RX, ci_rules._INDIRECT_RE):
-            for make in self.SHAPES:
-                text = make(200000)
+    def test_each_regex_grows_linearly_to_200_kb(self):
+        # a quadratic regex takes 16x as long on 4x the input, a linear one 4x; the cut is 8x. The ratio holds on a loaded machine, because both runs slow
+        # down together, and the best of 3 runs removes a one-off stall. The old regex took 44 s at 200 KB (the 2 s cap is a backstop); a shape under
+        # 50 ms at 200 KB cannot hide harmful growth, so only the slower shapes are timed again
+        def best(rx, text, k=3):
+            b = float("inf")
+            for _ in range(k):
                 t = time.perf_counter()
                 rx.search(text)
-                self.assertLess(time.perf_counter() - t, 0.5, text[:20])
+                b = min(b, time.perf_counter() - t)
+            return b
+        for rx in (VAR_RX, ci_rules._INDIRECT_RE):
+            for make in self.SHAPES:
+                big = best(rx, make(200000), 1)
+                self.assertLess(big, 2.0, make(40)[:20])
+                if big > 0.05:
+                    small, big = best(rx, make(50000)), min(big, best(rx, make(200000), 2))
+                    self.assertLess(big / small, 8.0, "%s: %.3f s -> %.3f s" % (make(40)[:20], small, big))
 
     def test_the_reviewers_inputs_whole_pipeline(self):
         for text in (";A=x" * 50000, ";$A -x" * 33333):

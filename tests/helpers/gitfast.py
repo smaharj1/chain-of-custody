@@ -36,7 +36,7 @@ import tempfile
 import zlib
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
-__all__ = ["install", "uninstall", "emulate", "Unsupported", "stats"]
+__all__ = ["install", "uninstall", "emulate", "run_argv", "Unsupported", "stats"]
 
 _HEX = re.compile(r"^[0-9a-f]{40}\Z")
 _NAME_OK = re.compile(r"^[0-9a-f]{40}(\^)?(:[^\0\n]*)?\Z")
@@ -846,6 +846,29 @@ def _fast_run_git(original: Callable[..., Any]) -> Callable[..., Any]:
                         pin_hooks=pin_hooks, binary=binary)
 
     return run_git
+
+
+def run_argv(args: Sequence[str], cwd: Optional[str], env: Optional[Dict[str, str]], input_text: Optional[str],
+             real: Callable[[], Tuple[int, str, str]]) -> Tuple[int, str, str]:
+    """For a process seam that starts `git ARGS` itself (the doctor's `run`): (returncode, stdout, stderr) from the shim when it can
+    answer, else `real()`. TESTS_GITFAST applies as it does to the wrapped run_git."""
+    mode = _mode()
+    if mode != "0":
+        try:
+            rc, out = emulate(args, cwd, dict(os.environ if env is None else env), input_text)
+        except Unsupported:
+            pass
+        else:
+            stats["emulated"] += 1
+            fast = (rc, out.decode("utf-8", "replace"), "")
+            if mode == "verify":
+                got = tuple(real())
+                if got != fast:
+                    sys.stderr.write("GITFAST MISMATCH %r in %r\n" % (list(args), cwd))
+                    raise AssertionError("gitfast differs from git for %r (cwd %r):\nfast: %r\ngit : %r" % (list(args), cwd, fast, got))
+            return fast
+    stats["fallback"] += 1
+    return real()
 
 
 def install() -> None:

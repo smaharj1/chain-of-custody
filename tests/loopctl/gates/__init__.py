@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from .. import LoopRepo, item_doc
 
+from kitlib import gitutil
 from loopctl import gates
 from loopctl.context import Context
 
@@ -54,6 +55,11 @@ def g3_item(iid: str = "A", **ext_g3: Any) -> Dict[str, Any]:
     spec.update(ext_g3)
     return item_doc(iid, acs=2, ext={"g3": spec}, touches={"domains": ["backend"], "paths": ["src/**", "tests/unit/**"], "schema": False, "deps_change": False},
                     verify={"tests": UNITTEST_CMD})
+
+
+def _merge_base(path: str) -> str:
+    # through the kit's git door, which the shim answers from the repository's files (a test's own `repo.git` starts git)
+    return gitutil.run_git(["merge-base", "HEAD", "refs/heads/main"], cwd=path).stdout.strip()
 
 
 class GateCase(unittest.TestCase):
@@ -122,7 +128,7 @@ class GateCase(unittest.TestCase):
         # The Context (config and plan read at the base sha) is the same for every test of a class: build it once. The evidence verdict reads a
         # file in the working tree, so it is re-read on every run.
         c = type(self).__dict__.get("_context")
-        if c is not None and c.base_sha != self.lr.repo.git("merge-base", "HEAD", "main"):          # a test moved main: the base changed
+        if c is not None and c.base_sha != _merge_base(self.lr.path):                                # a test moved main: the base changed
             c = None
         if c is None:
             c = Context.build(self.lr.path, self.lr.env)
