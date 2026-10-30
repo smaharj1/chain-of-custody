@@ -13,13 +13,13 @@ uses, and nothing else:
 The only label it can ever ask for is `factory:<type>` with <type> from a fixed list. It never asks for `factory:go`,
 `factory:running` or any other label, and no field of the answer reaches a command line.
 
-    python3 .claude/scripts/intake_validate.py --in triage.json --out-dir DIR [--max-bytes N]
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/intake_validate.py --in triage.json --out-dir DIR [--max-bytes N]
 
 `--in` is either the raw triage object or the JSON that `claude -p --output-format json` prints (an object whose `result` string
 holds the triage object, bare or in a code fence). Exit 0 whenever it wrote the two files, including status "invalid" (the
 workflow then posts the "a human should read it" comment). Exit 2: unusable arguments or an unwritable output directory.
 
-The schema is `.claude/templates/intake_schema.json`, the same file the loop's own stage 2 (`loopctl/intake.py`, Phase 7) reads.
+The schema is the kit's `templates/intake_schema.json`, the same file the loop's own stage 2 (`loopctl/intake.py`, Phase 7) reads.
 """
 from __future__ import annotations
 
@@ -34,12 +34,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio  # noqa: E402
+from kitlib import kitpaths  # noqa: E402
 
-SCHEMA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "intake_schema.json")
+SCHEMA_PATH = kitpaths.kit("templates", "intake_schema.json")
 
 
 def load_schema(path: str = SCHEMA_PATH) -> Dict[str, Any]:
-    """The one intake schema (`.claude/templates/intake_schema.json`, Phase 7). The loop's stage 2 (loopctl/intake.py) reads the same file.
+    """The one intake schema (the kit's `templates/intake_schema.json`, Phase 7). The loop's stage 2 (loopctl/intake.py) reads the same file.
     A missing or malformed schema is an error at import: the CI job then fails closed instead of validating against a guess."""
     with open(path, "r", encoding="utf-8") as fh:
         doc = json.load(fh)

@@ -4,7 +4,7 @@
   "sections": [
     {
       "id": "routing",
-      "title": "Model and effort routing (see .claude/context/model-profiles.md)",
+      "title": "Model and effort routing (see $KIT/context/model-profiles.md)",
       "comment": []
     },
     {

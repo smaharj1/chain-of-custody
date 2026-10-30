@@ -14,11 +14,17 @@ list, and prints that list instead of running it unless the human adds --apply.
       --approvers login1,login2     sets the repository variable FACTORY_APPROVERS (label-guard.yml and intake.yml read it)
       --labels                      run apply-labels.sh
       --boundary                    run apply-boundary.sh (rulesets, tag protection, squash setting, workflow token permissions)
-      --workflows a,b               copy these templates into .github/workflows/:
+      --workflows a,b               render these kit templates into .github/workflows/:
                                     intake, dependency-check, smoke, verify, claude-review, label-guard
+      --kit-sha SHA                 the commit the kit's release tag names (40 hex); without it the local phase asks
+                                    `git ls-remote` for it once, when you run it with --apply
       --config-plan PATH            run bootstrap_config.py apply on this plan (an H6 change; the human reads the diff)
       --launch-skill PATH           install this file (.claude/bootstrap/NAME.md) as the project skill .claude/skills/launch-app/SKILL.md;
                                     an agent may not write under .claude/skills (a skill's frontmatter can run hooks, RC-18), so you do
+
+A workflow that runs kit code fetches the kit at a pinned release: KIT_REF is the tag `v<version>` from the kit's KIT_VERSION, and
+KIT_SHA is the commit that tag named when the human ran the local phase. CI checks out the tag and refuses to run when it is not at
+KIT_SHA, so a moved tag runs nothing. The template's `{{KIT_REF}}` and `{{KIT_SHA}}` are filled when the file is written.
 
 The printed script has two phases, because a ruleset must come after the first push and a config or workflow edit before it:
 
@@ -46,12 +52,16 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 import labels  # noqa: E402
-from kitlib import gitutil, jsonio  # noqa: E402
+from kitlib import gitutil, jsonio, kitpaths, semver  # noqa: E402
 
 WORKFLOWS = ("intake", "dependency-check", "smoke", "verify", "claude-review", "label-guard")
 VISIBILITY = ("private", "public", "internal")
 VARIANTS = ("solo", "team")
 OUT_DIR = os.path.join(".claude", "bootstrap")
+# the kit's own repository: the CI templates fetch the kit from it at KIT_REF, and the local phase reads the tag's commit from it
+KIT_REPO = "https://github.com/smaharj1/chain-of-custody.git"
+_KIT_REF = re.compile(r"^v[0-9A-Za-z][0-9A-Za-z.+-]{0,39}\Z")
+_KIT_SHA = re.compile(r"^[0-9a-f]{40}\Z")
 _BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
 _LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?\Z")
 _ENV = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}\Z")
@@ -68,11 +78,24 @@ def q(value: Any) -> str:
     return shlex.quote(str(value))
 
 
+def kit_ref(path: Optional[str] = None) -> str:
+    """The kit's release tag, `v<version>` from KIT_VERSION."""
+    try:
+        with open(path or kitpaths.kit("KIT_VERSION"), "r", encoding="utf-8") as fh:
+            version = semver.parse_kit_version_file(fh.read()).get("version") or ""
+    except (OSError, ValueError) as exc:
+        raise ScriptError("cannot read the kit's KIT_VERSION: %s" % exc)
+    ref = "v" + version
+    if not _KIT_REF.match(ref):
+        raise ScriptError("the kit's version %r does not make a safe tag name" % version)
+    return ref
+
+
 class Params(object):
     def __init__(self, repo: str, create_repo: bool = False, visibility: str = "private", description: str = "", default_branch: str = "main",
                  variant: str = "solo", release_team_id: Optional[int] = None, environment: str = "", reviewer_ids: Sequence[int] = (),
                  approvers: Sequence[str] = (), labels_: bool = False, boundary: bool = False, workflows: Sequence[str] = (),
-                 config_plan: str = "", launch_skill: str = "") -> None:
+                 config_plan: str = "", launch_skill: str = "", kit_sha: str = "") -> None:
         try:
             self.repo = labels.check_repo(repo)
         except labels.LabelError as exc:
@@ -102,16 +125,19 @@ class Params(object):
             raise ScriptError("--config-plan must be .claude/bootstrap/<name>.json")
         if launch_skill and (not _SKILL_SRC.match(launch_skill) or ".." in launch_skill):
             raise ScriptError("--launch-skill must be .claude/bootstrap/<name>.md")
+        if kit_sha and not _KIT_SHA.match(kit_sha):
+            raise ScriptError("--kit-sha must be a full commit id (40 lowercase hex)")
         if (release_team_id or environment or reviewer_ids) and not boundary:
             raise ScriptError("--release-team-id, --environment and --reviewer-id belong to --boundary")
         self.create_repo, self.visibility, self.description, self.default_branch = create_repo, visibility, description, default_branch
         self.variant, self.release_team_id, self.environment, self.reviewer_ids = variant, release_team_id, environment, list(reviewer_ids)
         self.approvers, self.labels, self.boundary, self.workflows, self.config_plan = logins, labels_, boundary, wf, config_plan
-        self.launch_skill = launch_skill
+        self.launch_skill, self.kit_sha = launch_skill, kit_sha
+        self.kit_ref = kit_ref() if wf else ""
 
 
 HEADER = r'''#!/bin/sh
-# Generated by .claude/scripts/github/repo_script.py (Phase 11a, DEC-13). HUMAN-RUN ONLY, from a plain terminal.
+# Generated by the kit's scripts/github/repo_script.py (Phase 11a, DEC-13). HUMAN-RUN ONLY, from a plain terminal.
 # It prints every command and runs none of them unless you add --apply. Read it first: it is short on purpose.
 #
 #   sh .claude/bootstrap/setup.sh local  [--apply]    edits files in this checkout; you commit the result
@@ -135,7 +161,12 @@ for arg in "$@"; do
   esac
 done
 cd "$(dirname "$0")/../.."
-[ -f .claude/scripts/github/labels.py ] || { echo "setup: run this from a repository that has the kit installed (.claude/scripts/github/)" >&2; exit 2; }
+[ -f ".claude/bootstrap/${0##*/}" ] || { echo "setup: run this as .claude/bootstrap/${0##*/} of the project it was made for" >&2; exit 2; }
+KIT=%(kit)s
+[ -f "$KIT/scripts/github/labels.py" ] || { echo "setup: the kit is not at $KIT any more (a plugin update moves it). Generate this script again." >&2; exit 2; }
+KIT_REPO=%(kit_repo)s
+KIT_REF=%(kit_ref)s
+KIT_SHA=%(kit_sha)s
 
 show() {
   printf '+'
@@ -152,6 +183,27 @@ step() { show "$@"; if [ "$APPLY" = yes ]; then "$@"; fi; }
 kit_apply() { show "$@"; if [ "$APPLY" = yes ]; then "$@" --apply; else "$@"; fi; }
 kit_write() { show "$@"; if [ "$APPLY" = yes ]; then "$@" --write; else "$@"; fi; }
 copy_new() { if [ -e "$2" ]; then echo "exists, left alone: $2"; else step cp "$1" "$2"; fi; }
+# the commit the kit's tag names, read once (trust on first use, like pinning an action: check it against the release notes)
+kit_sha() {
+  [ -z "$KIT_SHA" ] || return 0
+  show git ls-remote "$KIT_REPO" "refs/tags/$KIT_REF" "refs/tags/$KIT_REF^{}"
+  refs="$(git ls-remote "$KIT_REPO" "refs/tags/$KIT_REF" "refs/tags/$KIT_REF^{}")" || { echo "setup: cannot read the kit's tags from $KIT_REPO" >&2; exit 1; }
+  KIT_SHA="$(printf '%%s\n' "$refs" | awk -v r="refs/tags/$KIT_REF^{}" '$2 == r { print $1 }')"
+  [ -n "$KIT_SHA" ] || KIT_SHA="$(printf '%%s\n' "$refs" | awk -v r="refs/tags/$KIT_REF" '$2 == r { print $1 }')"
+  case "$KIT_SHA" in *[!0-9a-f]*|'') echo "setup: the kit has no tag $KIT_REF at $KIT_REPO" >&2; exit 1 ;; esac
+  [ "${#KIT_SHA}" -eq 40 ] || { echo "setup: the kit's tag $KIT_REF did not name a commit" >&2; exit 1; }
+  echo "kit $KIT_REF is commit $KIT_SHA"
+}
+# a workflow template with the kit release filled in; a file that exists is left alone
+render_new() {
+  if [ -e "$2" ]; then echo "exists, left alone: $2"; return 0; fi
+  show render "$1" "$2" "KIT_REF=$KIT_REF"
+  [ "$APPLY" = yes ] || return 0
+  if grep -q '{{KIT_' "$1"; then kit_sha; fi
+  sed -e "s/{{KIT_REF}}/$KIT_REF/g" -e "s/{{KIT_SHA}}/$KIT_SHA/g" "$1" > "$2.part"
+  if grep -q '{{KIT_' "$2.part"; then rm -f "$2.part"; echo "setup: $1 has a kit placeholder this script does not fill" >&2; exit 1; fi
+  mv "$2.part" "$2"
+}
 say() { printf '\n== %%s\n' "$1"; }
 if [ "$APPLY" = yes ]; then echo "setup $PHASE: APPLY"; else echo "setup $PHASE: DRY RUN (nothing runs; add --apply)"; fi
 '''
@@ -162,22 +214,25 @@ def generate(p: Params) -> str:
           ("variant", p.variant), ("approvers", ",".join(p.approvers) or "(none)"), ("labels", "yes" if p.labels else "no"),
           ("boundary", "yes" if p.boundary else "no"), ("workflows", ",".join(p.workflows) or "(none)"), ("config-plan", p.config_plan or "(none)"),
           ("launch-skill", p.launch_skill or "(none)")]
+    if p.workflows:
+        kv.append(("kit", "%s at %s" % (p.kit_ref, p.kit_sha or "(read by the local phase with --apply)")))
     params = "\n".join("#   %-15s %s" % (k, v) for k, v in kv)
-    out = [HEADER % {"params": params}]
+    out = [HEADER % {"params": params, "kit": q(kitpaths.KIT_ROOT), "kit_repo": q(KIT_REPO), "kit_ref": q(p.kit_ref) if p.kit_ref else "''",
+                     "kit_sha": q(p.kit_sha) if p.kit_sha else "''"}]
     # ---- local phase
     out.append('if [ "$PHASE" = local ]; then')
     n = 0
     if p.config_plan:
         n += 1
         out += ['  say "%d. loop.config.md: apply the planned keys (an H6 change; read the diff it prints)"' % n,
-                "  kit_write python3 .claude/scripts/bootstrap_config.py apply %s" % q(p.config_plan)]
+                "  kit_write " + kitpaths.script_cmd("bootstrap_config.py", "apply", q(p.config_plan))]
     for w in p.workflows:
         n += 1
         out += ['  say "%d. workflow %s"' % (n, w),
                 "  step mkdir -p .github/workflows",
-                "  copy_new %s %s" % (q(".claude/templates/github/workflows/%s.yml" % w), q(".github/workflows/%s.yml" % w))]
+                "  render_new %s %s" % (q(kitpaths.kit("templates", "github", "workflows", w + ".yml")), q(".github/workflows/%s.yml" % w))]
     if p.workflows:
-        out.append('  echo "Pin every uses: in .github/workflows/ to a commit SHA, run python3 .claude/scripts/ci_lint.py, and read each file once."')
+        out.append("  echo %s" % q("Pin every uses: in .github/workflows/ to a commit SHA, run %s, and read each file once." % kitpaths.script_cmd("ci_lint.py")))
     if p.launch_skill:
         n += 1
         out += ['  say "%d. project skill launch-app (read it first: a skill\'s frontmatter can run hooks)"' % n,
@@ -208,21 +263,21 @@ def generate(p: Params) -> str:
         for r in p.reviewer_ids:
             extra += " --reviewer-id %d" % r
         out += ['say "%d. rulesets, tag protection, squash setting, workflow token permissions (apply-boundary.sh)"' % n,
-                "kit_apply sh .claude/scripts/github/apply-boundary.sh --repo %s --variant %s%s" % (q(p.repo), p.variant, extra)]
+                "kit_apply sh %s --repo %s --variant %s%s" % (q(kitpaths.script("github/apply-boundary.sh")), q(p.repo), p.variant, extra)]
     if p.labels:
         n += 1
-        out += ['say "%d. labels (apply-labels.sh)"' % n, "kit_apply sh .claude/scripts/github/apply-labels.sh --repo %s" % q(p.repo)]
+        out += ['say "%d. labels (apply-labels.sh)"' % n, "kit_apply sh %s --repo %s" % (q(kitpaths.script("github/apply-labels.sh")), q(p.repo))]
     if p.approvers:
         n += 1
         out += ['say "%d. repository variable FACTORY_APPROVERS (the same logins as factory_approvers in loop.config)"' % n,
                 "step gh variable set FACTORY_APPROVERS --repo %s --body %s" % (q(p.repo), q(",".join(p.approvers)))]
     out += ["", 'say "Still yours to do"']
-    todo = ["create the bot identity: docs/security/bot-identity.md (this script never creates or scopes it)",
-            "CODEOWNERS: copy .claude/templates/security/CODEOWNERS.template to .github/CODEOWNERS, fill the placeholders, commit it through a pull request",
+    todo = ["create the bot identity: %s (this script never creates or scopes it)" % q(kitpaths.kit("docs", "security", "bot-identity.md")),
+            "CODEOWNERS: copy %s to .github/CODEOWNERS, fill the placeholders, commit it through a pull request" % q(kitpaths.kit("templates", "security", "CODEOWNERS.template")),
             "secrets: if you use intake.yml or claude-review.yml, run `gh secret set ANTHROPIC_API_KEY --repo %s` yourself (it prompts; the key is never in a file)" % p.repo,
             "variables: CLAUDE_CODE_VERSION (the version your canary passed), SMOKE_URL if you use smoke.yml",
-            "make the job `verify` a required status check in the ruleset (docs/security/rulesets.md)",
-            "then check it: .claude/scripts/github/verify-boundary.sh --repo %s --run" % p.repo]
+            "make the job `verify` a required status check in the ruleset (%s)" % q(kitpaths.kit("docs", "security", "rulesets.md")),
+            "then check it: sh %s --repo %s --run" % (q(kitpaths.script("github/verify-boundary.sh")), p.repo)]
     for t in todo:
         out.append("echo %s" % q("  - " + t))
     return "\n".join(out) + "\n"
@@ -261,6 +316,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--workflows", default="")
     ap.add_argument("--config-plan", default="")
     ap.add_argument("--launch-skill", default="")
+    ap.add_argument("--kit-sha", default="")
     ap.add_argument("--out", default="")
     ap.add_argument("--repo-dir", default=".", help="the checkout to write --out into (default: current directory)")
     ap.add_argument("--json", action="store_true")
@@ -272,7 +328,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         p = Params(args.repo, args.create_repo, args.visibility, args.description, args.default_branch, args.variant, args.release_team_id,
                    args.environment, args.reviewer_id, [a for a in args.approvers.split(",") if a] if args.approvers else [], args.labels,
-                   args.boundary, [w for w in args.workflows.split(",") if w] if args.workflows else [], args.config_plan, args.launch_skill)
+                   args.boundary, [w for w in args.workflows.split(",") if w] if args.workflows else [], args.config_plan, args.launch_skill,
+                   args.kit_sha)
         text = generate(p)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         path = None  # type: Optional[str]

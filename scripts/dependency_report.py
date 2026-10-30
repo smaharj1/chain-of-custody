@@ -13,7 +13,7 @@ what is worth an issue, and writes the issue texts. It runs no package manager a
            lockfile has another major. Only names that are real dependencies are looked for, so prose cannot trigger it.
            Lockfiles read: package-lock.json (v2, v3) and poetry.lock. For other lockfiles drift and peers are not checked.
 
-    python3 .claude/scripts/dependency_report.py --repo . --out-dir .deps [--npm-outdated F] [--pip-outdated F] [--osv F]
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/dependency_report.py --repo . --out-dir .deps [--npm-outdated F] [--pip-outdated F] [--osv F]
                                                  [--existing-issues F] [--max-issues 10]
 
 Writes `report.json` (schema dependency_report.v1), `issues.json` (a list of {title, body, labels}, already de-duplicated against the open

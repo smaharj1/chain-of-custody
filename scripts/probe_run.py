@@ -27,6 +27,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -36,7 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio  # noqa: E402
 from kitlib import config as config_mod  # noqa: E402
-from kitlib import redact  # noqa: E402
+from kitlib import kitpaths, redact  # noqa: E402
 
 CONFIG_KEYS = (("verify_tests", "run"), ("db_ephemeral", "run"), ("verify_run", "server"))
 LOCAL_DEV_SECTIONS = (("Run the App Locally", "server"), ("Apply Migrations to the Durable Dev DB", "run"),
@@ -191,7 +192,7 @@ def main(argv: Optional[Sequence[str]] = None, run=subprocess.run) -> int:
                 print("       from %s" % c["source"])
             print("\nContainer: docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges, repo bind-mounted read-only at /src, copied to a tmpfs.")
             print("Read the list. If it is safe to run, say go, then run:\n")
-            print("  python3 .claude/scripts/probe_run.py --repo %s --image <image with your toolchain> --go %s" % (repo, dg))
+            print("  %s" % kitpaths.script_cmd("probe_run.py", "--repo", shlex.quote(repo), "--image", "<image with your toolchain>", "--go", dg))
             print("\n(The digest changes whenever the list changes; an old go does not carry over.)")
         return 0
     if args.go != dg:

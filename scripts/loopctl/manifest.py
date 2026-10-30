@@ -3,7 +3,7 @@
 WHAT IT IS. One JSON file that says exactly what a piece of the loop ran on, so that someone else (or you in a year) can see it and check it:
 
     repo        the base sha and the head sha
-    kit         KIT_VERSION at the base, loopctl's own version
+    kit         the running kit (the plugin, not the project): its KIT_VERSION, plugin.json version and fingerprint, loopctl's own version
     config      sha256 of loop.config.md AT THE BASE, every gate's mode, and the keys that decide how the loop behaves
     plan        the plan digest and the item's digest, both at the base
     toolchain   the version pins at the head: .nvmrc, .tool-versions, .python-version, package.json engines, pyproject requires-python
@@ -18,7 +18,7 @@ HOW IT IS CHECKED (`loopctl manifest verify`). Two independent things, and a for
 
   1. SEAL. The recorded `hash` must equal the hash of the document. Editing any field, or the hash itself, without recomputing the other breaks it.
   2. FACTS. Everything marked re-derivable (repo, kit, config, plan, toolchain, lockfiles, verify, evidence) is read again from git AT THE RECORDED SHAS
-     and compared. A manifest that was edited AND re-sealed still has to match the repository, so it cannot claim a config, a plan, a lockfile or an
+     (the kit from the plugin this command runs from: a different kit is a different fact) and compared. A manifest that was edited AND re-sealed still has to match the repository, so it cannot claim a config, a plan, a lockfile or an
      evidence file that those commits do not hold. Facts that git cannot re-derive (gates, environment) are protected by the seal and, if you
      pass `--expect-hash` (from the PR's audit block or any channel the writer cannot edit), by that.
 
@@ -35,10 +35,19 @@ import sys
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from kitlib import config as kconfig
-from kitlib import gitutil, jsonio
+from kitlib import gitutil, jsonio, kitpaths
 
-from . import VERSION, common, gitio, plan as plan_mod
+from . import VERSION, common, gitio, kit as kit_mod, plan as plan_mod
 from .common import Refused, UsageError
+
+
+def _read_kit_version() -> Optional[str]:
+    """The kit's KIT_VERSION, read from the plugin the driver runs from (the project holds no kit files)."""
+    try:
+        with open(kitpaths.kit("KIT_VERSION"), encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
 
 __all__ = ["SCHEMA", "collect", "seal", "body_hash", "verify", "REDERIVABLE", "RECORDED_ONLY", "manifests_dir", "write", "read_file", "find",
            "TOOLCHAIN_FILES", "LOCKFILES"]
@@ -115,7 +124,8 @@ def collect(repo: str, base: str, head: str, item_id: Optional[str], plan_name: 
             if m:
                 pins["pyproject.toml#requires-python"] = m.group(1)
     locks = {p: o for p, o in sorted(head_blobs.items()) if os.path.basename(p) in LOCKFILES}
-    kit_text = gitutil.show_file(base, ".claude/KIT_VERSION", repo, isolated=True)
+    kit_text = _read_kit_version()
+    ident = kit_mod.identity()
     verify = {}  # type: Dict[str, Any]
     gates_modes = {}  # type: Dict[str, str]
     behaviour = {}  # type: Dict[str, Any]
@@ -131,7 +141,7 @@ def collect(repo: str, base: str, head: str, item_id: Optional[str], plan_name: 
                 behaviour[k] = v if isinstance(v, (str, int, float, bool)) or v is None else common.clean_text(v, 60)
     return {
         "repo": {"base": base, "head": head},
-        "kit": {"version": _head_line(kit_text), "loopctl": VERSION},
+        "kit": {"version": _head_line(kit_text), "plugin": ident["version"], "fingerprint": ident["fingerprint"], "loopctl": VERSION},
         "config": {"sha256": common.sha256_hex(cfg_text) if cfg_text is not None else None, "gates": gates_modes, "keys": behaviour},
         "plan": {"name": lp.name or plan_name, "digest": plan_mod.plan_digest(lp) if lp.plan else None,
                  "item": item_id, "item_digest": common.sha256_hex(common.canonical_json(item)) if item else None},

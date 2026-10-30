@@ -9,7 +9,7 @@ Dry run by default: it prints every `gh` call and sends nothing. Add --apply to 
     labels.py apply --repo OWNER/NAME [--labels-file FILE] --apply
 
 Each label is one call: `gh label create NAME --repo OWNER/NAME --color C --description D --force`. `--force`
-updates a label that already exists, so the script can be run again. The label list is `.claude/templates/github/labels.json`
+updates a label that already exists, so the script can be run again. The label list is the kit's `templates/github/labels.json`
 unless --labels-file names another file; every name, colour and description is checked against a strict pattern before it
 reaches a command line, and a name never starts with `-`. Arguments go to `gh` as an argument list (no shell).
 
@@ -30,13 +30,14 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
-KIT_ROOT = os.path.dirname(SCRIPTS)  # .claude
-DEFAULT_LABELS = os.path.join(KIT_ROOT, "templates", "github", "labels.json")
 
 sys.path.insert(0, SCRIPTS)
 
 import humanonly  # noqa: E402
 from doctorlib import safeio  # noqa: E402
+from kitlib import kitpaths  # noqa: E402
+
+DEFAULT_LABELS = kitpaths.kit("templates", "github", "labels.json")
 
 _SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]{1,39}/[A-Za-z0-9_.-]{1,100}\Z")
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_. /-]{0,49}\Z")
@@ -185,7 +186,7 @@ def cmd_apply(args: argparse.Namespace, env: Dict[str, str], runner: Callable) -
     print("\nStill yours to do:")
     print("  - set the repository variable FACTORY_APPROVERS to the logins in factory_approvers (label-guard.yml reads it):")
     print("      gh variable set FACTORY_APPROVERS --repo %s --body 'login1,login2'" % args.repo)
-    print("  - copy .claude/templates/github/workflows/label-guard.yml into .github/workflows/ (without it, labels carry no trust)")
+    print("  - copy %s into .github/workflows/ (without it, labels carry no trust)" % shlex.quote(kitpaths.kit("templates", "github", "workflows", "label-guard.yml")))
     return 0
 
 

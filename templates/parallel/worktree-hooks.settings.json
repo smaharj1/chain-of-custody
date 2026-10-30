@@ -5,14 +5,15 @@
     "it cuts the worktree off the LOCAL integration branch (not the remote default), under .claude/worktrees/<name> only, reserves a port slot and prints the path.",
     "The event names WorktreeCreate and WorktreeRemove and the fields of their input (`name`, `worktree_path`, `cwd`) are unverified on the pinned CLI (probe V6 / V25);",
     "worktree_hook.py refuses any shape it does not recognise (exit 2), which for WorktreeCreate means the platform's creation fails rather than doing something else.",
-    "Also copy .claude/templates/worktreeinclude to ./.worktreeinclude if you want .env.local / .env.test in the new worktree (nothing else is ever copied)."
+    "Replace __KIT__ with the kit folder (the `kit:` line of the session context or of the doctor): ${CLAUDE_PLUGIN_ROOT} is not set in settings-file hooks.",
+    "Also copy ${CLAUDE_PLUGIN_ROOT}/templates/worktreeinclude to ./.worktreeinclude if you want .env.local / .env.test in the new worktree (nothing else is ever copied)."
   ],
   "hooks": {
     "WorktreeCreate": [
-      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/worktree_hook.py\" create", "timeout": 60}]}
+      {"hooks": [{"type": "command", "command": "python3 \"__KIT__/scripts/worktree_hook.py\" create", "timeout": 60}]}
     ],
     "WorktreeRemove": [
-      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/worktree_hook.py\" remove", "timeout": 60}]}
+      {"hooks": [{"type": "command", "command": "python3 \"__KIT__/scripts/worktree_hook.py\" remove", "timeout": 60}]}
     ]
   }
 }

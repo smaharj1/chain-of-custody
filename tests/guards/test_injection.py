@@ -95,7 +95,7 @@ class InjectionCorpus(unittest.TestCase):
         row = [r for r in load_corpus("injection.json") if r["id"] == "inj-005"][0]
         hook = self.hook_for(row)
         hook["session_id"] = "sess-real-entry"
-        proc = subprocess.run([sys.executable, os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "run.py"), "PostToolUse", "--id", "post-untrusted"],
+        proc = subprocess.run([sys.executable, os.path.join(REPO_ROOT, "scripts", "guards", "run.py"), "PostToolUse", "--id", "post-untrusted"],
                               input=json.dumps(hook).encode(), cwd=self.fx.main.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               env=clean_env(self.fx.main.path))
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -109,7 +109,7 @@ class InjectionCorpus(unittest.TestCase):
     def test_clean_page_is_silent_but_taints(self) -> None:
         hook = {"session_id": "sess-quiet", "cwd": self.fx.main.path, "hook_event_name": "PostToolUse", "tool_name": "WebFetch",
                 "tool_input": {"url": "https://example.com"}, "tool_response": "Just documentation."}
-        proc = subprocess.run([sys.executable, os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "run.py"), "PostToolUse", "--id", "post-untrusted"],
+        proc = subprocess.run([sys.executable, os.path.join(REPO_ROOT, "scripts", "guards", "run.py"), "PostToolUse", "--id", "post-untrusted"],
                               input=json.dumps(hook).encode(), cwd=self.fx.main.path, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               env=clean_env(self.fx.main.path))
         self.assertEqual((proc.returncode, proc.stdout), (0, b""))

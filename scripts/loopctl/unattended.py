@@ -2,7 +2,7 @@
 
 OPT-IN and evidence-gated. It is on only when the BASE sha's loop.config says `autonomy: unattended` (which already refuses until
 `docs/baseline/evidence.json` is complete) and the driver runs (`runner: driver`). Everything here is deterministic; the kit never sends a
-message itself, it runs the human's `notify_command` (`.claude/scripts/notify.py`).
+message itself, it runs the human's `notify_command` (`${CLAUDE_PLUGIN_ROOT}/scripts/notify.py`).
 
 WHAT IT ADDS TO THE SERIAL DRIVER (the driver is otherwise unchanged; it calls the hooks below)
 

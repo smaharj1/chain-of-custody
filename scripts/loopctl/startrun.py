@@ -11,6 +11,10 @@ module is not installed it says "driver not installed" and exits 2 before it tou
 CANARY (RC-7, section 5.8): a sequential run needs `--session` and the `--nonce` the SessionStart hook printed for that session.
 A session without a nonce does not dispatch: the hooks may not be firing, and then none of the guards can be trusted.
 
+KIT (run.json `kit`): every run records the kit it started with, the plugin's version and a fingerprint of its files (`loopctl.kit`).
+The driver checks it again before every child; a sequential run resumed under the same run id checks it here. A kit that changed
+mid-run is refused: finish or abandon the run, then start a new one.
+
 `--dry-run` renders the plan, the gates with their toggles, the runner, the budget projection and every preflight result, and
 executes nothing (§15 item 6).
 """
@@ -22,9 +26,9 @@ import os
 import secrets
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
-from kitlib import gitutil, runstate
+from kitlib import gitutil, kitpaths, runstate
 
-from . import lgit, common, gates, launch, ledger, lock as lock_mod, plan as plan_mod
+from . import lgit, common, gates, kit, launch, ledger, lock as lock_mod, plan as plan_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, Refused
 
 __all__ = ["preflight", "dry_run", "start", "handoff_text", "load_driver"]
@@ -177,8 +181,8 @@ def dry_run(ctx: Any, out: Any, as_json: bool, env: Optional[Mapping[str, str]] 
 
 
 def handoff_text(ctx: Any, run_id: str, session: str, order: List[str], eligible: List[str], state: Any) -> str:
-    base = "python3 .claude/scripts/loopctl"
-    L = ["loopctl run: runner is sequential, so the prose loop (.claude/skills/orchestrate/SKILL.md) runs this run.",
+    base = kitpaths.script_cmd("loopctl")
+    L = ["loopctl run: runner is sequential, so the prose loop (the orchestrate skill, %s) runs this run." % kitpaths.kit("skills", "orchestrate", "SKILL.md"),
          "  run id     %s" % run_id, "  session    %s (registered as the conductor; holds the run lock)" % session,
          "  plan       %s, %d item(s); approved by %s" % (ctx.plan.name, len(order), (state.header.get("approvedPlan") or {}).get("by")),
          "  config and plan read at base sha %s" % (ctx.base_sha or "")[:12],
@@ -258,6 +262,11 @@ def start(ctx: Any, out: Any, session: Optional[str], nonce: Optional[str], as_j
     cur = ctx.rs.read_lock() if ctx.rs.lock_held() else None
     if cur and cur.get("sessionId") == session and prior and prior.get("runId") == cur.get("runId"):
         run_id = cur["runId"]
+        try:
+            kit.check(prior.get("kit"))                # the same run, resumed: under the kit it started with, or not at all
+        except kit.KitChanged as exc:
+            out.err("loopctl run: refused: kit: %s" % common.clean_text(exc, 300))
+            return EXIT_REFUSED
     else:
         run_id = "run-%d-%s" % (int(common.now()), secrets.token_hex(2))
         lk.acquire(run_id, session, ctx.repo, None, plan_rev)
@@ -280,6 +289,6 @@ def start(ctx: Any, out: Any, session: Optional[str], nonce: Optional[str], as_j
 
 def _write_run(ctx: Any, run_id: str, sid: str, order: List[str], plan_rev: str, runner: str) -> Dict[str, Any]:
     rec = {"runId": run_id, "plan": ctx.plan.name, "planRev": plan_rev, "baseSha": ctx.base_sha, "runner": runner,
-           "worktree": ctx.repo, "conductor_session_id": sid, "startedAt": common.iso(), "items": len(order)}
+           "worktree": ctx.repo, "conductor_session_id": sid, "startedAt": common.iso(), "items": len(order), "kit": kit.identity()}
     ctx.rs.write_run(rec)
     return rec

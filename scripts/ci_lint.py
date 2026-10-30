@@ -7,7 +7,7 @@ It enforces the split-CI rules that make a pull request safe to run:
   ci.secrets-in-pr-job        no secrets in a `pull_request` job                             (RC-3)
   ci.pr-target-head-checkout  `pull_request_target` / `workflow_run` must not check out head  (RC-3)
   ci.skills-not-restored      a `claude -p` step runs the base ref's .claude/, .mcp.json,
-                              plugin/ and skill dirs, never the PR's                         (RC-18, §5.3 rule 5)
+                              .claude-plugin/ and skill dirs, never the PR's                (RC-18, §5.3 rule 5)
   ci.claude-settings-sources  `claude -p` passes --setting-sources user or --settings        (§5.3 rule 5)
   ci.script-injection         untrusted `${{ }}` text interpolated into `run:`: any github.event.* (but a
                               number, action or repository field), inputs.*, head_ref, ref_name,
@@ -27,13 +27,15 @@ It enforces the split-CI rules that make a pull request safe to run:
   ci.persist-credentials      checkout leaves the token in .git/config in a PR job (warning)
   ci.unparsed                 the restricted YAML subset could not read the file: manual review, never "passed"
   ci.unreadable               the lint itself failed on the file (an exception, a recursion limit, more quotes and expressions than it reads): an error, never "passed"
+  ci.kit-placeholder          a file in .github/workflows still holds a literal `{{KIT_` placeholder (the templates' `{{KIT_REF}}` and
+                              `{{KIT_SHA}}`, which the bootstrap setup script fills): the kit step would fetch nothing (an error)
   infra.*                     rules for workflows that run terraform, tofu, pulumi, cdk, kubectl or helm: the
                               apply gate, the saved plan, policy before init (infra/ci_rules.py, Phase 6, §8.4)
 
 Exit 0: no errors and nothing unparsed (warnings do not fail). Exit 1: an error or an unparsed
 file. Exit 2: usage. `--json` prints machine-readable findings.
 
-Usage: python3 .claude/scripts/ci_lint.py [PATH ...] [--repo DIR] [--json] [--restore-paths a,b,c]
+Usage: python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py [PATH ...] [--repo DIR] [--json] [--restore-paths a,b,c]
 With no PATH it lints DIR/.github/workflows (DIR defaults to the current directory).
 """
 from __future__ import annotations
@@ -51,7 +53,7 @@ from doctorlib import safeio, workflows  # noqa: E402
 from infra import ci_rules  # noqa: E402
 
 ERROR, WARN = "error", "warn"
-DEFAULT_RESTORE = (".claude", ".mcp.json", "plugin", ".claude-plugin")
+DEFAULT_RESTORE = (".claude", ".mcp.json", ".claude-plugin")
 
 _PR_HEAD_RE = re.compile(r"github\.event\.pull_request\.head|github\.head_ref|refs/pull/|github\.event\.workflow_run\.head|"
                          r"github\.event\.pull_request\.merge_commit_sha|github\.event\.number|github\.event\.issue\.number|pull/\$\{\{", re.I)
@@ -560,15 +562,29 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
     return out
 
 
+def _kit_placeholder(text: str, name: str) -> List[Finding]:
+    """`ci.kit-placeholder` for a file GitHub runs (one in a `.github/workflows` directory) that still holds `{{KIT_`. The kit's own templates
+    (templates/github/workflows/, templates/infra/workflows/) hold the placeholders on purpose and are not in such a directory."""
+    if "/.github/workflows/" not in "/" + name.replace(os.sep, "/"):
+        return []
+    lines = [i + 1 for i, line in enumerate(text.splitlines()) if "{{KIT_" in line]
+    if not lines:
+        return []
+    return [Finding("ci.kit-placeholder", ERROR, name, "",
+                    "a kit placeholder `{{KIT_...}}` is still in the file (line %s): the setup script fills KIT_REF and KIT_SHA when it writes the "
+                    "workflow; by hand, KIT_REF is v<KIT_VERSION> and KIT_SHA the commit that tag points at" % ", ".join(str(n) for n in lines[:5]))]
+
+
 def lint_text(text: str, name: str = "<workflow>", opts: Optional[Options] = None, repo_has_skills_dir: bool = False,
               callers: Optional[Callers] = None) -> List[Finding]:
     """The findings for one workflow. Whatever goes wrong while reading it (an exception, `RecursionError`, `workflows.ScanLimit` when the script has
     more quotes and expressions than the span pass reads) is one `ci.unreadable` error: the file is never read as clean (round 4, structural)."""
+    out = _kit_placeholder(text, name)
     try:
-        return _lint_text(text, name, opts, repo_has_skills_dir, callers)
+        return out + _lint_text(text, name, opts, repo_has_skills_dir, callers)
     except Exception as exc:       # RecursionError and MemoryError are Exceptions too
-        return [Finding("ci.unreadable", ERROR, name, "", "unreadable: the lint stopped on this file (%s: %s); manual review, it is not read as clean"
-                        % (type(exc).__name__, str(exc)[:120]))]
+        return out + [Finding("ci.unreadable", ERROR, name, "", "unreadable: the lint stopped on this file (%s: %s); manual review, it is not read as clean"
+                              % (type(exc).__name__, str(exc)[:120]))]
 
 
 def _lint_text(text: str, name: str, opts: Optional[Options], repo_has_skills_dir: bool, callers: Optional[Callers]) -> List[Finding]:

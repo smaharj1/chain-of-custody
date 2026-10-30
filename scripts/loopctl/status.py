@@ -10,13 +10,14 @@ the document says so (`state.error`) instead of showing anything made up.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
-from kitlib import runstate
+from kitlib import kitpaths, runstate
 
-from . import common, ledger as ledger_mod, plan as plan_mod, state as state_mod
+from . import common, kit as kit_mod, ledger as ledger_mod, plan as plan_mod, state as state_mod
 
-__all__ = ["collect", "pending_human", "ac_matrix", "format_text", "format_pending", "format_matrix", "format_bypass"]
+__all__ = ["collect", "pending_human", "absolute_commands", "ac_matrix", "format_text", "format_pending", "format_matrix", "format_bypass"]
 
 GATE_ORDER = ("g1", "g3", "g5", "g6", "g7", "g9", "g11")
 
@@ -65,14 +66,23 @@ def ac_matrix(lp: Any, st: Any, only: Optional[str] = None) -> Dict[str, Any]:
                                                        "percent": round(100.0 * covered / total, 1) if total else 0.0}}
 
 
+_LOOPCTL_WORD = re.compile(r"(^|`)loopctl (?=[a-z])")
+
+
+def absolute_commands(text: str) -> str:
+    """`loopctl <sub>` at the start of a command or inside backticks, as the absolute command a person can paste: the kit is a
+    plugin, so `loopctl` is not on PATH and `${CLAUDE_PLUGIN_ROOT}` is not set in a shell."""
+    return _LOOPCTL_WORD.sub(lambda m: m.group(1) + kitpaths.script_cmd("loopctl") + " ", text)
+
+
 def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = None) -> List[Dict[str, Any]]:
     """Everything waiting on a human, each with the command to answer it and a link when there is one."""
     out = []  # type: List[Dict[str, Any]]
 
     def add(kind: str, item: Optional[str], why: str, cmd: str, link: Optional[str] = None, human: Optional[str] = None) -> None:
         # `human`: the exact copy-paste command of a HUMAN-ONLY step (kitlib/loopctl_table.py: the guard denies it to every agent, the conductor included)
-        out.append({"kind": kind, "item": item, "why": common.clean_text(why, 220), "command": cmd, "link": link,
-                    "human_step": ("HUMAN STEP: python3 .claude/scripts/loopctl " + human) if human else None})
+        out.append({"kind": kind, "item": item, "why": common.clean_text(why, 220), "command": absolute_commands(cmd), "link": link,
+                    "human_step": ("HUMAN STEP: " + kitpaths.script_cmd("loopctl", human)) if human else None})
 
     if doc_state_error:
         add("state-unreadable", None, doc_state_error, "inspect refs/loopctl/state/%s with git; do not continue on it" % (lp.name or "<plan>"))
@@ -147,7 +157,7 @@ def pending_human(ctx: Any, st: Any, lp: Any, doc_state_error: Optional[str] = N
     ab = st.header.get("abort")
     if isinstance(ab, dict) and ab.get("revertPlan"):
         add("revert-plan", None, "an abort left a revert plan for %d item(s) that already reached main or a shared database" % len(ab["revertPlan"]),
-            "run the plan by hand: loopctl abort --dry-run shows it; it is in %s" % ab.get("planFile", "the abort record"))
+            "run the plan by hand: `loopctl abort --dry-run` shows it; it is in %s" % ab.get("planFile", "the abort record"))
     lk = ctx.lock().status()
     if lk["held"] and (lk["corrupt"] or lk["stale"]):
         add("stale-lock", None, "the run lock is %s" % ("unreadable" if lk["corrupt"] else "stale (no heartbeat for %s min)" % lk["age_min"]),
@@ -176,6 +186,7 @@ def collect(ctx: Any, include_level: bool = False) -> Dict[str, Any]:
     except common.READ_ERRORS:
         pass
     doc["run"]["record"] = run_rec
+    doc["kit"] = _kit(run_rec)
     items = []  # type: List[Dict[str, Any]]
     if st is not None:
         h = st.header
@@ -214,6 +225,15 @@ def collect(ctx: Any, include_level: bool = False) -> Dict[str, Any]:
     return doc
 
 
+def _kit(run_rec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The kit the run started with (run.json `kit`) and the kit now: a mismatch means the next launch is refused."""
+    now = kit_mod.identity()
+    rk = run_rec.get("kit") if isinstance(run_rec, dict) and isinstance(run_rec.get("kit"), dict) else None
+    return {"version": now["version"], "fingerprint": now["fingerprint"], "root": kitpaths.KIT_ROOT,
+            "run_version": rk.get("version") if rk else None, "run_fingerprint": rk.get("fingerprint") if rk else None,
+            "matches": (rk.get("fingerprint") == now["fingerprint"] and rk.get("version") == now["version"]) if rk else None}
+
+
 def _spend(ctx: Any, run_rec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     led = ctx.ledger()
     run_id = run_rec.get("runId") if isinstance(run_rec, dict) else None
@@ -237,11 +257,17 @@ def format_text(doc: Dict[str, Any]) -> str:
     if st["error"]:
         L.append("  STATE UNREADABLE: %s" % common.clean_text(st["error"], 200))
     elif not st["present"]:
-        L.append("  no state yet (`loopctl approve plan --by <you>` creates it)")
+        L.append(absolute_commands("  no state yet (`loopctl approve plan --by <you>` creates it)"))
     else:
         run = doc["run"]
         L.append("  state seq %s; run %s; plan %s; breaker %s" % (st["seq"], run.get("status"), "approved" if run.get("plan_approved") else "NOT approved",
                                                                 run.get("breaker")))
+    k = doc.get("kit") or {}
+    if k.get("run_version") is not None:
+        L.append("  kit: run started with %s%s" % (common.clean_text(k["run_version"], 40), "" if k.get("matches") else
+                 "; NOW %s (the kit changed mid-run: finish or abandon the run, then start a new one)" % common.clean_text(k.get("version"), 40)))
+    else:
+        L.append("  kit: %s (no run recorded one)" % common.clean_text(k.get("version"), 40))
     L.append("  Tier 2 writes: %s; runner: %s; evidence gate: %s" % ("on" if doc["config"]["tier2"] else "off", doc["config"]["runner"],
                                                                   "passed" if doc["evidence"]["passed"] else "not passed (level capped at L3)"))
     lk = doc["run"]["lock"]
@@ -282,7 +308,7 @@ def format_text(doc: Dict[str, Any]) -> str:
     L.append("  AC coverage: %d of %d criteria have a passing test (%.1f%%)" % (mt["covered"], mt["total"], mt["percent"]))
     if doc["pending_human"]:
         L.append("")
-        L.append("  Waiting on a human (%d): `loopctl status --pending-human`" % len(doc["pending_human"]))
+        L.append(absolute_commands("  Waiting on a human (%d): `loopctl status --pending-human`" % len(doc["pending_human"])))
     if doc.get("blocked_downstream"):
         L.append("  Pending but stuck behind a blocked item: %s" % ", ".join(doc["blocked_downstream"][:8]))
     return "\n".join(L) + "\n"

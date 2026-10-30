@@ -11,7 +11,8 @@
 #     is untrusted too: the `apply` job, which can write, never runs a model, and the `triage` job, which runs one, cannot write;
 #   * it starts only when the person who applied `factory:go` is listed in the repository variable FACTORY_APPROVERS (the same list
 #     as factory_approvers in loop.config). It checks that itself, because label-guard.yml runs at the same moment and cannot be waited for;
-#   * both jobs check out the DEFAULT BRANCH only, so .claude/ is the base's (RC-18); nothing from a pull request is involved;
+#   * both jobs check out the DEFAULT BRANCH only, so .claude/ is the base's (RC-18); nothing from a pull request is involved; the
+#     validator is the kit's own, fetched from its repository at the release this file pins (KIT_REF, checked against KIT_SHA);
 #   * the issue reaches the model inside a fence whose marker carries a random nonce made AFTER the issue was fetched, so the text cannot
 #     close its own fence; the model is told that everything between the markers is data. Tools are denied twice (an empty allow list
 #     and the deny list) on top of `dontAsk`;
@@ -153,6 +154,25 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v4 # pin to a commit SHA
         with:
           name: intake-triage
@@ -161,7 +181,7 @@ jobs:
       - name: Validate the answer (fixed schema, no model)
         run: |
           set -eu
-          python3 .claude/scripts/intake_validate.py --in .intake/out.json --out-dir .intake/checked
+          python3 "$RUNNER_TEMP/kit/scripts/intake_validate.py" --in .intake/out.json --out-dir .intake/checked
 
       - name: Add the type label and post the comment
         env:

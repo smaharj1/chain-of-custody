@@ -47,7 +47,7 @@ total_token_budget_per_run: 2000000   # best-effort global estimate
 verify_tests: <command>          # e.g. "pnpm test" — must exit 0 AND collect >0 tests
 verify_run: <command>            # how to boot the app locally for the per-item runtime assertion
                                  #   e.g. "pnpm dev" + a preview assertion on the item's demo target
-verify_build: ""                 # Optional G6 stages, run by `python3 .claude/scripts/verify.py` before the tests, in this order:
+verify_build: ""                 # Optional G6 stages, run by `python3 "$KIT/scripts/verify.py"` before the tests, in this order:
                                  # verify_build, verify_lint, verify_typecheck. Empty = the stage does not run (see verify_require).
 verify_lint: ""                  # lint command; must exit 0
 verify_typecheck: ""             # typecheck command; must exit 0
@@ -114,7 +114,7 @@ enforce_engineer_git_hook: true  # documents whether you keep the shipped PreToo
                                  # missing or the command cannot be parsed, until the v2 guards (Phase 2)
                                  # replace it. If false, you accept the residual risk with no hook backstop.
 
-# --- Model and effort routing (see .claude/context/model-profiles.md) ---
+# --- Model and effort routing (see $KIT/context/model-profiles.md) ---
 model_profile: quality           # quality | balanced | economy (§11.4). Which model each role runs on.
                                  #   quality  = opus for every engineer and critic (default; frontmatter as shipped)
                                  #   balanced = sonnet for the frontend engineers, opus for the rest
@@ -132,10 +132,10 @@ quick_lane_max_loc: 30           # quick lane (/tech-lead Lane B): the largest c
 
 # --- Boundary (security model, report §5) ---
 # Attestations are things the repo cannot show; a human commits them under H6.
-# Everything here is read by `python3 .claude/scripts/doctor.py`.
+# Everything here is read by `python3 "$KIT/scripts/doctor.py"`.
 autonomy_level: L1               # L0 | L1 | L2 | L3 | L4 | L5   (report §6.2). The level you ask for; the doctor prints the
                                  #   EFFECTIVE level, which is lower whenever a prerequisite or cap fails. Run
-                                 #   `python3 .claude/scripts/doctor.py --level` to see each cap and its reason.
+                                 #   `python3 "$KIT/scripts/doctor.py" --level` to see each cap and its reason.
                                  #   L0 assist | L1 supervised local loop (today's V1) | L2 push-branch | L3 draft-PR factory
                                  #   L4 async factory | L5 low-risk auto-merge. L4 and L5 need docs/baseline/evidence.json.
 github_repo: ""                  # owner/name of the GitHub repo the doctor reads rulesets from. Empty = derive from `origin`.
@@ -194,7 +194,7 @@ gaps_min_occurrences: 2          # `loopctl gaps` drafts a rule or primer change
 calibration_min_samples: 5       # `loopctl calibration report` judges a critic's precision only after this many logged blockers with a final outcome; before that it says `pending`.
 harness_min_item_runs: 10        # `loopctl harness` names a gate a removal candidate only after it has run on at least this many items without once blocking or catching anything.
 
-# --- Loopctl extras (report 6.2 L5, 9 G10, 10.3 remote lock, F-25, F-26; python3 .claude/scripts/loopctl remote-lock|claim|manifest|merge-class) ---
+# --- Loopctl extras (report 6.2 L5, 9 G10, 10.3 remote lock, F-25, F-26; python3 "$KIT/scripts/loopctl" remote-lock|claim|manifest|merge-class) ---
 # OPT-IN and evidence-gated: `remote_lock`, `merge_policy: auto-low-risk` and `gates.g10` refuse until docs/baseline/evidence.json passes.
 # Read from the BASE sha, never from the branch under judgement (CO-11).
 merge_policy: human              # human | auto-low-risk   (report 6.2 L5, DEC-3). Who merges. `human` (the default, and the only value that does anything in this kit): a person merges
@@ -222,7 +222,7 @@ g10_observability_cmd: ""        # G10 only. Your program for a log, metric or t
                                  #   last output line: {"schema": "g10.v1", "check": "observability", "checked": N, "violations": N}. violations must be 0 and checked at least 1. Empty = this check is not run.
 g10_timeout_s: 600               # G10 only. Seconds before a g10_*_cmd's process group is killed.
 
-# --- Guards (report section 7). Read by .claude/scripts/guards/ ---
+# --- Guards (report section 7). Read by $KIT/scripts/guards/ ---
 roster: {}                       # extra subagent roles the guards should know, as role: engineer | critic (CS-39).
                                  #   The built-in roster (the kit's own agent names) needs no entry. A role that is not on the roster is treated
                                  #   as an engineer (agent-blind default); a `<plugin>:` prefix on agent_type is stripped before matching.
@@ -233,19 +233,27 @@ main_edit_allow: []              # extra path globs that may be edited while on 
                                  #   Built in: docs/**, plan files, README/CHANGELOG/GLOSSARY/LICENSE/.gitignore, CLAUDE.md and .claude/context/**.
                                  #   There is no allow-list for the rest of .claude/** (report section 7.1).
 
-# --- Delivery (interactive PR lane; see .claude/context/delivery.md) ---
-# Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the
-# work and prints the exact commands; the human runs them (IMP-25).
-delivery: local                  # local | push-branch | draft-pr   (report R5, DEC-1). How finished work leaves the machine.
-                                 #   local       = the human merges the feature branch into the local main; nothing is pushed (default)
-                                 #   push-branch = pr_prepare prints the push command for the feature branch
-                                 #   draft-pr    = pr_prepare prints the push command and `gh pr create --draft --body-file ...`
-                                 # Pushing is always the human's act. The doctor suggests draft-pr once the ruleset checks pass.
-git_autonomy: none               # none | branch | branch+commit   (DEC-22). What the interactive conductor may do with git itself.
-                                 #   none          = it asks you to create the branch and to commit (v1 behaviour, default)
+# --- Delivery (interactive PR lane; see $KIT/context/delivery.md) ---
+# `python3 "$KIT/scripts/pr_prepare.py" prepare` validates the work and prints the exact commands.
+# Below git_autonomy: branch+commit+push the human runs them; at that tier the main session may push its
+# feature branch itself (never a protected branch; subagents never push). Merging stays the human's (IMP-25).
+delivery: push-branch            # local | push-branch | draft-pr   (report R5, DEC-1). How finished work leaves the machine.
+                                 #   local       = the human merges the feature branch into the local main; nothing is pushed
+                                 #                 (the default when the key is absent)
+                                 #   push-branch = the feature branch is pushed (by the main session at git_autonomy: branch+commit+push, else by you)
+                                 #   draft-pr    = push-branch plus `gh pr create --draft --body-file ...` (the same rule for who runs it)
+                                 # The starter config /chain-of-custody:init writes sets push-branch (with git_autonomy: branch+commit+push):
+                                 # the main session pushes its own feature branch and you open the PR.
+                                 # Merging is always the human's act. The doctor suggests draft-pr once the ruleset checks pass.
+git_autonomy: branch+commit+push   # none | branch | branch+commit | branch+commit+push   (DEC-22). What the main session may do with git itself.
+                                 #   none          = it asks you to create the branch and to commit (v1 behaviour; the default when the key is absent)
                                  #   branch        = it creates and switches to `feat/<slug>` itself
                                  #   branch+commit = it also makes one WIP commit per engineer so reviewers see `prev..sha`
-                                 # Never push, merge, rebase or reset: those stay yours at every setting. Recommended with delivery: draft-pr.
+                                 #   branch+commit+push = it also pushes its feature branch (`git push <remote> feat/<slug>`, no force, never a
+                                 #                   protected branch) and, with delivery: draft-pr, opens the draft PR. Needs delivery push-branch or
+                                 #                   draft-pr, and counts only once this value is committed on the base branch. The starter config
+                                 #                   /chain-of-custody:init writes sets this tier: the main session pushes its own feature branch
+                                 # Subagents never push. Merge, rebase, force-push and `gh pr merge` stay yours at every setting.
 max_ci_fix_attempts: 2           # CI-fix commits allowed on one PR (report F-28). While fixing CI, edits to `.github/workflows/**`,
                                  # acceptance tests and lockfiles are refused; each fix commit carries a `CI-Fix-Of: <sha>` trailer.
                                  # Still red after the last attempt: stop and hand it to a human.
@@ -255,7 +263,7 @@ always_human_paths: []           # Extra path globs a human must review on top o
                                  #   - src/auth/**
                                  #   - src/payments/**
 
-# --- loopctl (report section 10; python3 .claude/scripts/loopctl <command>) ---
+# --- loopctl (report section 10; python3 "$KIT/scripts/loopctl" <command>) ---
 # loopctl owns the deterministic decisions of the loop: state, counters, caps, the lock, spend, abort.
 # Read from the BASE sha by loopctl, never from the branch it is judging (CO-11).
 runner: sequential               # sequential | driver   (report section 11.2, DEC-23). Where an item runs. Never auto-selected.
@@ -288,13 +296,13 @@ db_migrate_down: ""              # Command that runs ONE down-migration against 
                                  #   LOOPCTL_ITEM, LOOPCTL_MIGRATION and LOOPCTL_MIGRATION_DOWN in its environment, never on its command line.
                                  #   Empty = `loopctl abort` writes the down-migrations into the human revert plan instead of running them.
 
-# --- Gates (report section 9; python3 .claude/scripts/loopctl gate <name> <item>) ---
+# --- Gates (report section 9; python3 "$KIT/scripts/loopctl" gate <name> <item>) ---
 # Per-gate toggles are `gates.<name>: on | report | off` (see the gates family above). These keys configure what the gates run.
 # All are read from the BASE sha, never from the branch under judgement (CO-11).
 gates:
   g4: off                        # on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G4 mutation testing: the changed lines are mutated and the acceptance tests
                                  #   must kill at least mutation_min percent. Tool-agnostic: you supply mutation_cmd. Refuses `on` and `report` until the evidence
-                                 #   gate has passed (docs/baseline/evidence.json, `python3 .claude/scripts/loopctl evidence --check`). Other gates default to on.
+                                 #   gate has passed (docs/baseline/evidence.json, `python3 "$KIT/scripts/loopctl" evidence --check`). Other gates default to on.
   g10: off                       # on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G10 product checks (accessibility, performance budget, PII, observability): you supply the commands (g10_*_cmd);
                                  #   no tool is bundled. Refuses `on` and `report` until the evidence gate has passed. Other gates default to on.
 g5_ast_lint: []                  # OPT-IN, EXPERIMENTAL (IMP-1). Languages the G5 test-integrity AST lint runs for: python (stdlib ast, trustworthy), javascript
@@ -320,7 +328,7 @@ license_allowlist: []            # G9 only. SPDX ids a new dependency's licence 
 secrets_scan_cmd: ""             # G11 only. Optional external scanner (gitleaks, trufflehog) run in the worktree on top of the built-in pattern scan. Environment:
                                  #   LOOPCTL_BASE and LOOPCTL_HEAD. Exit 0 = clean, anything else = findings. The built-in scan always runs.
 
-# --- Unattended L4 (report 6.2, 6.3, 10.4, 16.1 row 7; python3 .claude/scripts/loopctl unattended ...) ---
+# --- Unattended L4 (report 6.2, 6.3, 10.4, 16.1 row 7; python3 "$KIT/scripts/loopctl" unattended ...) ---
 # Unattended mode is `autonomy: unattended` + `autonomy_level: L4` (both refuse until the evidence gate passes). These keys say how a run that nobody
 # watches reaches a person, and the promotion bar. Read from the BASE sha, never from the branch under judgement (CO-11).
 notify_command: ""               # OPT-IN. A program (and fixed arguments) the kit runs to reach you when a run stops, parks or stalls (DEC-31). It is run with no shell,
@@ -359,10 +367,11 @@ lease_ttl_s: 300                 # Seconds a worker, mutex or integration lease 
 
 ## Notes
 
-- **Sequential only (V1).** The Orchestrator runs exactly one item at a time. Parallel execution is deferred (it reintroduces migration-number collisions and merge races).
+- **Kit paths.** Commands in the comments write the kit's folder as `$KIT` (a session's first context line, `kit: <path>`, names it).
+- **Sequential by default; see parallel_mode.** The Orchestrator runs exactly one item at a time unless `parallel_mode` (opt-in, evidence-gated) says otherwise. Parallel execution reintroduces migration-number collisions and merge races.
 - **Budgets: measurable caps are the real guards.** The token budgets are best-effort estimates the executor cannot actually measure — they only trigger a pause when work is *clearly* over. The hard, enforceable ceilings are `max_items_per_run`, `max_tool_calls_per_item`, `max_tool_calls_per_run`, and `max_retries_per_item`, all counted from the conductor's own tool calls. Never present the token numbers as a guarantee.
 - **Security runs in the loop.** `security_review` gates `done`: for `sensitive` items (auth / payments / uploads / user input) the conductor dispatches the `security-reviewer` agent on the diff, and any Critical/High finding is a hard-stop. An unattended run that ships user-facing features should not set this to `off`.
 - **Independent review in the loop.** In the autonomous loop the conductor *authored* the design + briefs + dispatch, so it runs code review through a **fresh-context `code-reviewer` subagent** to keep the reviewer independent of the author. The interactive Tech-Lead uses the same agent: one reviewer in every lane.
-- **Two readiness gates at startup.** (1) *Autonomy primers* still containing placeholders (`<!-- ... -->`, `TODO(primer)`) → the preamble derives them (`.claude/context/primer-protocol.md`); whatever genuinely can't be known yet **downgrades** autonomy to `per-feature` (you can still run). (2) *Execution-critical config* (`verify_tests`, `verify_run`, `db_ephemeral`, and the run/test/ephemeral commands in `local-dev.md`) still as `<command>` → **hard-stop**. Neither gate is a task for you — the Planner writes these as plan outputs.
-- **Capabilities the loop expects.** A way to *see* the running app for auto-demo and a way to *notify* you at checkpoints. Neither is assumed: the preamble picks the best one available, in a fixed fallback order (browser-preview MCP if one is present, then the bundled `/run` skill, then a route plus HTTP status check as text; a push-notification tool if present, then a clearly marked banner in the transcript). See `orchestrate.md` Run Preamble step 8 and `.claude/context/platform-notes.md`.
-- **Settings are yours, not the agents'.** The agents never edit `.claude/settings.json` or `settings.local.json`. Where a run would pause on permission prompts, the Planner and Orchestrator print a snippet for you to apply (`.claude/context/platform-notes.md`, Permissions snippet).
+- **Two readiness gates at startup.** (1) *Autonomy primers* still containing placeholders (`<!-- ... -->`, `TODO(primer)`) → the preamble derives them (`$KIT/context/primer-protocol.md`); whatever genuinely can't be known yet **downgrades** autonomy to `per-feature` (you can still run). (2) *Execution-critical config* (`verify_tests`, `verify_run`, `db_ephemeral`, and the run/test/ephemeral commands in `local-dev.md`) still as `<command>` → **hard-stop**. Neither gate is a task for you — the Planner proposes them with `bootstrap_config.py plan` and you apply them.
+- **Capabilities the loop expects.** A way to *see* the running app for auto-demo and a way to *notify* you at checkpoints. Neither is assumed: the preamble picks the best one available, in a fixed fallback order (browser-preview MCP if one is present, then the bundled `/run` skill, then a route plus HTTP status check as text; a push-notification tool if present, then a clearly marked banner in the transcript). See `$KIT/skills/orchestrate/preamble.md` Run Preamble step 8 and `$KIT/context/platform-notes.md`.
+- **Settings are yours, not the agents'.** The agents never edit `.claude/settings.json` or `settings.local.json`. Where a run would pause on permission prompts, the Planner and Orchestrator print a snippet for you to apply (`$KIT/context/platform-notes.md`, Permissions snippet).

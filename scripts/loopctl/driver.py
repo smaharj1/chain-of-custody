@@ -32,7 +32,7 @@ UNATTENDED (Phase 7, `autonomy: unattended`, `unattended.py`): the driver carrie
 every event, `stop_hooks` are asked with HALT and the lock, `cost_hook` may supply the cost of a child that printed nothing, `finishers` run
 once however the run ended. `tick` is the poll function (the unattended supervisor wraps it to record a sign of life).
 
-WHAT IS NOT BUILT HERE (deferred, with where it goes): pushing a branch or opening a PR (the human's `pr_prepare` commands; see unattended.py),
+WHAT IS NOT BUILT HERE (deferred, with where it goes): pushing a branch or opening a PR (the driver never pushes: `pr_prepare` prints the commands; see unattended.py),
 parallel items (Phase 8). The remote lock and claims (Phase 11b, `remote_lock.py`) attach through `stop_hooks` and `item_filters`.
 
 Config and plan come from the run's start base sha for the whole run (CO-11); a gate gets `base_sha` = the item's branch point so
@@ -50,9 +50,9 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from kitlib import caller as caller_mod
-from kitlib import gitutil, jsonio, levels, runstate
+from kitlib import gitutil, jsonio, kitpaths, levels, runstate
 
-from . import branches, common, failure, gates, heartbeat, launch, lgit, plan as plan_mod, reconcile, report as report_mod
+from . import branches, common, failure, gates, heartbeat, kit, launch, lgit, plan as plan_mod, reconcile, report as report_mod
 from . import state as state_mod
 from .common import EXIT_FINDINGS, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, LoopctlError, Refused, UsageError
 
@@ -488,14 +488,16 @@ class Driver(object):
             problems = launch.validate_settings(settings)
             if problems:
                 raise launch.LaunchRefused("the %s child profile is unsafe: %s" % (kind, "; ".join(problems[:3])))
-        v = launch.check_version(self.repo, self.anchor, self.rs, self.env, self.binary, lvl)
+        self.check_kit()
+        v = launch.check_version(self.rs, self.env, self.binary, lvl)
         if v.get("warning"):
             self.say("warning: %s" % v["warning"])
         self.ib = self.ctx.integration_branch()
         if not self.ib:
             raise Refused("there is no integration branch (main, master or integration_branch): nothing to merge into")
         self.level = self.compute_effective_level()
-        self.ev("start", binary=os.path.basename(self.binary), claude_version=v.get("version"), level=self.level, fake=self.fake)
+        self.ev("start", binary=os.path.basename(self.binary), claude_version=v.get("version"), level=self.level, fake=self.fake,
+                kit_version=(self.run_rec.get("kit") or {}).get("version"))
         self.say("run %s: claude %s, level %s, plan %s" % (self.run_id, v.get("version"), self.level or "not computed", self.plan.name))
         reaped = launch.reap_orphans(self.rs, os.getpid())
         for r in reaped:
@@ -922,7 +924,7 @@ class Driver(object):
             return False
         if gates.mode_for(self.cfg, "g2", gates.get("g2")) == "off":
             return False
-        return gitutil.show_file(self.anchor or "HEAD", ".claude/agents/acceptance-author.md", self.repo, isolated=True) is not None
+        return kit.resolve_agent(self.repo, self.anchor, "acceptance-author")[0] is not None     # the project's override, else the kit's
 
     def stage_stubbing(self, iid: str) -> None:
         o = self.launch_child(iid, "acceptance-author", "stubbing", self.stub_prompt(iid))
@@ -1023,7 +1025,7 @@ class Driver(object):
             return
         if gate or infra or delivery != "local":
             why = ("needs a human before it merges: %s" % "; ".join(gate[:2])) if gate else (
-                "infra changes always wait for a human" if infra else "delivery is %s: a human pushes the branch (pr_prepare prints the commands)" % delivery)
+                "infra changes always wait for a human" if infra else "delivery is %s: the driver does not push the branch (pr_prepare prints the commands)" % delivery)
             if self.advance(iid, "awaiting_human", why, head=head):
                 self.say("item %s %s" % (iid, why))
             return
@@ -1083,7 +1085,7 @@ class Driver(object):
             self.loop.park(iid, "head_changed", "the branch is not at the head the human approved", self.sid, "driver")
             raise _Stop("parked", "item %s: the branch moved after it was approved; it needs a new review" % iid, EXIT_FINDINGS)
         if str(self.cfg.get("delivery") or "local") != "local":
-            raise _Stop("delivery", "item %s is approved, but delivery is %s: the human pushes and merges; `loopctl reconcile` records it" % (
+            raise _Stop("delivery", "item %s is approved, but delivery is %s: the driver does not push or merge it; a human merges the PR and `loopctl reconcile` records it" % (
                 iid, self.cfg.get("delivery")), EXIT_OK)
         self.put_worktree_on_integration()
         self.merge_item(iid, tip)
@@ -1152,7 +1154,7 @@ class Driver(object):
              "**Feature slug**: `%s`" % item["slug"], "**Engineer**: %s" % T(role, 40), "**Authored by**: loopctl driver, from the approved plan item %s" % iid,
              "**Iteration**: %d" % attempt, "**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md`",
              "**Report path**: `%s` (write your own report here; the driver does not re-type it)" % self.report_path(iid, role), "", "---", "",
-             "## Required Reading (in order)", "", "1. `.claude/context/engineer-protocol.md`",
+             "## Required Reading (in order)", "", "1. `%s`" % kitpaths.kit("context", "engineer-protocol.md"),
              "2. `.claude/context/%s.md` (your primer; if it is missing, say so in your report)" % dom]
         if dom in ("app", "admin-app"):
             L.append("3. `.claude/context/shared-frontend.md`")
@@ -1349,6 +1351,7 @@ class Driver(object):
             raise _Stop("budget", str(exc), EXIT_REFUSED)
         if allowance < 0.0001:
             raise _Stop("budget", "the remaining budget is too small to launch a child", EXIT_FINDINGS)
+        self.check_kit()                                      # the kit this child would run under is the one the run started with
         sid = str(uuid.uuid4())
         kind = launch.role_kind(role, self.roster_kinds)
         item = self.item_def(iid)
@@ -1360,7 +1363,8 @@ class Driver(object):
         if skipped:
             self.ev("verify_command_skipped", commands=skipped[:5])
         model, effort = launch.model_for(str(self.cfg.get("model_profile") or "quality"), role, self.pass_no(iid, attempt) + 1, self.env)
-        agent = launch.agent_definition(self.repo, self.anchor, role, model, effort)
+        source = {}  # type: Dict[str, Any]
+        agent = launch.agent_definition(self.repo, self.anchor, role, model, effort, source_out=source)
         d = os.path.join(self.rs.root, "children")
         jsonio.ensure_dir(d)
         settings_path = os.path.join(d, sid + ".settings.json")
@@ -1368,11 +1372,11 @@ class Driver(object):
         jsonio.atomic_write_json(settings_path, settings, 0o600)
         jsonio.atomic_write_text(prompt_path, prompt, 0o600)
         extra = {"brief": self.brief_path(iid, role) if role != "code-reviewer" and role != "security-reviewer" else None,
-                 "report": self.report_path(iid, role) if kind == "engineer" else None, "attempt": attempt}
+                 "report": self.report_path(iid, role) if kind == "engineer" else None, "attempt": attempt, "agent_source": source}
         spec = launch.ChildSpec(role, sid, prompt_path, self.repo, settings_path, agent, settings["permissions"]["allow"], allowance,
                                 launch.child_env(self.env, list(self.cfg.get_list("verify_env_allow")) + list(item.get("requiresEnv") or []), self.fake), iid, stage, extra)
         self.count_child()
-        self.ev("launch", item=iid, role=role, stage=stage, session=sid, budget_usd=allowance)
+        self.ev("launch", item=iid, role=role, stage=stage, session=sid, budget_usd=allowance, agent_source=kit.describe_source(source))
         self.say("item %s: %s (%s), budget $%.4f" % (iid, role, stage, allowance))
         activity = heartbeat.child_activity(self.rs, sid)
         try:
@@ -1414,6 +1418,14 @@ class Driver(object):
             self.fail(iid, bad["failure_class"], bad["reason"], (), stage_arg, "%s: %s" % (role, self.child_detail(res)))
             return None
         return outcome
+
+    def check_kit(self) -> None:
+        """Refuse when the kit (the plugin this driver runs from) is not the one `run.json` recorded at the start: its version and the
+        fingerprint of its files. A plugin update or an edited checkout mid-run would give later children different rules."""
+        try:
+            kit.check(self.run_rec.get("kit"))
+        except kit.KitChanged as exc:
+            raise launch.LaunchRefused(str(exc))
 
     # -- seams for the parallel scheduler (Phase 8); the serial driver's answers are the ones it always gave ----------------------------
     def child_allowance(self, led: Any, iid: str) -> float:

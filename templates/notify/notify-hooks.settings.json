@@ -1,19 +1,46 @@
 {
   "_comment": [
-    "Merge the `hooks` block into your .claude/settings.json (or settings.local.json) in one reviewed commit (H6). INTERACTIVE sessions only: do not add it to a driver child's",
-    "profile (a child is told about its own stops by the driver). Every hook runs the human's `notify_command` through .claude/scripts/notify.py and sends nothing itself.",
+    "Merge the `hooks` block into your .claude/settings.local.json (or settings.json, in one reviewed commit: H6). INTERACTIVE sessions only: do not add it to a driver child's",
+    "profile (a child is told about its own stops by the driver). Every hook runs the human's `notify_command` through the kit's scripts/notify.py and sends nothing itself.",
+    "Replace /ABSOLUTE/PATH/TO/KIT (twice in each command) with the folder /chain-of-custody:init and the doctor print as `kit:`. A project settings file cannot use",
+    "${CLAUDE_PLUGIN_ROOT}, and the installed plugin's folder names its version, so paste the path again after a plugin update. Every command ends in `exit 0`: with a",
+    "stale path or no python3 the hook does nothing, because a hook that exits 2 on PermissionRequest denies the permission prompt.",
     "The hook event names Notification, StopFailure and PermissionRequest and the fields of their input are unverified on the pinned CLI (probe); notify.py reads only",
     "hook_event_name, notification_type and tool_name from the input, never its free text, and does nothing when no notify_command is configured."
   ],
   "hooks": {
     "Notification": [
-      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py\" --hook", "timeout": 30}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"/ABSOLUTE/PATH/TO/KIT/scripts/notify.py\" ] && python3 -B \"/ABSOLUTE/PATH/TO/KIT/scripts/notify.py\" --hook; exit 0",
+            "timeout": 30
+          }
+        ]
+      }
     ],
     "StopFailure": [
-      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py\" --hook", "timeout": 30}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"/ABSOLUTE/PATH/TO/KIT/scripts/notify.py\" ] && python3 -B \"/ABSOLUTE/PATH/TO/KIT/scripts/notify.py\" --hook; exit 0",
+            "timeout": 30
+          }
+        ]
+      }
     ],
     "PermissionRequest": [
-      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py\" --hook", "timeout": 30}]}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"/ABSOLUTE/PATH/TO/KIT/scripts/notify.py\" ] && python3 -B \"/ABSOLUTE/PATH/TO/KIT/scripts/notify.py\" --hook; exit 0",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

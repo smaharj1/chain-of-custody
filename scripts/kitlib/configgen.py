@@ -82,7 +82,7 @@ def render_body(reg: Registry, example: bool = False) -> str:
                 ex = key.example
                 lines += _key_lines(key, ex["value"], ex["doc"], ex["after_doc"], len(parents))
             else:
-                lines += _key_lines(key, key.default, list(key.doc), list(key.after_doc), len(parents))
+                lines += _key_lines(key, key.seed, list(key.doc), list(key.after_doc), len(parents))
         blocks.append("\n".join(lines))
     for k in reg:
         if k.generated and k.section is None:

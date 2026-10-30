@@ -16,7 +16,7 @@
 
 Apply credentials exist only in CI, reached through OIDC, never as stored secrets. The trust policy pins the subject:
 
-| File (in `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/`) | Subject condition | Use |
+| File (in `templates/security/oidc/`) | Subject condition | Use |
 |---|---|---|
 | `aws-apply-environment.trust.json` | `repo:ORG/REPO:environment:production` | apply, behind an Environment with reviewers |
 | `aws-apply-job-workflow-ref.trust.json` | `repo:ORG/REPO:job_workflow_ref:ORG/REPO/.github/workflows/infra-apply.yml@refs/heads/main` | apply, where Environments are unavailable: pinned to the dispatch-only workflow on main |
@@ -27,7 +27,7 @@ Never `repo:ORG/REPO:*` and never a `ref:` subject: both let a pull request, or 
 
 The `job_workflow_ref` form needs the claim in the subject. Customize the repository's OIDC `sub` claim to include it (GitHub's `actions/oidc/customization/sub` API with `use_default: false` and `include_claim_keys: ["repo", "job_workflow_ref"]`); otherwise use IAM condition keys for additional claims if your account supports them. Whether your account does is untested here: confirm with a test assume-role before trusting it.
 
-`${CLAUDE_PLUGIN_ROOT}/templates/security/iam/plan-readonly.policy.json` is an example plan-only permissions policy: metadata reads, state read, and an explicit deny on secret values. It is an example, not an exhaustive policy. It also denies reading API Gateway API key values, and it cannot hide the environment variables `lambda:GetFunction` returns: see [infra-ci.md](infra-ci.md#what-the-plan-role-can-read).
+`templates/security/iam/plan-readonly.policy.json` is an example plan-only permissions policy: metadata reads, state read, and an explicit deny on secret values. It is an example, not an exhaustive policy. It also denies reading API Gateway API key values, and it cannot hide the environment variables `lambda:GetFunction` returns: see [infra-ci.md](infra-ci.md#what-the-plan-role-can-read).
 
 ## CI job split
 
@@ -43,4 +43,4 @@ Which job may hold what is in [split-ci.md](split-ci.md). `ci_lint.py` enforces 
 | `ci.oidc-with-pr-code` | `id-token: write` together with PR code |
 | `deploy.surface` | an apply that runs on push |
 
-The plan, policy, apply and drift workflows are templates in `${CLAUDE_PLUGIN_ROOT}/templates/infra/` ([infra-ci.md](infra-ci.md)). They need a live cloud account to run, so they are installed and first run by a human.
+The plan, policy, apply and drift workflows are templates in `templates/infra/` ([infra-ci.md](infra-ci.md)). They need a live cloud account to run, so they are installed and first run by a human.

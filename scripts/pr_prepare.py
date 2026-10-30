@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""pr_prepare: validate a finished feature branch and print the commands a HUMAN runs to deliver it
+"""pr_prepare: validate a finished feature branch and print the commands that deliver it
 (Phase 3; IMP-25, report §16.1 Phase 3, §19.7 trailers, revert detection, CI-fix, Doc Delta, labels).
 
 THIS SCRIPT NEVER PUSHES AND NEVER OPENS A PULL REQUEST. It runs read-only git only (the allowlist is in
 `READ_ONLY_GIT` and is enforced on every call), never runs `gh`, and prints the exact `git push` and
-`gh pr create --draft --body-file` commands for the human to run, from a terminal or with `!` in the
-session. The repo's guard-git hook blocks `git push` for agents; do not work around it.
+`gh pr create --draft --body-file` commands. Who runs them depends on `git_autonomy` and `delivery` read at the
+base sha (the values the guard reads), not on a `--delivery` override:
+
+  branch+commit+push  with delivery push-branch or draft-pr: CONDUCTOR STEPS. The conductor runs the push of
+                      the feature branch (never a protected branch, never a force push) and, at draft-pr,
+                      `gh pr create --draft` itself. Merging stays a human's at every setting.
+  anything lower      HUMAN STEP: a person runs them from a terminal or with `!` in the session. The guards
+                      block `git push` for agents at these settings; do not work around them.
+
+Delivery `local` is always a HUMAN STEP (the merge into the base branch). When `--delivery draft-pr` asks for more
+than the base allows (base delivery push-branch), the `gh pr create` line prints under its own `# HUMAN STEP`.
 
 Subcommands
 -----------
-  init      write the PR body from `.claude/templates/pr-body.md`, pre-filled with what git, the engineer
+  init      write the PR body from `${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md`, pre-filled with what git, the engineer
             reports and the verify result already know (branch, shas, engineers, Doc Delta, human-gated
             paths). The conductor fills the rest.
   check     validate the body and the git state; print findings; exit 1 on any error.
@@ -45,13 +54,14 @@ JSON output, schema `pr_prepare.v1`:
 
     {"schema": "pr_prepare.v1", "mode": "check" | "prepare", "ok": bool,
      "repo": str, "slug": str, "branch": str, "base": str, "base_sha": sha | null, "head_sha": sha | null,
-     "delivery": "local" | "push-branch" | "draft-pr", "git_autonomy": str, "body_file": str, "title": str,
+     "delivery": "local" | "push-branch" | "draft-pr", "base_delivery": str, "git_autonomy": str, "body_file": str, "title": str,
      "ahead": int, "changed_paths": int,
      "human_gated": [{"path", "reason"}],
      "ci_fix": {"count": int, "max": int, "commits": [sha]},
      "reports": [{"engineer", "path", "status", "ok"}],
      "findings": [{"id", "severity": "error" | "warn" | "info", "message"}],
-     "commands": [str]}             only when mode is "prepare" and ok; each is a line for the human to run
+     "commands_by": "conductor" | "human",   who runs `commands` (see above)
+     "commands": [str]}             only when mode is "prepare" and ok; `#` lines are notes, the rest are commands
 
 Exit codes: 0 clean (warnings allowed), 1 errors found, 2 usage or internal error.
 """
@@ -69,12 +79,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from kitlib import config as kconfig  # noqa: E402
-from kitlib import gitutil, jsonio, redact  # noqa: E402
+from kitlib import gitutil, jsonio, kitpaths, redact  # noqa: E402
 
 SCHEMA = "pr_prepare.v1"
 BODY_LIMIT = 60000          # GitHub rejects bodies over 65536 characters
 TITLE_LIMIT = 72
-TEMPLATE_REL = os.path.join(".claude", "templates", "pr-body.md")
+TEMPLATE = kitpaths.kit("templates", "pr-body.md")
 PR_DIR_REL = os.path.join(".claude", "pr")
 
 # --------------------------------------------------------------------------------------------------
@@ -150,6 +160,8 @@ PROTECTED_BRANCHES = ("main", "master", "develop", "trunk", "production", "prod"
 APPROVER_ONLY_LABEL_RE = re.compile(r"^(factory:|plan-ok\Z|preview\Z)", re.I)
 _LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 :._/-]{0,48}\Z")
 DELIVERIES = ("local", "push-branch", "draft-pr")
+# the git_autonomy tier at which the conductor pushes the feature branch and opens the draft PR itself
+PUSH_AUTONOMY = "branch+commit+push"
 
 
 class FieldSpec(object):
@@ -464,7 +476,7 @@ def glob_to_regex(pat: str) -> "re.Pattern":
 _LOCKFILES = ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock", "poetry.lock", "Pipfile.lock",
               "uv.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", ".terraform.lock.hcl", "packages.lock.json"]
 HUMAN_PATTERNS = ([
-    (".claude/**", "kit, agents and guardrails (H6)"), (".github/**", "CI and repository config (H3)"),
+    (".claude/**", "kit config, agent overrides and guardrails (H6)"), (".github/**", "CI and repository config (H3)"),
     (".mcp.json", "MCP configuration (H6)"), (".claude-plugin/**", "plugin manifest (H6)"), ("plugin/**", "plugin (H6)"),
     ("skills/**", "skill directory (H6)"), ("CODEOWNERS", "code owners (H6)"),
     ("**/migrations/**", "database migration (H3)"), ("db/migrate/**", "database migration (H3)"), ("**/*.tf", "infrastructure as code (H3)"),
@@ -646,6 +658,7 @@ class Context(object):
         self.body_file = ""
         self.verify_json = ""
         self.delivery = "local"
+        self.base_delivery = "local"  # delivery at the base sha, before --delivery; decides who runs a step
         self.git_autonomy = "none"
         self.max_ci_fix = 2
         self.human_globs = []  # type: List[str]
@@ -694,7 +707,8 @@ def build_context(repo: str, slug: Optional[str] = None, branch: Optional[str] =
               "(delivery: local, git_autonomy: none, max_ci_fix_attempts: 2)")
     elif cfg.errors:
         _warn(c.findings, "config.invalid-at-base", "loop.config.md at the base sha has errors (%s); using the values it does define" % cfg.errors[0])
-    c.delivery = delivery or str(cfg.get("delivery"))
+    c.base_delivery = str(cfg.get("delivery"))
+    c.delivery = delivery or c.base_delivery
     if c.delivery not in DELIVERIES:
         raise PrError("delivery %r is not one of %s" % (c.delivery, ", ".join(DELIVERIES)))
     c.git_autonomy = str(cfg.get("git_autonomy"))
@@ -736,9 +750,10 @@ def check(repo: str, mode: str = "check", lane: Optional[str] = None, labels: Se
     ctx = build_context(repo, **ctx_options)
     f = ctx.findings
     res = {"schema": SCHEMA, "mode": mode, "ok": False, "repo": ctx.repo, "slug": ctx.slug, "branch": ctx.branch, "base": ctx.base,
-           "base_sha": ctx.base_sha, "head_sha": ctx.head_sha, "delivery": ctx.delivery, "git_autonomy": ctx.git_autonomy,
-           "body_file": ctx.body_file, "title": "", "ahead": 0, "changed_paths": 0, "human_gated": [],
-           "ci_fix": {"count": 0, "max": ctx.max_ci_fix, "commits": []}, "reports": [], "findings": f, "commands": []}  # type: Dict[str, Any]
+           "base_sha": ctx.base_sha, "head_sha": ctx.head_sha, "delivery": ctx.delivery, "base_delivery": ctx.base_delivery,
+           "git_autonomy": ctx.git_autonomy, "body_file": ctx.body_file, "title": "", "ahead": 0, "changed_paths": 0, "human_gated": [],
+           "ci_fix": {"count": 0, "max": ctx.max_ci_fix, "commits": []}, "reports": [], "findings": f,
+           "commands_by": "conductor" if conductor_delivers(ctx) else "human", "commands": []}  # type: Dict[str, Any]
 
     # --- branch and labels
     if not _valid_branch_name(ctx.branch):
@@ -826,7 +841,7 @@ def check(repo: str, mode: str = "check", lane: Optional[str] = None, labels: Se
         with open(ctx.body_file, "r", encoding="utf-8") as fh:
             body_text = fh.read(1 << 20)
     except OSError:
-        _err(f, "audit.no-body", "no PR body at %s; run `python3 .claude/scripts/pr_prepare.py init` and fill it in" % ctx.body_file)
+        _err(f, "audit.no-body", "no PR body at %s; run `%s` and fill it in" % (ctx.body_file, kitpaths.script_cmd("pr_prepare.py", "init")))
     if body_text is not None:
         pb = parse_body(body_text)
         res["title"] = pb.title
@@ -924,15 +939,32 @@ def _check_verify(ctx: Context, pb: Optional[ParsedBody], f: List[Finding]) -> N
 
 
 # --------------------------------------------------------------------------------------------------
-# commands for the human
+# commands for the conductor or the human
 # --------------------------------------------------------------------------------------------------
+
+def conductor_delivers(ctx: Context) -> bool:
+    """True when the conductor runs the push itself: git_autonomy branch+commit+push and a pushing delivery at the
+    base sha (what the guard reads). A --delivery override never widens this."""
+    pushing = ("push-branch", "draft-pr")
+    return ctx.git_autonomy == PUSH_AUTONOMY and ctx.base_delivery in pushing and ctx.delivery in pushing
+
+
+def conductor_opens_pr(ctx: Context) -> bool:
+    """True when the conductor also runs `gh pr create --draft`: the guard allows it only at base delivery draft-pr."""
+    return conductor_delivers(ctx) and ctx.base_delivery == "draft-pr"
+
 
 def build_commands(ctx: Context, title: str, remote_exists: bool = False, labels: Sequence[str] = (),
                    pr_number: Optional[int] = None) -> List[str]:
-    """The lines a human runs. Nothing here is executed by this script. No force flag is ever produced."""
+    """The lines that deliver the branch: CONDUCTOR STEPS at git_autonomy branch+commit+push, else a HUMAN STEP.
+    Nothing here is executed by this script. No force flag is ever produced."""
     q = shlex.quote
     cd = "cd %s" % q(ctx.repo)
-    lines = ["# Run these yourself. pr_prepare.py did not push anything.", cd]
+    conductor = conductor_delivers(ctx)
+    if conductor:
+        lines = ["# CONDUCTOR STEPS (git_autonomy: %s): run these yourself, in order. pr_prepare.py ran none of them." % PUSH_AUTONOMY, cd]
+    else:
+        lines = ["# HUMAN STEP: run these yourself, in a terminal or with `!` in the session. pr_prepare.py did not push anything.", cd]
     if ctx.delivery == "local":
         lines += ["git switch %s" % q(ctx.base),
                   "git merge --no-ff %s -m %s" % (q(ctx.branch), q(title or ctx.slug)),
@@ -944,13 +976,24 @@ def build_commands(ctx: Context, title: str, remote_exists: bool = False, labels
         lines.append("git push --set-upstream %s %s" % (q(ctx.remote), q(ctx.branch)))
     if ctx.delivery == "draft-pr":
         if pr_number is not None:
-            lines.append("gh pr edit %d --title %s --body-file %s" % (pr_number, q(title), q(ctx.body_file)))
+            # the tier covers opening a draft PR, not editing one that already exists
+            edit = "gh pr edit %d --title %s --body-file %s" % (pr_number, q(title), q(ctx.body_file))
+            if conductor:
+                lines += ["# HUMAN STEP: the PR already exists; a person updates it:", edit]
+            else:
+                lines.append(edit)
         else:
             cmd = "gh pr create --draft --base %s --head %s --title %s --body-file %s" % (q(ctx.base), q(ctx.branch), q(title), q(ctx.body_file))
             for lab in labels:
                 cmd += " --label %s" % q(lab)
-            lines.append(cmd)
+            if conductor and not conductor_opens_pr(ctx):
+                lines += ["# HUMAN STEP: delivery at the base sha is %s, so the guard denies `gh pr create` to agents; a person opens the "
+                          "draft PR:" % ctx.base_delivery, cmd]
+            else:
+                lines.append(cmd)
         lines.append("# CI (verify, review) then runs on the PR. Failures come back to the conductor as CI-fix commits, at most %d." % ctx.max_ci_fix)
+    if conductor:
+        lines.append("# Merging stays a human's: never run `gh pr merge`, never push %s." % q(ctx.base))
     return lines
 
 
@@ -988,18 +1031,11 @@ def _requirements_title(repo: str, slug: str) -> Optional[str]:
 def init_body(repo: str, lane: Optional[str] = None, title: Optional[str] = None, **ctx_options: Any) -> Tuple[str, Context]:
     """The template text with every fact git, the reports and the verify result already hold filled in."""
     ctx = build_context(repo, **ctx_options)
-    # the project's own copy wins; a plugin install has none, so fall back to the template next to this script (Phase 9)
-    kit_copy = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "pr-body.md")
-    text = None
-    for candidate in (os.path.join(ctx.repo, TEMPLATE_REL), kit_copy):
-        try:
-            with open(candidate, "r", encoding="utf-8") as fh:
-                text = fh.read()
-            break
-        except OSError:
-            continue
-    if text is None:
-        raise PrError("template %s not found" % TEMPLATE_REL)
+    try:
+        with open(TEMPLATE, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        raise PrError("template %s not found" % TEMPLATE)
     reports = read_reports(ctx.repo, ctx.slug)
     the_lane = lane or ("full" if reports else "quick")
     paths = changed_paths(ctx.repo, ctx.base_sha, ctx.head_sha) if ctx.base_sha and ctx.head_sha else []
@@ -1089,7 +1125,8 @@ def format_text(res: Dict[str, Any]) -> str:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="Validate a feature branch and print the commands a human runs to deliver it. Never pushes.")
+    ap = argparse.ArgumentParser(description="Validate a feature branch and print the commands that deliver it (conductor steps at "
+                                             "git_autonomy branch+commit+push, else a human step). Never pushes.")
     sub = ap.add_subparsers(dest="cmd")
     p_init = sub.add_parser("init", help="write the PR body from the template")
     _common(p_init)

@@ -6,7 +6,7 @@ The agent acts on GitHub as a bot. Never as you. Everything server-side in this 
 
 | Level | Identity | Why |
 |---|---|---|
-| L0, L1 | none: you push yourself | The loop never pushes |
+| L0, L1 | none needed: the agent's push (at `git_autonomy: branch+commit+push`) uses the session's git credentials, which at these levels may be yours | Pushes are limited to the agent's own feature branch by the guards and by your branch protection; a reachable human credential is why these levels stop at L1 |
 | L2 | A dedicated machine user with a fine-grained personal access token that **expires within 14 days** | Acceptable only here. A PAT is a standing credential, so its lifetime is capped |
 | L3 and above | A **GitHub App**, installed on this repository only | Short-lived installation tokens, scoped permissions, an identity that cannot be an admin |
 | any | **Never a PAT that belongs to a human** | It carries your rights: admin, bypass, approval |
@@ -28,7 +28,7 @@ Grant contents: write and pull requests: write. Nothing else.
 | checks, statuses | An app with checks: write can post a passing check run and satisfy a required check. Pin each required check to the Actions app (`integration_id`) as the ruleset templates do |
 | members and organization permissions | Not needed |
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --gh-fixture FILE` reads the installation's permissions from `repos/{owner}/{repo}/installation` when that response is in the fixture (it needs the App's own credentials, so `verify-boundary.sh` records a 404 for most people; check the App's settings page by hand then).
+`python3 "$KIT/scripts/doctor.py" --gh-fixture FILE` reads the installation's permissions from `repos/{owner}/{repo}/installation` when that response is in the fixture (it needs the App's own credentials, so `verify-boundary.sh` records a 404 for most people; check the App's settings page by hand then).
 
 ## Self-review and bypass
 
@@ -46,6 +46,6 @@ The bot's credential is only half of B1. The other half is that **your** credent
 1. Create the App (or the machine user) in your account or organization. Install it on this repository only.
 2. Copy its numeric id and login into `.claude/loop.config.md` as `bot.kind`, `bot.login`, `bot.id` (and `bot.token_expires` for a PAT). This file is H6-protected: change it through review.
 3. Keep the bot's credential away from the agent's own environment variables where you can. The loop's driver passes it to the process that pushes, not to the agent (the L2 push is made by the human-started process, never by an agent).
-4. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level` and read the `bot.identity` line.
+4. Run `python3 "$KIT/scripts/doctor.py" --level` and read the `bot.identity` line.
 
 Creating the App, minting a token and installing it cannot be done by this kit; it is pending-human by design.

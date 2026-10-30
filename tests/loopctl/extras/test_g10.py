@@ -210,7 +210,7 @@ class Parse(unittest.TestCase):
                     g10.parse_command(text, REPO_ROOT)
 
     def test_the_ci_template_is_untrusted_and_reads_the_gate_state_from_the_base(self):
-        wf = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows", "g10-product.yml")
+        wf = os.path.join(REPO_ROOT, "templates", "github", "workflows", "g10-product.yml")
         findings = ci_lint.lint_paths([wf], repo=REPO_ROOT)
         self.assertEqual([str(f) for f in findings if f.severity == "error"], [])
         self.assertEqual({f.rule for f in findings if f.severity == "warn"}, {"ci.floating-action-tag"})
@@ -218,8 +218,9 @@ class Parse(unittest.TestCase):
             text = "\n".join(ln for ln in fh.read().split("\n") if not ln.lstrip().startswith("#"))
         for banned in ("secrets.", "id-token", "pull_request_target", "contents: write"):
             self.assertNotIn(banned, text)
-        self.assertIn("loopctl.gates._ci g10", text)
-        self.assertIn('git archive "$BASE_SHA" .claude/scripts', text)
+        self.assertIn('PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci g10', text)
+        self.assertIn('git -C "$RUNNER_TEMP/kit" fetch', text)                # the kit is the pinned plugin release, never the pull request's
+        self.assertIn('"$got" != "$KIT_SHA"', text)
 
     def test_contract_tests_are_design_only_no_key_no_code_no_gate_module(self):
         from kitlib import registry
@@ -229,7 +230,7 @@ class Parse(unittest.TestCase):
         self.assertEqual(g10.DEFAULT_MODE, "off")
         self.assertTrue(g10.EVIDENCE_GATED)
         self.assertEqual([c for c, _k in g10.CHECKS], ["a11y", "perf", "pii", "observability"])        # api-contract.md tests are not among them
-        with open(os.path.join(REPO_ROOT, ".claude", "spec", "loopctl-extras.md"), encoding="utf-8") as fh:
+        with open(os.path.join(REPO_ROOT, "spec", "loopctl-extras.md"), encoding="utf-8") as fh:
             spec = fh.read()
         self.assertIn("DESIGN-ONLY", spec.split("Contract tests", 1)[1][:600])
 

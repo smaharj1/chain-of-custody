@@ -4,7 +4,7 @@
   "sections": [
     {
       "id": "unattended",
-      "title": "Unattended L4 (report 6.2, 6.3, 10.4, 16.1 row 7; python3 .claude/scripts/loopctl unattended ...)",
+      "title": "Unattended L4 (report 6.2, 6.3, 10.4, 16.1 row 7; python3 \"$KIT/scripts/loopctl\" unattended ...)",
       "comment": [
         "Unattended mode is `autonomy: unattended` + `autonomy_level: L4` (both refuse until the evidence gate passes). These keys say how a run that nobody",
         "watches reaches a person, and the promotion bar. Read from the BASE sha, never from the branch under judgement (CO-11)."

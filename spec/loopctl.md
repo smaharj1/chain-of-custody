@@ -106,7 +106,7 @@ A known reason keeps its class: recording `tests_failed` as `platform` is refuse
 
 ### Other state files
 
-`run.json` (current run: `runId`, `conductor_session_id`, `baseSha`, `worktree`, `runner`), `sessions/<id>.json` (the conductor registration `run` writes), `HALT`, `spend.jsonl`, `locked_paths.json` (`{"globs", "sources"}`; read by the file guard), `abort/revert-plan-<run>.md`, `events/loopctl.jsonl`.
+`run.json` (current run: `runId`, `conductor_session_id`, `baseSha`, `worktree`, `runner`, `kit`: the plugin's version and fingerprint at the start; a launch or a sequential resume under a different kit is refused, `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-driver.md`), `sessions/<id>.json` (the conductor registration `run` writes), `HALT`, `spend.jsonl`, `locked_paths.json` (`{"globs", "sources"}`; read by the file guard), `abort/revert-plan-<run>.md`, `events/loopctl.jsonl`.
 
 ## Gates (plug-in contract, IMP-22)
 
@@ -124,7 +124,7 @@ A gate is a module `loopctl/gates/<file>.py` with `NAME` (the `gates.<NAME>` tog
 
 ## Canary
 
-`run` (sequential) needs `--session` and the `--nonce` that `session_start.py` wrote for that session. A session without a nonce does not dispatch (hooks may not be firing). The same check guards `lock acquire`.
+`run` (sequential) needs `--session` and the `--nonce` that `session_start.py` wrote for that session. A session without a nonce does not dispatch (the plugin's hooks may not be firing: `hooks/hooks.json` wires `session_start.py`; a project's `settings.json` carries no kit hooks). The same check guards `lock acquire`.
 
 ## Audit, reconcile, abort
 

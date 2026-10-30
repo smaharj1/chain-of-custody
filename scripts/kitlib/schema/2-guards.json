@@ -4,7 +4,7 @@
   "sections": [
     {
       "id": "guards",
-      "title": "Guards (report section 7). Read by .claude/scripts/guards/",
+      "title": "Guards (report section 7). Read by $KIT/scripts/guards/",
       "comment": [],
       "example_title": "Guards"
     }

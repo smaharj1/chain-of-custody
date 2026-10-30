@@ -55,7 +55,7 @@ infra_gated_behind_local: true   # CDK milestones wait until the app runs locall
 enforce_engineer_git_hook: true  # keep guard-git.sh wired: blocks push/rebase/shared hard-reset for every
                                  # actor, fails open without python3 (engineer git-read-only is convention)
 
-# --- Model and effort routing (see .claude/context/model-profiles.md) ---
+# --- Model and effort routing (see $KIT/context/model-profiles.md) ---
 model_profile: quality           # opus for engineers and critics (see model-profiles.md)
 
 # --- Slicing and the quick lane ---
@@ -77,8 +77,9 @@ g10_pii_cmd: python3 tools/g10-pii.py   # your wrapper (the kit bundles no tool)
 g10_observability_cmd: python3 tools/g10-obs.py   # your wrapper (the kit bundles no tool)
 
 # --- Delivery ---
-# Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the
-# work and prints the exact commands; the human runs them (IMP-25).
+# `python3 "$KIT/scripts/pr_prepare.py" prepare` validates the work and prints the exact commands.
+# Below git_autonomy: branch+commit+push the human runs them; at that tier the main session may push its
+# feature branch itself (never a protected branch; subagents never push). Merging stays the human's (IMP-25).
 delivery: draft-pr               # branch, verify, then pr_prepare prints the push and draft-PR commands for me to run
 git_autonomy: branch+commit      # the conductor branches and makes the WIP commits; I push
 max_ci_fix_attempts: 2           # CI-fix attempts per PR

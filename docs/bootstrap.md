@@ -1,6 +1,6 @@
-# Bootstrap: from a copied-in kit to a working install
+# Bootstrap: from an installed plugin to a working project
 
-`/bootstrap` takes a repository, new or old, from "I copied `.claude/` in" to a working install, and leaves a record of what it did. It follows the rule the rest of the kit follows: **the agent prepares, a human applies.** Creating a repository, setting rulesets, applying labels, changing a guard key in `loop.config.md` and enabling CI workflows are all things you run yourself, from a plain terminal, after reading what they will do.
+`/bootstrap` takes a repository, new or old, from "I installed the plugin" to a working install, and leaves a record of what it did. It follows the rule the rest of the kit follows: **the agent prepares, a human applies.** Creating a repository, setting rulesets, applying labels, changing a guard key in `loop.config.md` and enabling CI workflows are all things you run yourself, from a plain terminal, after reading what they will do.
 
 ## What you get
 
@@ -18,16 +18,16 @@ Everything bootstrap writes that you review lives in `.claude/bootstrap/` (ignor
 
 ## Before you start
 
-- The kit is installed (`.claude/` is in the repository root). Bootstrap does not install it: copy `dist/copy-install/` or install the plugin and run `/init` (`${CLAUDE_PLUGIN_ROOT}/docs/packaging.md`); `/migrate` upgrades an older install.
-- For a new project, a folder with no code is fine. Bootstrap asks you to run `git init -b main` and the first commit yourself, because `git_autonomy` is `none` by default.
+- The plugin is installed, and you have run `/chain-of-custody:init` in the project (`docs/packaging.md`). Bootstrap does not install the kit. If the kit is still copied into `.claude/`, bootstrap stops: move onto the plugin with `/chain-of-custody:migrate` first (`docs/migrating-to-v2.md`).
+- For a new project, a folder with no code is fine. Bootstrap asks you to run `git init -b main` and the first commit yourself: with no commit there is no config at the base sha, so `git_autonomy` counts as `none` (the default when the key is absent) whatever `/chain-of-custody:init` wrote.
 - Have `gh` installed and logged in (`gh auth login`) **only for the remote phase, and only in your own terminal**. The agent never has your GitHub credentials.
 
 ## Greenfield and existing repositories
 
 | | Greenfield | Existing |
 |---|---|---|
-| Stack | You choose from `${CLAUDE_PLUGIN_ROOT}/context/choosing-your-stack.md` with a recommendation | Read from the manifests; you confirm |
-| Primers | Written from the decided stack; evidence-dependent parts marked `TODO(primer)` | Derived from the code, following `${CLAUDE_PLUGIN_ROOT}/context/primer-protocol.md` |
+| Stack | You choose from `context/choosing-your-stack.md` with a recommendation | Read from the manifests; you confirm |
+| Primers | Written from the decided stack; evidence-dependent parts marked `TODO(primer)` | Derived from the code, following `context/primer-protocol.md` |
 | Verify commands | Provisional: they describe an app that does not exist yet, so `/orchestrate` refuses to start until the first plan item makes them real | Suggested from the manifests, then **proven in the sandbox** with `probe_run.py` (it lists the commands and a digest; you say go) |
 | Repository on GitHub | The setup script can create it (`--create-repo`) and make the first push | Already there; the script only sets rules, labels and variables |
 | Next mode | `/planner` (the first item is the scaffold) | `/pm` or `/tech-lead` |
@@ -36,27 +36,27 @@ Everything bootstrap writes that you review lives in `.claude/bootstrap/` (ignor
 
 | File | What it is | Who runs it |
 |---|---|---|
-| `${CLAUDE_PLUGIN_ROOT}/skills/bootstrap/SKILL.md` | The mode: the interview and the order of steps | you invoke `/bootstrap` |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_detect.py` | Read-only facts: mode hint, stack, suggested verify commands, deploy hosts, release automation, kit and receipt state | the agent |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_config.py` | `plan`: check keys and values against the registry and write a plan. `apply`: edit `loop.config.md` from a plan | the agent plans; **you** apply |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/github/repo_script.py` | Prints the setup script (`.claude/bootstrap/setup.sh`). It only writes text | the agent |
+| `skills/bootstrap/SKILL.md` | The mode: the interview and the order of steps | you invoke `/bootstrap` |
+| `scripts/bootstrap_detect.py` | Read-only facts: mode hint, stack, suggested verify commands, deploy hosts, release automation, kit and receipt state | the agent |
+| `scripts/bootstrap_config.py` | `plan`: check keys and values against the registry and write a plan. `apply`: edit `loop.config.md` from a plan | the agent plans; **you** apply |
+| `scripts/github/repo_script.py` | Prints the setup script (`.claude/bootstrap/setup.sh`). It only writes text | the agent |
 | `.claude/bootstrap/setup.sh` | The script itself: `local` and `remote` phases, a dry run unless `--apply` | **you** |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-labels.sh` | The factory labels; the setup script calls it, and you can run it alone | **you** |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py` | The receipt | the agent |
+| `scripts/github/apply-labels.sh` | The factory labels; the setup script calls it, and you can run it alone | **you** |
+| `scripts/bootstrap_receipt.py` | The receipt | the agent |
 
-All human-run scripts refuse to start when `CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT` is set (a Claude Code session; `${CLAUDE_PLUGIN_ROOT}/scripts/humanonly.py`). That is a tripwire, not a lock: `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` removes it, and then the script cannot tell. What actually keeps an agent out is that it holds no GitHub credential, the guards deny `gh` mutations, and you read the dry run before you add `--apply`.
+All human-run scripts refuse to start when `CLAUDECODE` or `CLAUDE_CODE_ENTRYPOINT` is set (a Claude Code session; `scripts/humanonly.py`). That is a tripwire, not a lock: `env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT` removes it, and then the script cannot tell. What actually keeps an agent out is that it holds no GitHub credential, the guards deny `gh` mutations, and you read the dry run before you add `--apply`.
 
 ## The config plan
 
 Almost every `loop.config.md` key is H6: it changes caps, gates, delivery, verify commands or an attestation, and only a human changes those. So bootstrap does not edit the file.
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_config.py plan --set solo_maintainer=true --set verify_tests="pnpm test"
+python3 "$KIT/scripts/bootstrap_config.py" plan --set solo_maintainer=true --set verify_tests="pnpm test"
     -> checks each key against the registry (known, right type, allowed value, evidence gate)
     -> writes .claude/bootstrap/config-plan.json; changes no config
 
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_config.py apply .claude/bootstrap/config-plan.json            dry run: prints the diff
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_config.py apply .claude/bootstrap/config-plan.json --write    you, in a terminal
+python3 "$KIT/scripts/bootstrap_config.py" apply .claude/bootstrap/config-plan.json            dry run: prints the diff
+python3 "$KIT/scripts/bootstrap_config.py" apply .claude/bootstrap/config-plan.json --write    you, in a terminal
 ```
 
 `apply` does not trust the plan file: it checks every key again, edits only the value on the planned lines (comments and every other line stay), parses the result, and writes only if the planned keys have exactly the planned values and nothing else changed. Keys whose value is a command (`verify_tests`, ...) are flagged: they run later, so read them. Commit the result yourself.
@@ -66,7 +66,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_config.py apply .claude/bootstra
 ```
 sh .claude/bootstrap/setup.sh local            prints; edits nothing
 sh .claude/bootstrap/setup.sh local  --apply   applies the config plan, copies the chosen workflows (never over an existing file), installs the launch-app skill
-   ... pin each `uses:` to a commit SHA, run python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py, commit ...
+   ... pin each `uses:` to a commit SHA, run python3 "$KIT/scripts/ci_lint.py," commit ...
 sh .claude/bootstrap/setup.sh remote           prints; sends nothing
 sh .claude/bootstrap/setup.sh remote --apply   gh repo create + first push (greenfield), rulesets and the squash setting (apply-boundary.sh),
                                                labels (apply-labels.sh), the FACTORY_APPROVERS variable
@@ -74,16 +74,16 @@ sh .claude/bootstrap/setup.sh remote --apply   gh repo create + first push (gree
 
 The phases are split because a ruleset has to come after the first push, and a config or workflow edit has to be committed before it. Every value in the script was checked against a strict pattern when it was generated and is shell-quoted; a repository name, branch, login or description cannot become shell syntax. The script's SHA-256 is in the receipt, so you can check that the file you read is the file the agent made (`sha256sum .claude/bootstrap/setup.sh`).
 
-It never creates the bot identity (`${CLAUDE_PLUGIN_ROOT}/docs/security/bot-identity.md`), never sets a secret (run `gh secret set ANTHROPIC_API_KEY` yourself: it prompts, and the key is never in a file), never merges and never deploys. It ends with the list of what is still yours.
+It never creates the bot identity (`docs/security/bot-identity.md`), never sets a secret (run `gh secret set ANTHROPIC_API_KEY` yourself: it prompts, and the key is never in a file), never merges and never deploys. It ends with the list of what is still yours.
 
 ## The receipt
 
 `.claude/bootstrap-receipt.json` holds one entry per step: the id, the command, the exit code, the SHA-256 of the output, and whether the agent ran it (`source: ran`) or was told about it (`source: recorded`). Entries are chained: each carries a hash of the one before, so an edit, a removal or a reordering shows up.
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py show     the summary and the commands still yours to run
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py check    validate the file and the chain (exit 1 on any problem)
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py status   none | in-progress | complete | invalid
+python3 "$KIT/scripts/bootstrap_receipt.py" show     the summary and the commands still yours to run
+python3 "$KIT/scripts/bootstrap_receipt.py" check    validate the file and the chain (exit 1 on any problem)
+python3 "$KIT/scripts/bootstrap_receipt.py" status   none | in-progress | complete | invalid
 ```
 
 It is a record for whoever reviews the pull request that installs the kit. It is not a gate and not proof: someone who can write the file can write a receipt that checks out. What it does catch is a half-finished bootstrap, a step that failed and was never retried, and a setup script that changed after it was recorded.
@@ -101,9 +101,9 @@ Bootstrap asks whether this is a solo project or a team, and the answer sets thr
 
 - **Rulesets:** `solo` (one human admin may bypass in pull-request mode only) or `team` (nobody bypasses; releases go through a named team).
 - **Approvers:** `factory_approvers` lists the logins whose labels count. `label-guard.yml` removes `factory:*`, `plan-ok` and `preview` labels applied by anyone else, and `intake.yml` checks the same list itself. The setup script sets the matching `FACTORY_APPROVERS` repository variable.
-- **CODEOWNERS:** path-scoped review by named people or teams (`${CLAUDE_PLUGIN_ROOT}/templates/security/CODEOWNERS.template`). It is not the approver list: a label is not path-scoped.
+- **CODEOWNERS:** path-scoped review by named people or teams (`templates/security/CODEOWNERS.template`). It is not the approver list: a label is not path-scoped.
 
-Two people running the loop at once is a different problem. What exists today: the local run lock covers one machine. Between machines, claim a piece of work by hand: put `factory:running` on the tracking issue and assign yourself, and take both off when you stop. A shared lock that does this for you is `loopctl remote-lock`, with `loopctl claim` for one item (`${CLAUDE_PLUGIN_ROOT}/docs/loopctl-extras.md`): an advisory ref on the remote, `refs/loopctl/lock/<plan>`, opt-in and behind the evidence gate. Taking it is a push, so it is a human step. It is coordination, not a security boundary: anyone with write access to the repository can move that ref.
+Two people running the loop at once is a different problem. What exists today: the local run lock covers one machine. Between machines, claim a piece of work by hand: put `factory:running` on the tracking issue and assign yourself, and take both off when you stop. A shared lock that does this for you is `loopctl remote-lock`, with `loopctl claim` for one item (`docs/loopctl-extras.md`): an advisory ref on the remote, `refs/loopctl/lock/<plan>`, opt-in and behind the evidence gate. Taking it is a push, so it is a human step. It is coordination, not a security boundary: anyone with write access to the repository can move that ref.
 
 ## When something goes wrong
 
@@ -114,11 +114,11 @@ Two people running the loop at once is a different problem. What exists today: t
 | `another bootstrap_receipt run holds ...lock` | A run was killed while writing | Delete `.claude/bootstrap-receipt.json.lock` if nothing is running |
 | `needs the evidence gate` from `plan` | You asked for an opt-in feature the registry gates | It stays off until `docs/baseline/evidence.json` is complete |
 | `is a block value in this file: edit it by hand` | The key is written as a multi-line block, which `apply` will not rewrite | Edit that key yourself |
-| The doctor reports L1 | Nothing is attested yet. That is where every install starts | `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level` lists what blocks the next level |
+| The doctor reports L1 | Nothing is attested yet. That is where every install starts | `python3 "$KIT/scripts/doctor.py" --level` lists what blocks the next level |
 
 ## Related
 
-- `${CLAUDE_PLUGIN_ROOT}/docs/ops.md`: the intake, dependency-check and smoke workflows, the labels, and the parts that are design only.
-- `${CLAUDE_PLUGIN_ROOT}/docs/release-automation.md`: release-please, changesets and the other release tools; why their pull requests are human.
-- `${CLAUDE_PLUGIN_ROOT}/docs/delivery.md`: the `delivery` dial and the verify commands bootstrap proposes.
+- `docs/ops.md`: the intake, dependency-check and smoke workflows, the labels, and the parts that are design only.
+- `docs/release-automation.md`: release-please, changesets and the other release tools; why their pull requests are human.
+- `docs/delivery.md`: the `delivery` dial and the verify commands bootstrap proposes.
 - `docs/security/`: the rulesets, the bot identity and the deploy-surface attestation the setup script points at.

@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import stat
 import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -32,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import humanonly  # noqa: E402
 from doctorlib import safeio  # noqa: E402
 from kitlib import config as config_mod  # noqa: E402
-from kitlib import evidence, gitutil, jsonio, miniyaml, registry  # noqa: E402
+from kitlib import evidence, gitutil, jsonio, kitpaths, miniyaml, registry  # noqa: E402
 
 SCHEMA = "bootstrap_config_plan.v1"
 PLAN_DIR = os.path.join(".claude", "bootstrap")
@@ -370,8 +371,8 @@ def main(argv: Optional[Sequence[str]] = None, env: Optional[Dict[str, str]] = N
             plan = build_plan(root, args.sets, reg)
             rel = write_plan(root, plan, args.name)
             print("bootstrap_config plan: wrote %s (no config was changed)\n%s" % (rel, show_plan(root, plan, reg)))
-            print("A human applies it from a plain terminal:\n  python3 .claude/scripts/bootstrap_config.py apply %s          (dry run)\n"
-                  "  python3 .claude/scripts/bootstrap_config.py apply %s --write" % (rel, rel))
+            print("A human applies it from a plain terminal:\n  %s          (dry run)\n  %s"
+                  % (kitpaths.script_cmd("bootstrap_config.py", "apply", shlex.quote(rel)), kitpaths.script_cmd("bootstrap_config.py", "apply", shlex.quote(rel), "--write")))
             return 0
         return cmd_apply(root, args.plan, args.write)
     except (ConfigPlanError, registry.RegistryError) as exc:

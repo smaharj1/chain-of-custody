@@ -3,7 +3,7 @@
 Build and local tests run on a newer Python, so this guards the floor: a 3.9 `python3` on a
 fresh Mac must not choke on a fail-closed hook. Three layers:
 
-  1. `ast.parse(..., feature_version=(3, 9))` over `.claude/scripts`, `tools` and `tests`
+  1. `ast.parse(..., feature_version=(3, 9))` over `scripts`, `tools` and `tests`
   2. AST checks for things the parser accepts on newer Pythons but 3.9 cannot run:
      post-3.9 APIs, `X | Y` annotations without `from __future__ import annotations`,
      `isinstance(x, A | B)`, `zip(strict=)`, `except*`, `match`, parenthesised `with ... as`
@@ -21,7 +21,7 @@ import unittest
 
 from . import REPO_ROOT
 
-ROOTS = (os.path.join(".claude", "scripts"), "tools", "tests")
+ROOTS = ("scripts", "tools", "tests")
 
 # Names that are new in 3.10+ whatever they hang off (methods and unique names).
 POST_39_ANYWHERE = {

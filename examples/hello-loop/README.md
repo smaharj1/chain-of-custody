@@ -6,7 +6,7 @@ It is a bookmarks service written with the Python standard library only (`http.s
 
 ## The plan
 
-`build-plan.json` is a V1-shape plan (the shape `.claude/templates/build-plan.md` defines at v1.2.0): three items with real dependencies and acceptance criteria that carry ids (`AC-F2-4`) a command can falsify.
+`build-plan.json` is a V1-shape plan (the shape `templates/build-plan.md` defined at v1.2.0): three items with real dependencies and acceptance criteria that carry ids (`AC-F2-4`) a command can falsify.
 
 | Item | Milestone | Depends on | Delivers | Demo target |
 |---|---|---|---|---|

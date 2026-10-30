@@ -12,8 +12,8 @@ from infra import gate
 
 from tests import REPO_ROOT
 
-LABEL_GUARD = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows", "label-guard.yml")
-POLICY = os.path.join(REPO_ROOT, ".claude", "templates", "security", "iam", "plan-readonly.policy.json")
+LABEL_GUARD = os.path.join(REPO_ROOT, "templates", "github", "workflows", "label-guard.yml")
+POLICY = os.path.join(REPO_ROOT, "templates", "security", "iam", "plan-readonly.policy.json")
 
 
 def guard_script():

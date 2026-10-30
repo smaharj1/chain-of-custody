@@ -16,7 +16,7 @@ from loopctl import intake, plan as plan_mod
 
 from . import ENG, UnattendedTestCase, item_doc
 
-SCHEMA_PATH = os.path.join(REPO_ROOT, ".claude", "templates", "intake_schema.json")
+SCHEMA_PATH = os.path.join(REPO_ROOT, "templates", "intake_schema.json")
 GOOD = {"type": "bug", "title": "Login page returns 500", "problem": "Posting the form with an empty email gives a 500.",
         "acceptance": ["`POST /login` with an empty email returns 400", "the test tests/test_login.py passes"], "severity": "high",
         "repro_steps": ["open /login", "submit with an empty email"], "duplicate_of": None}
@@ -57,8 +57,8 @@ class OneSchema(unittest.TestCase):
 
     def test_the_triage_agent_and_the_workflow_template_say_the_same_things_as_the_schema(self):
         s = self.schema
-        agent = read(".claude/agents/intake-triage.md")
-        wf = read(".claude/templates/github/workflows/intake.yml")
+        agent = read("agents/intake-triage.md")
+        wf = read("templates/github/workflows/intake.yml")
         for f in s["fields"]:
             self.assertIn("`%s`" % f, agent, "the agent prompt does not name the field " + f)
             self.assertIn(f, wf, "the workflow prompt does not name the field " + f)
@@ -76,7 +76,7 @@ class OneSchema(unittest.TestCase):
 
     def test_the_workflow_fences_the_issue_with_a_nonce_made_after_the_fetch_and_denies_tools_twice(self):
         # UN-12: the stranger's text must not be able to close its own fence, and no tool may be pre-approved.
-        wf = read(".claude/templates/github/workflows/intake.yml")
+        wf = read("templates/github/workflows/intake.yml")
         fetch, nonce, triage = wf.index("Fetch the issue as data"), wf.index("Make the fence nonce"), wf.index("- name: Triage with no tools")
         self.assertLess(fetch, nonce)
         self.assertLess(nonce, triage)
@@ -94,10 +94,10 @@ class OneSchema(unittest.TestCase):
         self.assertIn("--disallowedTools", run)
 
     def test_the_agent_is_read_only_and_tool_less_at_launch(self):
-        head = read(".claude/agents/intake-triage.md").split("\n---\n")[0]
+        head = read("agents/intake-triage.md").split("\n---\n")[0]
         self.assertIn("\ntools: Read\n", head)
         self.assertNotRegex(head, r"tools:.*(Bash|Edit|Write|Web)")
-        self.assertIn("no tools", read(".claude/agents/intake-triage.md").lower())
+        self.assertIn("no tools", read("agents/intake-triage.md").lower())
 
 
 class Stage2(unittest.TestCase):

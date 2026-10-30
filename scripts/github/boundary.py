@@ -13,7 +13,7 @@ Never run it as the bot.
 pull_request mode only; team = no bypass), the tag ruleset (releases are H5), the squash-merge
 setting ("PR title and description", so the audit block survives a squash), the Actions workflow
 permissions (read-only token that cannot approve PRs), and optionally one Environment with required
-reviewers and self-review prevented. CODEOWNERS is a file: copy `.claude/templates/security/CODEOWNERS.template`
+reviewers and self-review prevented. CODEOWNERS is a file: copy the kit's `templates/security/CODEOWNERS.template`
 into the repo yourself. Nothing here creates the bot, mints a token or changes anything outside the
 repository settings listed.
 """
@@ -31,14 +31,15 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
-KIT_ROOT = os.path.dirname(SCRIPTS)  # .claude
-TEMPLATES = os.path.join(KIT_ROOT, "templates", "security", "rulesets")
-DOCTOR = os.path.join(SCRIPTS, "doctor.py")
 
 if SCRIPTS not in sys.path:
     sys.path.insert(0, SCRIPTS)
 
 import humanonly  # noqa: E402
+from kitlib import kitpaths  # noqa: E402
+
+TEMPLATES = kitpaths.kit("templates", "security", "rulesets")
+DOCTOR = kitpaths.script("doctor.py")
 
 _SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 
@@ -108,8 +109,9 @@ def build_apply_plan(repo: str, variant: str, release_team_id: Optional[int] = N
             manual.append("environment %r created without reviewers: pass --reviewer-id N (repeatable), or add them in Settings > Environments" % environment)
         calls.append(Call("PUT", "repos/%s/environments/%s" % (repo, environment), body,
                           "Environment %r: required reviewers and self-review prevention (Enterprise only on private repos, RC-2)" % environment))
-    manual.append("CODEOWNERS: copy .claude/templates/security/CODEOWNERS.template to .github/CODEOWNERS, replace the placeholders, commit it through a PR")
-    manual.append("bot identity: create the GitHub App (docs/security/bot-identity.md); this script never creates or scopes it")
+    manual.append("CODEOWNERS: copy %s to .github/CODEOWNERS, replace the placeholders, commit it through a PR"
+                  % shlex.quote(kitpaths.kit("templates", "security", "CODEOWNERS.template")))
+    manual.append("bot identity: create the GitHub App (%s); this script never creates or scopes it" % shlex.quote(kitpaths.kit("docs", "security", "bot-identity.md")))
     return calls, manual
 
 
@@ -156,7 +158,7 @@ def cmd_apply(args: argparse.Namespace, env: Dict[str, str], runner: Callable) -
     print("\nStill yours to do:")
     for m in manual:
         print("  - " + m)
-    print("  - then verify: .claude/scripts/github/verify-boundary.sh --repo %s --run" % args.repo)
+    print("  - then verify: sh %s --repo %s --run" % (shlex.quote(kitpaths.script("github/verify-boundary.sh")), args.repo))
     return 0
 
 

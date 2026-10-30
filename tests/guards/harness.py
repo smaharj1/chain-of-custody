@@ -8,9 +8,9 @@ Row format (tests/guards/corpus/*.json):
 
     {"id": "git-001", "tool": "Bash", "input": {"command": "..."}, "caller": "engineer", "repo": "main",
      "expect": "deny" | "allow" | "ask", "rule": "guard-git:no-verify", "why": "...",
-     "config": {"git_autonomy": "branch"}, "tainted": true, "cwd": "{MAIN}/src", "hook": {...extra hook keys...}}
+     "config": {"git_autonomy": "branch"}, "base_config": {...the config at the base sha; defaults to "config"...}, "tainted": true, "cwd": "{MAIN}/src", "hook": {...extra hook keys...}}
 
-`{MAIN}`, `{FEAT}`, `{WT}`, `{PLAIN}`, `{HOME}`, `{DETACHED}` expand to fixture paths.
+`{MAIN}`, `{FEAT}`, `{WT}`, `{PLAIN}`, `{HOME}`, `{DETACHED}`, `{ROOT}` expand to fixture paths and `{KIT}` to the kit root.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Mapping, Optional
 from guards import engine, lib
 from guards.lib import Ctx
 from kitlib import config as config_mod
+from kitlib import kitpaths
 from kitlib import runstate
 
 from tests import REPO_ROOT
@@ -51,6 +52,19 @@ class Fixtures(object):
         self.main = self._repo("main-repo", "main")
         self.feat = self._repo("feat-repo", "main")
         self.feat.git("checkout", "-q", "-b", "feat/x")
+        # a named remote for the push-tier rows; its default branch is main (refs/remotes/origin/HEAD)
+        self.feat.git("remote", "add", "origin", os.path.join(self.root, "origin.git"))
+        self.feat.git("update-ref", "refs/remotes/origin/main", "main")
+        self.feat.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        # a second remote whose default branch is feat/x: a push there is a push to a protected branch
+        self.feat.git("remote", "add", "upstream", os.path.join(self.root, "upstream.git"))
+        self.feat.git("update-ref", "refs/remotes/upstream/feat/x", "feat/x")
+        self.feat.git("symbolic-ref", "refs/remotes/upstream/HEAD", "refs/remotes/upstream/feat/x")
+        # the other lanes pr_prepare names, and feat/trk, a branch that tracks main (made from origin/main)
+        for lane in ("quick/tidy", "fix/bug", "chore/deps", "docs/guide", "feat/trk"):
+            self.feat.git("branch", "-q", lane, "feat/x")
+        self.feat.git("config", "branch.feat/trk.remote", "origin")
+        self.feat.git("config", "branch.feat/trk.merge", "refs/heads/main")
         self.wt = self.main.add_worktree("main-wt", "feat/wt")
         self.detached = self.main.add_worktree("main-detached")
         for repo in (self.main, self.feat):
@@ -74,7 +88,7 @@ class Fixtures(object):
         self.feat_state.register_session(SESSIONS["conductor"], "conductor")
         self.subs = {
             "{MAIN}": self.main.path, "{FEAT}": self.feat.path, "{WT}": self.wt, "{PLAIN}": self.plain, "{HOME}": self.home,
-            "{DETACHED}": self.detached, "{ROOT}": self.root,
+            "{DETACHED}": self.detached, "{ROOT}": self.root, "{KIT}": kitpaths.KIT_ROOT,
         }
 
     def _repo(self, name: str, branch: str) -> TempRepo:
@@ -209,8 +223,8 @@ def build_hook(fx: Fixtures, row: Mapping[str, Any]) -> Dict[str, Any]:
     return hook
 
 
-def config_for(row: Mapping[str, Any]):
-    cfg = row.get("config")
+def config_for(row: Mapping[str, Any], key: str = "config"):
+    cfg = row.get(key)
     if cfg is None:
         return None
     lines = ["# Loop Config", "", "```yaml"]
@@ -228,7 +242,8 @@ def config_for(row: Mapping[str, Any]):
 def evaluate_row(fx: Fixtures, row: Mapping[str, Any]):
     hook = build_hook(fx, row)
     state = fx.state_for(row.get("repo", "main"))
-    ctx = Ctx(hook, env={"HOME": fx.home, "PATH": "/usr/bin:/bin"}, state=state, config=config_for(row))
+    ctx = Ctx(hook, env={"HOME": fx.home, "PATH": "/usr/bin:/bin"}, state=state, config=config_for(row),
+              base_config=config_for(row, "base_config") if "base_config" in row else lib.UNSET)
     undo = []   # type: List[str]
     if row.get("tainted") and state is not None:
         lib.mark_tainted(state, hook, "test")

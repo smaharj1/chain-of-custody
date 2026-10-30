@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """WorktreeCreate and WorktreeRemove hooks (report 11.5 item 3, D-3, D-22; Phase 8). OPT-IN: not wired by the kit; the snippet is
-`.claude/templates/parallel/worktree-hooks.settings.json`, merged by a human in one reviewed commit (H6).
+`${CLAUDE_PLUGIN_ROOT}/templates/parallel/worktree-hooks.settings.json`, merged by a human in one reviewed commit (H6).
 
 A WorktreeCreate hook REPLACES the platform's own worktree creation for `claude --worktree` and for a subagent with `isolation: worktree`, and the
 platform takes the worktree's absolute path from the hook's standard output. That is exactly what the report wants (D-3: the platform branches from
@@ -8,8 +8,8 @@ the remote default branch, and whether `worktree.baseRef: head` is honoured is u
 integration branch's tip, makes the worktree under `<repo>/.claude/worktrees/<name>` and nothing else, copies `.worktreeinclude` (only `.env.local`
 and `.env.test`), reserves a port slot (the report's "port offset") and prints the path. WorktreeRemove takes it away and gives the port slot back.
 
-    python3 .claude/scripts/worktree_hook.py create     (hook JSON on stdin: {"name": ..., "cwd": ...})
-    python3 .claude/scripts/worktree_hook.py remove     (hook JSON on stdin: {"worktree_path": ..., "cwd": ...})
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/worktree_hook.py create     (hook JSON on stdin: {"name": ..., "cwd": ...})
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/worktree_hook.py remove     (hook JSON on stdin: {"worktree_path": ..., "cwd": ...})
 
 WHAT KEEPS IT SAFE. The worktree's name comes from hook input, which a prompt-injected session could shape: it must be one plain name (letters, digits,
 `.`, `_`, `-`, no separator), the path is built under the repository's own `.claude/worktrees/` and nowhere else, and a path to remove must resolve

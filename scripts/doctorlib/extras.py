@@ -138,7 +138,7 @@ def check_fork_env(ctx: Context) -> List[Result]:
             from kitlib import runstate
             from loopctl import launch
             rs = runstate.RunState.for_path(ctx.repo)
-            tdir = ctx.repo_path(".claude", "templates", "settings")
+            tdir = ctx.kit_path("templates", "settings")
             for kind in ("engineer", "critic"):
                 s, _skipped = launch.build_settings(kind, rs, ctx.config, template_dir=tdir if os.path.isdir(tdir) else None)
                 bad = _env_problems(s.get("env"))
@@ -148,7 +148,7 @@ def check_fork_env(ctx: Context) -> List[Result]:
                            else passed(rid, "the %s profile pins CLAUDE_CODE_FORK_SUBAGENT=0 and CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1%s" % (kind, note)))
         except Exception as exc:  # noqa: BLE001 - a profile that cannot be built is a finding, not a crash
             out.append(unknown("fork.env.driver", "the driver's headless profile could not be built here (%s: %s)" % (type(exc).__name__, str(exc)[:100]),
-                               "run the doctor in a repository that has the kit's .claude/templates/settings/", severity=WARN))
+                               "check that the plugin folder (%s) has templates/settings/" % ctx.kit_root, severity=WARN))
     else:
         data = ctx.fact("settings")
         have = {k: settings.effective(data, "env." + k) for k in FORK_ENV_EXPECTED}

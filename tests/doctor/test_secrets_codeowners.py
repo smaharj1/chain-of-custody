@@ -5,10 +5,13 @@ import os
 import unittest
 
 from doctorlib import codeowners
+from kitlib import redact
+
+from tests import REPO_ROOT
 
 from .helpers import BoundaryCase
 
-TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "templates", "security")
+TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "templates", "security")
 
 
 def read(*parts):
@@ -77,6 +80,21 @@ class Secrets(BoundaryCase):
         hit = self.assertFails(self.results(self.ctx(repo)), "secrets.in-kit-files")
         self.assertIn("backend.md", hit[0].message)
         self.assertNotIn(token, hit[0].message)
+
+    def test_the_seed_holds_nothing_secret_shaped(self):
+        # a fresh /init copies seed/ into the project; the doctor must not flag the starter files it wrote
+        seed = os.path.join(REPO_ROOT, "seed")
+        files = {}
+        for root, _dirs, names in os.walk(seed):
+            for n in names:
+                fp = os.path.join(root, n)
+                with open(fp, "r", encoding="utf-8") as fh:
+                    text = fh.read()
+                rel = os.path.relpath(fp, seed).replace(os.sep, "/")
+                self.assertEqual(redact.find_secrets(text), [], rel)
+                files[rel] = text
+        self.assertIn(".claude/context/local-dev.md", files)
+        self.assertClean(self.results(self.ctx(self.kit_repo(files=files))), "secrets.in-kit-files")
 
     def test_not_a_git_repo_is_unknown(self):
         d = self.tmpdir()

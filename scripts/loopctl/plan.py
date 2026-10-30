@@ -10,7 +10,7 @@ strict (no duplicate keys, no NaN, bounded size and depth, unknown fields are er
 before they become a path, a ref or a command argument, and symlinks are refused.
 
 Field spelling follows the report where it spells a field (`touches.deps_change`, `finding_ids`) and camelCase
-elsewhere, as v1 did (`dependsOn`, `requiresEnv`, `riskClass`). See `.claude/spec/loopctl.md`.
+elsewhere, as v1 did (`dependsOn`, `requiresEnv`, `riskClass`). See `${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md`.
 
 `validate()` returns the findings plus the topological order, the critical path, the DAG width and the AC digests.
 """
@@ -69,7 +69,7 @@ class LoadedPlan(object):
         self.plan = None  # type: Optional[Dict[str, Any]]
         self.items = {}  # type: Dict[str, Dict[str, Any]]
         self.findings = []  # type: List[Finding]
-        self.agents = []  # type: List[str]       # .claude/agents/*.md names at the same source
+        self.agents = []  # type: List[str]       # the kit's agents plus the project's overrides .claude/agents/*.md at the same source
         self.extra = {}  # type: Dict[str, Optional[str]]   # load_at_rev(extra=...): other files read in the same calls
 
     @property
@@ -142,12 +142,19 @@ def load_worktree(repo: str) -> LoadedPlan:
     return lp
 
 
+def _with_kit_agents(overrides: Sequence[str]) -> List[str]:
+    """The roles a plan may name: the kit's agents (the plugin's agents/) and the project's overrides, which may add a role."""
+    from . import kit
+    return sorted(set(kit.agent_names()) | set(overrides))
+
+
 def _worktree_agents(repo: str, lp: LoadedPlan) -> None:
     d = os.path.join(repo, ".claude", "agents")
     try:
-        lp.agents = sorted(f[:-3] for f in os.listdir(d) if f.endswith(".md"))
+        overrides = [f[:-3] for f in os.listdir(d) if f.endswith(".md")]
     except OSError:
-        lp.agents = []
+        overrides = []
+    lp.agents = _with_kit_agents(overrides)
 
 
 def load_at_rev(repo: str, rev: str, extra: Sequence[str] = ()) -> LoadedPlan:
@@ -161,8 +168,8 @@ def load_at_rev(repo: str, rev: str, extra: Sequence[str] = ()) -> LoadedPlan:
         lp.err("plan.missing", "cannot list %s at %s" % (PLAN_DIR, rev[:12]))
         return lp
     entries = {str(r["path"]): r for r in rows}
-    lp.agents = sorted(os.path.basename(p)[:-3] for p in entries
-                       if p.startswith(".claude/agents/") and p.endswith(".md") and p.count("/") == 2)
+    lp.agents = _with_kit_agents([os.path.basename(p)[:-3] for p in entries
+                                  if p.startswith(".claude/agents/") and p.endswith(".md") and p.count("/") == 2])
     wanted = {}  # type: Dict[str, str]
     for path in extra:
         r = entries.get(path)
@@ -402,7 +409,7 @@ def _check_migrations(lp: LoadedPlan, iid: str, it: Dict[str, Any], w: str) -> N
                 lp.err("path.unsafe", "%s: %s %r is not a safe relative path" % (mw, k, common.clean_text(v, 60)), iid)
         cls = m.get("dataLossClass")
         if cls not in DATA_LOSS_CLASSES:
-            lp.err("migration.data-loss-class", "%s: dataLossClass is required and must be one of %s (CO-18, .claude/context/migrations.md)"
+            lp.err("migration.data-loss-class", "%s: dataLossClass is required and must be one of %s (CO-18, ${CLAUDE_PLUGIN_ROOT}/context/migrations.md)"
                    % (mw, ", ".join(DATA_LOSS_CLASSES)), iid)
         if "stage" in m and m["stage"] not in ("expand", "backfill", "contract"):
             lp.err("schema.value", "%s: stage must be expand, backfill or contract" % mw, iid)
@@ -747,7 +754,7 @@ def _slicing(lp: LoadedPlan, iid: str, it: Dict[str, Any], est: Dict[str, Any], 
         lp.warn("slice.engineers", "item %s needs %d engineers; two are preferred" % (iid, len(eng)), iid)
     for e in eng:
         if isinstance(e, str) and roles and e not in roles:
-            lp.warn("plan.unknown-engineer", "item %s names engineer %r, who is not in .claude/agents or the roster" % (iid, common.clean_text(e, 40)), iid)
+            lp.warn("plan.unknown-engineer", "item %s names engineer %r, who is not a kit agent, a .claude/agents override or in the roster" % (iid, common.clean_text(e, 40)), iid)
     n_ac = len(it.get("acceptance") or []) if isinstance(it.get("acceptance"), list) else 0
     if n_ac > MAX_ACCEPTANCE_PREFERRED:
         lp.warn("slice.acceptance", "item %s has %d acceptance criteria; three or fewer is the slicing rule" % (iid, n_ac), iid)

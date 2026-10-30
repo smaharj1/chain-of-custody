@@ -6,7 +6,7 @@
 # It uses -lock=false because the read-only role cannot write the state lock. The issue lists resource addresses and
 # actions only, never values.
 #
-# Repository variables: INFRA_DRIFT_ROLE_ARN (see .claude/templates/security/oidc/aws-drift-readonly.trust.json,
+# Repository variables: INFRA_DRIFT_ROLE_ARN (see the kit's templates/security/oidc/aws-drift-readonly.trust.json,
 # environment `drift`), AWS_REGION. Set TF_ROOT below. The label `infra-drift` is created on first use.
 name: infra-drift
 
@@ -43,6 +43,24 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: Install terraform
         uses: hashicorp/setup-terraform@v3 # pin to SHA
         with:
@@ -75,7 +93,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -eu
-          python3 .claude/scripts/infra/gate.py plan-summary --plan-json plan.json --title "Infrastructure drift" > body.md
+          python3 $RUNNER_TEMP/kit/scripts/infra/gate.py plan-summary --plan-json plan.json --title "Infrastructure drift" > body.md
           printf '\nFound by %s. Review it, then change the code or the infrastructure through the normal path. This workflow never applies.\n' "$RUN_URL" >> body.md
           gh label create infra-drift --repo "$REPO" --color B60205 --description "Infrastructure differs from main" 2>/dev/null || true
           existing="$(gh issue list --repo "$REPO" --label infra-drift --state open --json number --jq '.[0].number // empty')"

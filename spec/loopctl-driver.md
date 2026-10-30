@@ -8,8 +8,8 @@
 
 ```
 loopctl run                  (preflight: Tier 2 on, plan approved, budget set, lock free or a dead driver's)
-  startrun.start             takes the lock with driverPid, writes run.json, calls driver.run(ctx, loop, run_record, as_json)
-  driver.setup               nesting, binary, version, profiles, orphans, signals, worktree, recovery
+  startrun.start             takes the lock with driverPid, writes run.json (with the kit's identity), calls driver.run(ctx, loop, run_record, as_json)
+  driver.setup               nesting, binary, profiles, the kit check, version, orphans, signals, worktree, recovery
   driver.run_items           for the first eligible item: begin ... merged | awaiting_human | parked
 ```
 
@@ -24,7 +24,7 @@ State is the only memory. Every iteration re-reads the item's record from `refs/
 | `pending` | checks `requiresEnv`, `Loop.begin`, cuts `feat/<slug>-a<n>` off the integration tip and switches to it | |
 | `designing` | writes `docs/features/<slug>/briefs/<domain>.md` from the plan item, WIP commit | `g0` first |
 | `design_review` | the plan item is the design (H1 and H2 approved it, slicing gave it a footprint): no child | |
-| `stubbing` | only if `gates.g2` is not off, `g2` is installed and the `acceptance-author` agent definition exists at the base sha (Phase 4b ships it): a child writes stubs and tests | `g2` |
+| `stubbing` | only if `gates.g2` is not off, `g2` is installed and the `acceptance-author` agent definition exists (the project's override at the base sha, else the kit's `agents/acceptance-author.md`, which the kit ships): a child writes stubs and tests | `g2` |
 | `building` | one child per engineer role in `estimate.engineers`, in dependency order (infra, database, backend, app, admin-app), each with a brief and a report path; the report is read, then a WIP commit | |
 | `verifying` | | `g5 g1 g3 g6 g9 g11 docs g10 g4` (a blocking `g5` ends the round; `g4`, mutation, is `off` unless opted in and runs last, so it is a driver gate as well as a CI one) |
 | `reviewing` | `code-reviewer`, and `security-reviewer` per `security_review`; the verdict line is read from each final message; the review is saved under `docs/features/<slug>/reviews/` | `g7` |
@@ -38,14 +38,19 @@ A gate sees `base_sha` = the item's branch point, so its diff is the item's own.
 ## One child
 
 ```
-claude -p --agent <role> --agents <{role: {description, prompt, tools, disallowedTools, model, effort}}> --settings <file>
-       --allowedTools <rule> <rule> ... --permission-mode dontAsk --max-budget-usd <remaining> --output-format json --session-id <uuid>
+claude -p --plugin-dir <kit root> --agent <role> --agents <{role: {description, prompt, tools, disallowedTools, model, effort}}>
+       --settings <file> --allowedTools <rule> <rule> ... --permission-mode dontAsk --max-budget-usd <remaining> --output-format json
+       --session-id <uuid>
 ```
 
 Fixed argv, `shell=False`, nothing from the plan or a report on it; the prompt is a file on stdin. The binary is `KIT_CLAUDE_BIN`, else `claude` on PATH.
 
-- **Role.** The agent definition is read from `.claude/agents/<role>.md` **at the base sha**, so an item cannot edit the file that judges it. `model_profile` and the round-2 escalation (opus, `xhigh`) set `model` and `effort`.
-- **Profile.** The kit's `headless-child.settings.json` (engineers) or `critic.settings.json` (reviewers), plus the project's verify commands as `Bash(<command>:*)` allow rules (a command with shell syntax, a placeholder, `claude` or `sudo` is skipped), the runstate directory write-denied and the held-out tests read-denied, `CLAUDE_CODE_FORK_SUBAGENT=0` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` (V18), and the compact hook. `launch.validate_settings` refuses to launch a profile that allows `Workflow` (RC-17) or `claude` (CS-2), has a blanket allow, is not `dontAsk`, has the sandbox off, or lacks the kit hooks. The profile is checked once before any state changes and again before every launch.
+- **Plugin.** `--plugin-dir` is the kit root the driver runs from (`kitpaths.KIT_ROOT`, an absolute path). It loads the kit's hooks (`hooks/hooks.json`: the guards, the SessionStart canary, the compact hook) for that one session, ahead of any installed copy of the plugin. No `--bare`: that would drop the plugin's hooks with everything else, and the canary would then refuse every child.
+- **Kit identity.** `run.json` records the kit at the start (`kit`: the version from `.claude-plugin/plugin.json` and a sha256 fingerprint over every file in the kit areas, names and contents). The driver checks it before the first child and again before every launch, and a sequential resume checks it too. A mismatch, or a run that recorded no kit, is refused: "the kit changed mid-run: started with V/fp, now V2/fp2; finish or abandon the run, then start a new one". `loopctl status` shows the kit the run started with and whether it still matches.
+
+- **Role.** The agent definition is the project's override `.claude/agents/<role>.md` **at the base sha** when it has one (an item cannot edit the file that judges it; an uncommitted override is not read), else the kit's `agents/<role>.md`. `${CLAUDE_PLUGIN_ROOT}` in it is filled in with the kit root before it goes into `--agents`, because Claude Code does not substitute it there. The launch record and the `launch` event name the source (`override <path> at <sha>` or `kit <version> agents/<role>.md`). `model_profile` and the round-2 escalation (opus, `xhigh`) set `model` and `effort`. The plugin's own copy of the agent is `chain-of-custody:<role>`, a different name, so `--agent <role>` names the `--agents` entry; that `--agents` wins over a plugin agent is a [probe] item.
+- **Profile.** The kit's `templates/settings/headless-child.settings.json` (engineers) or `critic.settings.json` (reviewers), read from the kit root, plus the project's verify commands as `Bash(<command>:*)` allow rules (a command with shell syntax, a placeholder, `claude` or `sudo` is skipped), the runstate directory write-denied and the held-out tests read-denied, and `CLAUDE_CODE_FORK_SUBAGENT=0` and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` (V18). Any `hooks` in the template are dropped: a child's hooks come only from the plugin. `launch.validate_settings` refuses to launch a profile that allows `Workflow` (RC-17) or `claude` (CS-2), has a blanket allow, is not `dontAsk`, has the sandbox off, carries hooks of its own, or whose plugin `hooks/hooks.json` does not wire the guards, the canary and the compact hook. The profile is checked once before any state changes and again before every launch.
+- **Version.** The Claude Code range check reads the kit's own `KIT_VERSION` (next to its scripts), never a file in the project.
 - **Environment.** An allowlist: PATH, HOME, locale, toolchain locators, the Claude auth variables, `KIT_*`, `verify_env_allow`. No `AWS_*`, `GH_*`, `GITHUB_*`, `SSH_AUTH_SOCK`, `CLAUDECODE`.
 - **Process.** Its own session and process group. The driver polls every `poll_s`: HALT, the lock, the canary, the child's last sign of life. A child is ended (SIGTERM, then SIGKILL after a grace period, the whole group) on `stall` (no tool call, no output for `dispatch_timeout_min`), `timeout` (six stall limits in all), `canary` (no SessionStart nonce within the wait), `halt`, `lock_lost` or `interrupted`. After a normal exit the group is swept once more, so a leaked dev server does not outlive its item (L-27).
 - **Canary** (RC-7, 5.8). The child's SessionStart hook writes `nonces/<session id>`. A child that finished without one ran with its guards not loaded: an `env` failure (`canary_missing`), its work is not trusted.
@@ -116,4 +121,4 @@ Test seams (honoured only when the binary is the fake): `KIT_FAKE_CLAUDE_HARNESS
 
 ## Not built here
 
-Pushing a branch or opening a PR (the item stops at `awaiting_human`; `pr_prepare` prints the human's commands, and no agent pushes), a measured cost for a child that printed nothing (the unattended supervisor estimates it), the architect and design-critic stages (the plan item is the design), the Workflow pipeline host (`pipeline_host: workflow` is refused; design only, `${CLAUDE_PLUGIN_ROOT}/spec/pipeline-host-workflow.md`), and auto-merge (L5 is not built). Parallel items, the notifications and the unattended mode, the remote lock and claims are built as opt-in layers (see the status line).
+Pushing a branch or opening a PR (the driver never pushes: the item stops at `awaiting_human` and `pr_prepare` prints the commands; an agent outside the driver may push a feature branch, never main or another protected branch, and a human merges), a measured cost for a child that printed nothing (the unattended supervisor estimates it), the architect and design-critic stages (the plan item is the design), the Workflow pipeline host (`pipeline_host: workflow` is refused; design only, `${CLAUDE_PLUGIN_ROOT}/spec/pipeline-host-workflow.md`), and auto-merge (L5 is not built). Parallel items, the notifications and the unattended mode, the remote lock and claims are built as opt-in layers (see the status line).

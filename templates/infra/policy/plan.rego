@@ -1,9 +1,10 @@
 # Policy on the plan JSON (report section 8.1 Layer 5, "after plan"; IMP-25). TEMPLATE: read and run it with
-#   conftest test --policy .claude/templates/infra/policy --namespace kit.infra.plan plan.json
-# where plan.json is `terraform show -json tfplan`. It could not be run by the kit's offline tests (no conftest,
-# no opa), so run `opa test .claude/templates/infra/policy` or `conftest verify` once yourself before you trust it.
+#   conftest test --policy "$KIT/templates/infra/policy" --namespace kit.infra.plan plan.json
+# where plan.json is `terraform show -json tfplan` and $KIT is the kit folder (printed as `kit:` at session start).
+# It could not be run by the kit's offline tests (no conftest, no opa), so run `opa test "$KIT/templates/infra/policy"`
+# or `conftest verify` once yourself before you trust it.
 #
-# The source policy (.claude/scripts/infra/source_policy.py) already refused the dangerous constructs before the plan
+# The source policy (${CLAUDE_PLUGIN_ROOT}/scripts/infra/source_policy.py) already refused the dangerous constructs before the plan
 # ran. This is the second layer, on what the plan would change. `deny` fails the run; `warn` is shown to the approver.
 # It is a starting point, not a complete policy: extend the lists for the services you use.
 package kit.infra.plan

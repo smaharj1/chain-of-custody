@@ -74,7 +74,7 @@ def check_gitignore(ctx: Context) -> List[Result]:
     out = []  # type: List[Result]
     if missing:
         out.append(failed("secrets.gitignore", ".gitignore does not cover: %s" % ", ".join(missing),
-                          "append .claude/templates/security/gitignore.snippet to .gitignore (.env* with !.env.example, key files, state)"))
+                          "append %s to .gitignore (.env* with !.env.example, key files, state)" % ctx.kit_path("templates", "security", "gitignore.snippet")))
     if wrong:
         out.append(failed("secrets.gitignore", ".gitignore hides %s, which should be committed as the template" % ", ".join(wrong), "add !.env.example", severity=WARN))
     return out or [passed("secrets.gitignore", ".gitignore covers .env*, key files and local env files, and keeps .env.example")]

@@ -6,34 +6,36 @@ This guide is for people who aren't deeply technical but want to use Chain of Cu
 
 ## What you need first
 
-1. **Claude Code installed.** Anthropic's command-line tool for Claude. Install and sign in by following the official guide: <https://docs.anthropic.com/en/docs/claude-code>.
+1. **Claude Code installed,** version 2.1.302 or newer (`claude --version`). Anthropic's command-line tool for Claude. Install and sign in by following the official guide: <https://docs.anthropic.com/en/docs/claude-code>.
 2. **A folder for your project.** Empty (brand-new) or an existing codebase, either works.
 3. **A little patience with the terminal.** You'll run a few commands. If that's intimidating, you can ask Claude to run most of them for you once it's started.
 
 You don't need to know how to code. You do need to be able to make product decisions ("yes, users should log in with Google") and answer questions about what you're trying to build.
 
-## Step 1 — Put this kit into your project
+## Step 1 — Install the kit and set up your project
 
-Everything the agents actually run lives in `.claude/`, so that folder is the one that matters. There are two ways in; both are built from the same files (`${CLAUDE_PLUGIN_ROOT}/docs/packaging.md` has the details). If you're comfortable in the terminal, the copy install is the whole kit, loop included:
+The kit is a Claude Code plugin. Install it, then set up each project with one command. Start Claude Code in your project folder (type `claude` in a terminal) and type:
 
-```bash
-cp -R path/to/this-kit/dist/copy-install/. your-project/
+```text
+/plugin marketplace add smaharj1/chain-of-custody
+/plugin install chain-of-custody@chain-of-custody
 ```
 
-`dist/copy-install/` holds `.claude/` plus the docs the kit's own text points at (including `${CLAUDE_PLUGIN_ROOT}/context/choosing-your-stack.md`, the stack guide the Planner reads). If you'd rather have the modes, agents and guards in many projects and updates through Claude Code, install the plugin instead (`/plugin marketplace add <this repository>`, then `/plugin install chain-of-custody@chain-of-custody` and `/chain-of-custody:init`). The plugin's modes are namespaced (`/chain-of-custody:pm`), and the loop's own machinery (`loopctl run`, the driver) needs the copy install for now.
+When it asks where to install, pick the project scope (from a shell: `claude plugin install chain-of-custody@chain-of-custody --scope project`). A user-scope install guards every repository on your machine, including ones you never set up for the kit.
 
-If that's confusing: open your project folder in Claude Code and ask, *"Copy the contents of `<path to this kit>/dist/copy-install` into this project."* Claude will do it.
+Then open Claude Code in your project folder and type:
 
-Optionally, copy the two plain-language guides next to your code (you can also just keep this kit folder open and read them there):
-
-```bash
-mkdir -p your-project/docs
-cp path/to/this-kit/docs/getting-started.md path/to/this-kit/docs/faq.md your-project/docs/
+```text
+/chain-of-custody:init
 ```
 
-> **Already used Claude Code in this project?** Then a `.claude/` folder already exists, and copying over it can clobber your settings. Back it up first (`cp -r .claude .claude.backup`) or ask Claude to *"merge the kit's `.claude` folder into mine without losing my settings."* The README's install notes have the details. To move an existing kit install to a newer kit, use `/migrate`, not a copy.
+It shows what it will write into your project's `.claude/` folder (a description of your project, the loop settings, empty notes the agents fill in, and the safety settings), changing nothing, and prints one command. Run it in a plain terminal (not inside Claude Code), then come back and say it ran. If the project already has a `.claude/` folder, it adds to it and never replaces a setting of yours.
 
-One more note: links in these docs to `GLOSSARY.md`, the README, and `examples/` refer to the kit itself, so keep the kit folder around (or its GitHub page bookmarked) instead of deleting it once you've copied from it.
+The kit's commands all start with `/chain-of-custody:`. This guide writes them short: `/pm` means `/chain-of-custody:pm`. The exception is init: the short `/init` is Claude Code's own, so always type `/chain-of-custody:init`.
+
+A few commands in these docs are ones you type into a terminal yourself. They write the kit's folder as `$KIT`. `/chain-of-custody:init` prints that folder as `kit: <path>`; type `export KIT=<that path>` in the terminal and the commands work as written. The path includes the plugin's version, so export it again after a plugin update.
+
+> **Used an older version of the kit,** the one you copied into `.claude/`? Install the plugin, then run `/chain-of-custody:migrate`. It moves your project onto the plugin and keeps everything you changed. See [Migrating to v2](migrating-to-v2.md).
 
 ## Step 2 — Set it up once: `/bootstrap`
 
@@ -43,7 +45,7 @@ Start Claude Code in your project and type:
 
 This is an interview for you, run once per project. It detects your stack and tooling (or helps you choose one), writes the stack into `.claude/CLAUDE.md`, proposes the settings for `.claude/loop.config.md`, and generates a short setup script. Then it stops and hands the rest to you, on purpose: creating a GitHub repository, applying labels and rules, and changing the settings that guard the loop are things *you* run, in a plain terminal, after reading what they do. The mode never edits those settings itself and never touches GitHub.
 
-When it finishes it leaves a record of what it did (`.claude/bootstrap-receipt.json`), and `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level` will say what level of autonomy is safe right now. With nothing attested, that is L1, a supervised local loop. That is where every install starts. Full detail: [bootstrap.md](bootstrap.md). If you skip this step the Planner still fills in the commands it needs, but the GitHub side stays unconfigured.
+When it finishes it leaves a record of what it did (`.claude/bootstrap-receipt.json`), and `python3 "$KIT/scripts/doctor.py" --level` will say what level of autonomy is safe right now. With nothing attested, that is L1, a supervised local loop. That is where every install starts. Full detail: [bootstrap.md](bootstrap.md). If you skip this step the Planner still proposes the commands it needs (you apply them the same way), but the GitHub side stays unconfigured.
 
 ## Step 3 — Turn your idea into a build plan: `/planner`
 
@@ -54,7 +56,7 @@ When you have an idea you want to build, this is your starting point. In Claude 
 …then describe your idea in as much detail as you can. The Planner will:
 
 1. **Interview you** about what you're building and who it's for.
-2. **Make the big decisions with you:** tech stack, how login works, how data is stored. Say *"I'm not technical, recommend and explain simply"* whenever you're unsure. It writes those decisions into the project's config files for you, including how to run and test your app, so you don't fill anything in by hand.
+2. **Make the big decisions with you:** tech stack, how login works, how data is stored. Say *"I'm not technical, recommend and explain simply"* whenever you're unsure. It writes the decisions down, and for `.claude/loop.config.md` (including how to run and test your app) it prepares the change and gives you one command to apply it, because those settings guard the loop and only you change them. You don't work out the values yourself.
 3. **Write a build plan,** which is a dependency-ordered checklist of everything to build. The first item is always a minimal runnable app (one page, one endpoint, one passing test), so you never have to scaffold anything yourself. Everything else builds on top of it.
 4. **Ask for your approval** before a single line is built.
 
@@ -70,9 +72,9 @@ Once you've approved the plan, type:
 
 This is the loop. It works through your plan one item at a time (design, build, review, then showing you the feature running on your own machine) and pauses for your okay at the checkpoints you chose. You watch, approve, and ask for changes. Nothing deploys; everything runs locally so you can actually see each piece.
 
-> **If it stops at startup:** `/orchestrate` needs to know how to start and test your app. The Planner normally fills this in during planning. If the loop still stops and asks, say *"fill in `.claude/loop.config.md` for my stack"* and Claude will set it up, then run `/orchestrate` again. You also choose how often it pauses (every item vs. every milestone) in that same file.
+> **If it stops at startup:** `/orchestrate` needs to know how to start and test your app. The Planner normally proposes this during planning. If the loop still stops and asks, say *"propose the `.claude/loop.config.md` settings for my stack"*. Claude runs `bootstrap_config.py plan --set key=value ...`, which checks the values and writes a plan. You then run `python3 "$KIT/scripts/bootstrap_config.py" apply .claude/bootstrap/config-plan.json --write` in a plain terminal, review `git diff`, commit, and run `/orchestrate` again (the same command without `--write` only shows the diff; see [bootstrap.md](bootstrap.md)). You also choose how often it pauses (every item vs. every milestone) in that same file.
 
-At a checkpoint, "review" means looking at the screenshot or clicking around the running app, then saying **approve** (keep going), **reject** (explain what's wrong, and the loop un-ships that item and redoes it with your feedback), or **stop**. (With `runner: driver` the item is already merged at its checkpoint, so the choices are approve or stop; a revert is `loopctl abort`.) One more thing worth knowing: finished work sits on your machine until you publish it, and **no agent ever publishes for you** (that is called a "git push"). When you're happy, Claude prints the exact commands and you run them yourself in a terminal. Where it needs *your* decision it prints a line starting with `HUMAN STEP:` followed by the command (approving the plan or an item for merge, lifting a stop); `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl status --pending-human` lists everything waiting on you. A merge approval is for one commit: if the branch changes afterwards, you approve the new one.
+At a checkpoint, "review" means looking at the screenshot or clicking around the running app, then saying **approve** (keep going), **reject** (explain what's wrong, and the loop un-ships that item and redoes it with your feedback), or **stop**. (With `runner: driver` the item is already merged at its checkpoint, so the choices are approve or stop; a revert is `loopctl abort`.) One more thing worth knowing: finished work sits on your machine until you publish it, and **no agent ever publishes for you** (that is called a "git push"). When you're happy, Claude prints the exact commands and you run them yourself in a terminal. Where it needs *your* decision it prints a line starting with `HUMAN STEP:` followed by the command (approving the plan or an item for merge, lifting a stop); `python3 "$KIT/scripts/loopctl" status --pending-human` lists everything waiting on you. A merge approval is for one commit: if the branch changes afterwards, you approve the new one.
 
 When you're unsure how to answer a technical question along the way, it's always fine to say: **"I'm not technical — recommend the best option and explain why in simple terms."**
 
@@ -99,41 +101,41 @@ Everything above works with the defaults. The sections below turn on more of the
 
 ### Ship a feature as a draft pull request
 
-By default a finished feature is merged into your local `main`. To send it out as a draft pull request with its audit trail inside, in `.claude/loop.config.md` (a reviewed change; these are guard settings) set `git_autonomy: branch+commit` and `delivery: draft-pr`, commit your `verify_*` commands to your default branch first, and run `/tech-lead` as usual. When it is done it prints two commands (`git push ...` and `gh pr create --draft ...`); **you** run them, then CI runs and you merge. The Tech Lead can branch, commit and prepare the pull request but never pushes. Set it up once with [delivery.md](delivery.md); do it after the doctor says your rulesets and required checks are in place.
+The config `/chain-of-custody:init` writes sets `git_autonomy: branch+commit+push` and `delivery: push-branch`: when a feature is done the Tech Lead pushes its feature branch (never `main`) and you open the pull request and merge. To have it open a draft pull request with its audit trail inside, set `delivery: draft-pr` in `.claude/loop.config.md` (a reviewed change; these are guard settings), commit your `verify_*` commands to your default branch first, and run `/tech-lead` as usual; CI runs and you merge. To push yourself instead, set `git_autonomy: branch+commit`: the Tech Lead then prints the two commands (`git push ...` and `gh pr create --draft ...`) and **you** run them. Set it up once with [delivery.md](delivery.md); turn on `draft-pr` after the doctor says your rulesets and required checks are in place, because those are what stop any push to `main`.
 
 ### Moving up the autonomy levels
 
-Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level L2` (then `L3`, and so on) and do what it says; each step up is a list of things a person has to set up and attest. L1 works out of the box. L2 needs a bot identity, a clean credential audit, a sandbox and an attested deploy surface. L3 adds rulesets the bot cannot bypass, code-owner review, required checks and split CI. The full table, and why it is built this way, is in [security/README.md](security/README.md).
+Run `python3 "$KIT/scripts/doctor.py" --level L2` (then `L3`, and so on) and do what it says; each step up is a list of things a person has to set up and attest. L1 works out of the box. L2 needs a bot identity, a clean credential audit, a sandbox and an attested deploy surface. L3 adds rulesets the bot cannot bypass, code-owner review, required checks and split CI. The full table, and why it is built this way, is in [security/README.md](security/README.md).
 
 ### Start the loop with loopctl
 
 `loopctl` is a program that does the loop's counting, locking and checking so that does not rest on a model's memory. It is off by default (`runner: sequential`). To try it, set `loopctl_tier2: true`, then, from a plain terminal in a dedicated worktree (`git worktree add ../my-project-loop`):
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl validate              # is the plan sound?
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl approve plan --by you # you approve the plan: a human step
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl status --pending-human
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl resume                # clear a HALT: also a human step
+python3 "$KIT/scripts/loopctl" validate              # is the plan sound?
+python3 "$KIT/scripts/loopctl" approve plan --by you # you approve the plan: a human step
+python3 "$KIT/scripts/loopctl" status --pending-human
+python3 "$KIT/scripts/loopctl" resume                # clear a HALT: also a human step
 ```
 
 `approve breaker` lifts the stop after a run of failures, and `approve env` after an environment problem. If loopctl refuses a command it says why (the setting is off, the plan changed, a HALT is set, the lock is held); see the FAQ.
 
-What each gate needs from your plan: every item needs an `ext.g3` entry (its acceptance-test files and stubs, or a reason it is exempt), a test command that prints one line per test naming its criterion id (`unittest -v`, `pytest -v`) or JSON/JUnit output, and `ext.g5.allow` for any test or config file the item may legitimately edit. The conductor runs the checks in this order: environment, stubs, then at verify time integrity, criteria ids, acceptance tests, verify, supply chain and secrets, then the reviews, then the evidence check. `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-gates.md` has the detail.
+What each gate needs from your plan: every item needs an `ext.g3` entry (its acceptance-test files and stubs, or a reason it is exempt), a test command that prints one line per test naming its criterion id (`unittest -v`, `pytest -v`) or JSON/JUnit output, and `ext.g5.allow` for any test or config file the item may legitimately edit. The conductor runs the checks in this order: environment, stubs, then at verify time integrity, criteria ids, acceptance tests, verify, supply chain and secrets, then the reviews, then the evidence check. `spec/loopctl-gates.md` has the detail.
 
 ### Run the loop with the driver
 
 Set `runner: driver` and a `run_budget_usd` (the reviewed change), then, from a plain terminal and never from inside Claude Code:
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl run --dry-run   # shows the plan, the gates, the budget; runs nothing
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl run
+python3 "$KIT/scripts/loopctl" run --dry-run   # shows the plan, the gates, the budget; runs nothing
+python3 "$KIT/scripts/loopctl" run
 ```
 
 The driver starts one headless session per engineer or reviewer. Exit 0 means the plan is done or it stopped on purpose for you; 1 means an item or the whole run is parked or stopped; 3 means it refused to start or was halted. Answer a pause with `loopctl approve checkpoint <item> --by you`; a merge approval for an item waiting on you is `approve item`; a spend stop is `approve cost`; a reset of a blocked item is `approve unblock`. Closing your terminal or pressing Ctrl-C ends the current child and the run (exit 1), leaves your work committed on the item's branch, and releases the lock; the next start picks up from the saved state. A driver that is killed outright (power, SIGKILL) leaves its lock behind, and the next start takes it over. See [the driver spec](../spec/loopctl-driver.md).
 
 ### Run it unattended
 
-Unattended (L4) runs the driver while nobody is watching, and makes sure you are told whenever it stops. It refuses to start until the evidence file exists (three clean fixture runs and one real feature) and you have set a spend ceiling, a `notify_command` (a small program of your own that reaches you; not a shell or `curl`), and a scheduled `loopctl unattended watch` every five minutes. Check with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl unattended check`; it prints every row. The closing messages are finished, waiting for you, or stopped (with the next command). After a revert, a security block or a stall storm, the install is demoted to L3 until you run `approve demotion`. The setup list and the details are in [unattended.md](unattended.md).
+Unattended (L4) runs the driver while nobody is watching, and makes sure you are told whenever it stops. It refuses to start until the evidence file exists (three clean fixture runs and one real feature) and you have set a spend ceiling, a `notify_command` (a small program of your own that reaches you; not a shell or `curl`), and a scheduled `loopctl unattended watch` every five minutes. Check with `python3 "$KIT/scripts/loopctl" unattended check`; it prints every row. The closing messages are finished, waiting for you, or stopped (with the next command). After a revert, a security block or a stall storm, the install is demoted to L3 until you run `approve demotion`. The setup list and the details are in [unattended.md](unattended.md).
 
 ### Run items in parallel
 
@@ -141,7 +143,7 @@ Experimental, and only after the serial driver works for you: set `parallel_mode
 
 ### Learn from a milestone
 
-After a milestone, run `/retro` (or `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl retro`) to see counts of what went well and what repeated, and `loopctl gaps` for things that came up more than once. `loopctl gaps --write` drafts a rule for you to review and prints the commands to propose it; it applies nothing. `loopctl report scan` says when the engineers' reports have been clean for long enough to switch `report_trailers` from `warn` to `block`. See [learning.md](learning.md).
+After a milestone, run `/retro` (or `python3 "$KIT/scripts/loopctl" retro`) to see counts of what went well and what repeated, and `loopctl gaps` for things that came up more than once. `loopctl gaps --write` drafts a rule for you to review and prints the commands to propose it; it applies nothing. `loopctl report scan` says when the engineers' reports have been clean for long enough to switch `report_trailers` from `warn` to `block`. See [learning.md](learning.md).
 
 ## Good habits
 
@@ -153,7 +155,7 @@ After a milestone, run `/retro` (or `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopc
 ## When something goes wrong
 
 - **Claude seems confused about your project.** The team's notes on your project (the primers) are probably thin. Ask Claude to *"flesh out the project context"* — you never have to edit them by hand.
-- **A command was blocked.** The guards print a rule id (for example `guard-git:push`) and a reason. To see the rule for a command: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/run.py explain --caller engineer git push origin main`. Pushing and approving are yours to run; see the FAQ.
+- **A command was blocked.** The guards print a rule id (for example `guard-git:push`) and a reason. To see the rule for a command: `python3 "$KIT/scripts/guards/run.py" explain --caller engineer git push origin main`. Pushing and approving are yours to run; see the FAQ.
 - **An engineer "escalated".** It hit a decision it couldn't make alone. Claude will explain, then you decide, or switch to `/architect` to rethink.
 - **You don't understand a question.** Ask Claude to explain it "like I'm not a developer." That always works.
 

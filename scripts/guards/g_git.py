@@ -12,19 +12,32 @@ Rights by caller (the registered `session_id` and `agent_id`, §5.7):
                                a non-protected branch)
     tier 3  conductor          the registered conductor session: also reset/clean in a loop worktree, branch
                                delete on its own branches, tags, merge to the local protected branch under
-                               `delivery: local`, and push per `delivery` and the refspec allowlist
+                               `delivery: local`
+
+    push tier                  `git_autonomy: branch+commit+push` gives an unregistered main session tier 2 and adds
+                               the push for it and for the conductor; a subagent, a driver child and a `--agent <role>`
+                               session never push. Allowed only when `git_autonomy` and `delivery` (push-branch or
+                               draft-pr) say so both in the working tree and at the base sha, the session is not
+                               tainted, and the command is a plain `git push [-u] <remote> <lane/branch>` of one
+                               existing local branch to the same name on a configured remote, never a protected
+                               branch (protected_branches, integration_branch, main, master, the remote's default).
+                               With `delivery: draft-pr` it also allows `gh pr create --draft` from a lane branch.
+                               Lanes: feat/, quick/, fix/, chore/, docs/ (LANE_PREFIXES).
 
 Always denied, for every caller (rule ids are `guard-git:<name>`):
     --no-verify / -n; -c core.* / alias.* (and every other -c key outside a short harmless list); git config
-    writes; GIT_* environment assignments; update-ref, filter-branch, replace, tag -f; rebase; push --force,
-    --mirror, --delete, tag pushes and refspecs outside feat/*; `gh api` with any method other than GET;
-    gh release | secret | workflow run | repo edit | ruleset | auth; `gh pr merge`.
+    writes; GIT_* environment assignments; update-ref, filter-branch, replace, tag -f; rebase; push --force
+    (a lease naming the pushed branch and its sha is the one exception), --mirror, --delete, --all, tag pushes,
+    push options, URL remotes and refspecs outside the lanes; HOME, XDG_CONFIG_HOME, PREFIX or GH_REPO set in a
+    command that runs git or gh; the dashed git-core binaries are checked as `git <sub>`; `gh api` with any method other than GET; gh release |
+    secret | workflow run | repo edit | ruleset | auth; `gh pr merge`; every gh write except the draft PR above.
 
 An unresolvable git invocation (a dynamic subcommand, an unknown subcommand, an alias the guard cannot read)
 is denied: the typo guard fails closed.
 """
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -34,6 +47,8 @@ from .invoke import Inv
 from .lib import Ctx, Decision, deny
 
 G = "guard-git"
+PUSH_TIER = "branch+commit+push"
+PUSH_DELIVERY = ("push-branch", "draft-pr")
 
 READ_SUBS = {
     "status", "diff", "log", "show", "rev-parse", "rev-list", "describe", "blame", "annotate", "shortlog", "ls-files",
@@ -76,6 +91,12 @@ ALWAYS_DENIED = {
     "maintenance": "maintenance registers background jobs and writes config", "scalar": "scalar writes config",
     "imap-send": "imap-send sends mail", "hook": "git hook run starts hook programs", "update-server-info": "writes server files",
     "pack-refs": "pack-refs rewrites ref storage", "prune": "prune deletes unreachable objects", "prune-packed": "deletes objects",
+    # transport plumbing: each writes or reads remote refs without the push rules (git-core/git-send-pack, ...)
+    "send-pack": "send-pack pushes refs without the push rules", "http-push": "http-push pushes refs without the push rules",
+    "fetch-pack": "fetch-pack is transport plumbing", "http-fetch": "http-fetch is transport plumbing",
+    "http-backend": "http-backend serves the repository", "remote-http": "a remote helper is transport plumbing",
+    "remote-https": "a remote helper is transport plumbing", "remote-ftp": "a remote helper is transport plumbing",
+    "remote-ftps": "a remote helper is transport plumbing", "remote-fd": "remote-fd runs a transport on a file descriptor",
 }
 RULE_NAME = {"update-ref": "update-ref", "filter-branch": "filter-branch", "filter-repo": "filter-branch", "replace": "replace",
              "rebase": "rebase", "credential": "credential", "hook": "hook"}
@@ -100,11 +121,14 @@ READ_LIST_BRANCH_FLAGS = {"-a", "--all", "-r", "--remotes", "-v", "-vv", "--verb
                           "--column", "--no-column", "--color", "--no-color", "-i", "--ignore-case", "-q", "--quiet",
                           "--abbrev", "--no-abbrev"}
 
-_FEAT_BASE = re.compile(r"^feat/[A-Za-z0-9._][A-Za-z0-9._/-]*$")
+# the lanes an agent pushes and opens PRs from; must equal pr_prepare._BRANCH_PREFIXES (tests/guards/test_lane_prefixes.py)
+LANE_PREFIXES = ("feat/", "quick/", "fix/", "chore/", "docs/")
+_FEAT_BASE = re.compile(r"^(%s)[A-Za-z0-9._][A-Za-z0-9._/-]*$" % "|".join(re.escape(p) for p in LANE_PREFIXES))
 
 
 class _FeatRef(object):
-    """feat/<anything git accepts as a ref name>: no `..`, no `//`, no `/.` component, no trailing `/` or `.lock`."""
+    """<lane>/<anything git accepts as a ref name> (lane: feat, quick, fix, chore, docs): no `..`, no `//`, no `/.` component,
+    no trailing `/` or `.lock`."""
 
     @staticmethod
     def match(ref: str) -> bool:
@@ -136,8 +160,19 @@ def _cluster_has(a: str, letter: str, arg_letters: str = "") -> bool:
 
 # ---------------------------------------------------------------------------------------------------------------
 
+# variables that move git's (and gh's) global configuration to a directory the agent can write (report §5.9): HOME,
+# XDG_CONFIG_HOME and PREFIX (the system gitconfig of a relocatable build). Denied whenever git, gh or hub runs in the line.
+CONFIG_HOME_ENV = ("HOME", "XDG_CONFIG_HOME", "PREFIX")
+_GH_REPO_ENV = ("GH_REPO",)
+_SET_BUILTINS = ("export", "declare", "typeset", "readonly", "local", "set")
+
+
 def check(ctx: Ctx) -> Optional[Decision]:
     ana = ctx.analysis
+    if any(inv.name in ("git", "gh", "hub") for inv in ana.invs):
+        d = _config_home(ana)
+        if d:
+            return d
     for inv in ana.invs:
         d = _env(ctx, inv)
         if d:
@@ -155,13 +190,45 @@ def check(ctx: Ctx) -> Optional[Decision]:
     return None
 
 
-def _env(ctx: Ctx, inv: Inv) -> Optional[Decision]:
+def _set_names(inv: Inv) -> Dict[str, str]:
+    """The variables one invocation sets: prefix assignments, `env X=..`, bare `X=..;`, and export/declare arguments."""
     names = dict(inv.env)
-    if inv.name in ("export", "declare", "typeset", "readonly", "local", "set"):
+    if inv.name in _SET_BUILTINS:
         for a in inv.args:
-            m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", a, re.S)
+            m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)(\+?=)(.*)$", a, re.S)
             if m:
-                names[m.group(1)] = m.group(2)
+                names[m.group(1)] = m.group(3)
+    elif inv.name in ("read", "mapfile", "readarray"):
+        for a in inv.args:                   # read HOME assigns too
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", a):
+                names[a] = ""
+    elif inv.name == "printf":
+        for i, a in enumerate(inv.args[:-1]):    # printf -v HOME ...
+            if a == "-v":
+                names[inv.args[i + 1]] = ""
+    return names
+
+
+def _config_home(ana) -> Optional[Decision]:
+    for inv in ana.invs:
+        for name in _set_names(inv):
+            if name.upper() in CONFIG_HOME_ENV:
+                return deny(G, "git-env", "setting %s in a command that runs git or gh points them at a global configuration "
+                            "the agent can write (aliases, hooks, url rewrites, push.default); run git with the session's "
+                            "own %s (report §5.9)" % (name, name))
+    return None
+
+
+def _env(ctx: Ctx, inv: Inv) -> Optional[Decision]:
+    names = _set_names(inv)
+    if inv.name in ("gh", "hub"):
+        for n in _GH_REPO_ENV:
+            if ctx.env.get(n) and n not in names:
+                return deny(G, "git-env", "%s is set in the environment; gh and hub would act on that repository instead of "
+                            "this checkout's remote" % n)
+    for name in names:
+        if name.upper() in _GH_REPO_ENV:
+            return deny(G, "git-env", "setting %s points gh and hub at another repository; gh acts on this checkout's remote" % name)
     for name in names:
         if name.upper().startswith("GIT_") and not BENIGN_GIT_ENV.match(name.upper()):
             return deny(G, "git-env", "setting %s redirects or reconfigures git (hooks, ssh, config, pager); only the GIT_AUTHOR_*, "
@@ -182,6 +249,8 @@ class _Git(object):
         self.git_dir = None    # type: Optional[str]
         self.work_tree = None  # type: Optional[str]
         self.c_pairs = []      # type: List[str]
+        self.inv = None        # type: Optional[Inv]
+        self.repo_opt = False  # --git-dir, --work-tree, --namespace, ... : the push is not plainly the session's repository
 
 
 def _tier(ctx: Ctx) -> int:
@@ -191,7 +260,8 @@ def _tier(ctx: Ctx) -> int:
         return 0
     if ctx.kind == "conductor":
         return 3
-    return {"none": 0, "branch": 1, "branch+commit": 2}[ctx.git_autonomy]
+    # branch+commit+push adds no local right: the push it adds is checked on its own in _h_push
+    return {"none": 0, "branch": 1, "branch+commit": 2, PUSH_TIER: 2}[ctx.git_autonomy]
 
 
 def _tier_name(t: int) -> str:
@@ -228,6 +298,7 @@ def _check_c(kv: str) -> Optional[Decision]:
 
 def _globals(ctx: Ctx, inv: Inv) -> Tuple[Optional[_Git], Optional[Decision]]:
     g = _Git()
+    g.inv = inv
     args, dyn = inv.args, inv.dyn
     g.cwd = inv.cwd
     i, n = 0, len(args)
@@ -266,6 +337,7 @@ def _globals(ctx: Ctx, inv: Inv) -> Tuple[Optional[_Git], Optional[Decision]]:
         key = a.split("=", 1)[0]
         if key in ("--git-dir", "--work-tree", "--namespace", "--super-prefix", "--attr-source"):
             val = a.split("=", 1)[1] if "=" in a else (args[i + 1] if i + 1 < n else "")
+            g.repo_opt = True
             if key == "--git-dir":
                 g.git_dir = paths.lexical(val, g.cwd, ctx.home)
             elif key == "--work-tree":
@@ -338,7 +410,11 @@ def _check_git(ctx: Ctx, inv: Inv, depth: int) -> Optional[Decision]:
         return None            # bare `git`, `git -C x` : prints help
     sub = g.sub
     # `--no-verify` / `-n` : checked first because it applies to several subcommands and to aliases
-    known = sub in READ_SUBS or sub in KNOWN_CONDUCTOR
+    known = sub in READ_SUBS or sub in KNOWN_CONDUCTOR or sub in ALWAYS_DENIED
+    if not known and _dashed(inv):
+        # `git-<x>` runs the program git-<x> from PATH or git-core, never an alias
+        return deny(G, "unknown-subcommand", "%s is not a git command the guard knows; run it yourself with `!` if it is "
+                    "intended" % os.path.basename(inv.raw)[:60])
     if not known:
         alias = _aliases(ctx, g.cwd).get(sub)
         if alias is None:
@@ -346,6 +422,9 @@ def _check_git(ctx: Ctx, inv: Inv, depth: int) -> Optional[Decision]:
                         "run it yourself with `!` if it is intended" % sub[:40])
         if alias.startswith("!"):
             ana = invoke.analyze(alias[1:] + " " + " ".join(shlex.quote(a) for a in g.rest), g.cwd, ctx.env, ctx.home)
+            dd = _config_home(ana)
+            if dd:
+                return dd
             for sub_inv in ana.invs:
                 dd = _env(ctx, sub_inv)
                 if dd:
@@ -377,6 +456,11 @@ def _check_git(ctx: Ctx, inv: Inv, depth: int) -> Optional[Decision]:
     if sub in READ_SUBS:
         return _read_sub(ctx, g)
     return _generic_conductor(ctx, g)
+
+
+def _dashed(inv: Inv) -> bool:
+    """Was this `git <sub>` written as the dashed binary `git-<sub>` (invoke normalises the name)?"""
+    return invoke._lc_base(inv.raw).startswith("git-")
 
 
 def _flags(rest: Sequence[str]) -> List[str]:
@@ -524,6 +608,18 @@ def _h_clean(ctx: Ctx, g: _Git) -> Optional[Decision]:
     return None
 
 
+def _shadow_branch(ctx: Ctx, g: _Git, name: str) -> Optional[Decision]:
+    """A new branch must not shadow another ref by its short name: HEAD, `<remote>/...` (origin/HEAD, origin/main), or
+    refs/, heads/, tags/, remotes/ (git resolves a short name to refs/heads/<name> before refs/remotes/<name>)."""
+    n = re.sub(r"^refs/heads/", "", name or "")
+    first = n.split("/", 1)[0]
+    remotes = {r.lower() for r in (_git_out(g.cwd or ctx.cwd, ["remote"], ctx) or "").split()} | {"origin", "upstream"}
+    if n.upper() == "HEAD" or "/" in n and (first.lower() in remotes or first in ("refs", "heads", "tags", "remotes")):
+        return deny(G, "branch-protected", "a branch named %s would shadow %s (the guards and git resolve the short name to the "
+                    "branch first); name it <lane>/<slug>" % (n[:60], "HEAD" if n.upper() == "HEAD" else "the ref " + n[:60]))
+    return None
+
+
 def _h_checkout(ctx: Ctx, g: _Git) -> Optional[Decision]:
     rest = g.rest
     creating = None   # type: Optional[str]
@@ -535,6 +631,9 @@ def _h_checkout(ctx: Ctx, g: _Git) -> Optional[Decision]:
     if creating is not None:
         if ctx.is_protected_branch(creating):
             return deny(G, "branch-protected", "creating a branch named %s (a shared branch name)" % creating)
+        d = _shadow_branch(ctx, g, creating)
+        if d:
+            return d
         return _need(ctx, 1, "create a branch", g.sub)
     return _need(ctx, 1, "switch or restore", g.sub)
 
@@ -592,6 +691,9 @@ def _h_fetch(ctx: Ctx, g: _Git) -> Optional[Decision]:
             ref = re.sub(r"^refs/heads/", "", dst)
             if ctx.is_protected_branch(ref) or ref == "HEAD":
                 return deny(G, "fetch-protected", "git fetch %s writes the shared branch %s locally, bypassing the merge rules" % (spec[:50], ref))
+            if re.sub(r"^refs/", "", ref).startswith("remotes/"):
+                # origin/main is where the guards read the base-sha config (the push tier): only git's own refspec may move it
+                return deny(G, "fetch-protected", "git fetch %s writes a remote-tracking ref by hand; a plain `git fetch <remote>` updates it" % spec[:50])
     if "--update-head-ok" in g.rest or any(_abbrev(a, "--update-head-ok", 6) for a in g.rest):
         return deny(G, "fetch-protected", "git fetch --update-head-ok moves the checked-out branch")
     return _need(ctx, 1, "fetch", g.sub)
@@ -641,6 +743,10 @@ def _h_branch(ctx: Ctx, g: _Git) -> Optional[Decision]:
         for t in pos:
             if ctx.is_protected_branch(t):
                 return deny(G, "branch-protected", "renaming or copying onto/from the shared branch %s" % t)
+        for t in pos[-1:]:
+            d = _shadow_branch(ctx, g, t)
+            if d:
+                return d
         return None
     if has("--set-upstream-to", "--unset-upstream", "--edit-description", letters="u") or any(f.startswith("--set-upstream-to") for f in flags):
         return _need(ctx, 3, "change branch config", "branch")
@@ -655,6 +761,9 @@ def _h_branch(ctx: Ctx, g: _Git) -> Optional[Decision]:
             return deny(G, "branch-protected", "creating a branch named %s (a shared branch name)" % t)
         if force:
             return deny(G, "branch-protected", "git branch -f %s moves an existing branch pointer" % t)
+        d = _shadow_branch(ctx, g, t)
+        if d:
+            return d
     return _need(ctx, 1, "create a branch", "branch")
 
 
@@ -722,6 +831,11 @@ def _h_worktree(ctx: Ctx, g: _Git) -> Optional[Decision]:
     pos = _positionals(g.rest)
     if pos and pos[0].lower() == "list":
         return None
+    for k, a in enumerate(g.rest[:-1]):
+        if a in ("-b", "-B"):
+            d = _shadow_branch(ctx, g, g.rest[k + 1])
+            if d:
+                return d
     return _need(ctx, 3, "manage worktrees", "worktree")
 
 
@@ -763,7 +877,8 @@ def _h_lfs(ctx: Ctx, g: _Git) -> Optional[Decision]:
     if pos and pos[0].lower() in ("install", "uninstall", "update", "track", "untrack", "migrate"):
         return deny(G, "config-write", "git lfs %s writes hooks, filters and .gitattributes (report §5.9)" % pos[0])
     if pos and pos[0].lower() in ("push", "pre-push", "post-receive"):
-        return deny(G, "push", "git lfs %s uploads objects to the remote: it is a push, and no agent pushes (D3). The human runs it" % pos[0])
+        return deny(G, "push", "git lfs %s uploads objects to the remote outside the checked push path: at git_autonomy: %s an agent pushes only with a "
+                    "plain `git push <remote> <feat/branch>`; otherwise the human runs it" % (pos[0], PUSH_TIER))
     return _need(ctx, 3, "lfs", "lfs")
 
 
@@ -808,7 +923,15 @@ PUSH_LONG = ["--all", "--branches", "--prune", "--mirror", "--dry-run", "--porce
              "--signed", "--no-signed", "--atomic", "--push-option", "--receive-pack", "--exec", "--repo", "--set-upstream",
              "--thin", "--no-thin", "--quiet", "--verbose", "--progress", "--recurse-submodules", "--no-recurse-submodules",
              "--verify", "--no-verify", "--force", "--force-with-lease", "--force-if-includes", "--no-force-with-lease",
-             "--no-force-if-includes", "--ipv4", "--ipv6", "--help", "--no-follow-tags", "--no-atomic", "--no-prune"]
+             "--no-force-if-includes", "--ipv4", "--ipv6", "--help", "--no-follow-tags", "--no-atomic", "--no-prune",
+             "--no-progress"]
+
+
+# options a push at the push tier may carry; anything else (and every -o / --push-option) is denied
+PUSH_OK_LONG = {"--set-upstream", "--quiet", "--verbose", "--progress", "--no-progress", "--dry-run", "--porcelain", "--ipv4", "--ipv6",
+                "--verify", "--thin", "--no-thin", "--atomic", "--no-atomic", "--force-with-lease", "--force-if-includes",
+                "--no-recurse-submodules", "--recurse-submodules"}
+PUSH_OK_SHORT = set("uqv46")
 
 
 def _push_longs(a: str) -> List[str]:
@@ -818,10 +941,115 @@ def _push_longs(a: str) -> List[str]:
     return [f for f in PUSH_LONG if f.startswith(name)] if len(name) >= 3 else []
 
 
+def main_session(ctx: Ctx) -> bool:
+    """The session a human talks to (the registered conductor, or an unregistered main session that runs no agent role), never a
+    subagent, a driver child or a `--agent <role>` session."""
+    c = ctx.caller
+    if ctx.is_subagent or c.agent_id is not None or ctx.agent_id is not None:
+        return False
+    if c.kind == "conductor":
+        return True
+    return c.kind == "unknown" and c.role is None
+
+
+def push_tier_problem(ctx: Ctx, directory: str, deliveries: Sequence[str]) -> Optional[Decision]:
+    """The denial when `git_autonomy` is not branch+commit+push with `delivery` in `deliveries`, in the working tree's
+    loop.config or in the one committed at the base sha; None when both say so."""
+    tier = ctx.git_autonomy
+    delivery = str(ctx.cfg("delivery", "local") or "local")
+    if tier != PUSH_TIER or delivery not in deliveries:
+        return deny(G, "push", "git_autonomy is %r and delivery is %r: an agent pushes only at git_autonomy: %s with delivery %s. The human pushes "
+                    "(`! git push ...`, or the commands `pr_prepare.py prepare` prints)" % (tier, delivery, PUSH_TIER, " or ".join(deliveries)))
+    base_tier = str(ctx.base_cfg("git_autonomy", directory, "none") or "none").strip().lower()
+    base_delivery = str(ctx.base_cfg("delivery", directory, "local") or "local")
+    if base_tier != PUSH_TIER or base_delivery not in deliveries:
+        return deny(G, "push-config", "loop.config at the base sha (the merge-base with origin/HEAD, origin/main or main) says git_autonomy %r, delivery %r: "
+                    "the push tier counts only once a human has merged it (H6). The human pushes" % (base_tier, base_delivery))
+    return None
+
+
+def _plain_inv(g: _Git) -> bool:
+    inv = g.inv
+    return inv is not None and inv.origin == "top" and inv.depth == 0 and not inv.wrappers and not inv.xargs and not inv.cwd_unknown \
+        and not g.repo_opt
+
+
+def _config_env(ctx: Ctx) -> Dict[str, str]:
+    """HOME and XDG_CONFIG_HOME pinned to the guard's own: the global config git reads is never one an agent pointed it at."""
+    home = ctx.env.get("HOME") or ctx.home
+    return {"HOME": home, "XDG_CONFIG_HOME": ctx.env.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")}
+
+
+def _git_out(d: str, args: Sequence[str], ctx: Optional[Ctx] = None) -> Optional[str]:
+    from kitlib import gitutil
+    try:
+        proc = gitutil.run_git(list(args), cwd=d, timeout=5, env=_config_env(ctx) if ctx is not None else None)
+    except Exception:
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _same_repo(ctx: Ctx, d: str) -> bool:
+    from kitlib import gitutil
+    if not ctx.root or not os.path.isdir(d):
+        return False
+    a, b = gitutil.common_dir(ctx.root), gitutil.common_dir(d)
+    return a is not None and a == b
+
+
+def _remote_problem(ctx: Ctx, d: str, remote: str) -> Optional[str]:
+    if _git_out(d, ["config", "--get", "remote.%s.url" % remote], ctx) is None:
+        return "%s is not a configured remote" % remote
+    if _git_out(d, ["config", "--get-all", "remote.%s.push" % remote], ctx):
+        return "remote %s has a push refspec in git config (remote.%s.push): the pushed ref would not be the one named" % (remote, remote)
+    if (_git_out(d, ["config", "--get", "remote.%s.mirror" % remote], ctx) or "").lower() in ("true", "yes", "on", "1"):
+        return "remote %s is a mirror remote" % remote
+    return None
+
+
+def _remote_default(ctx: Ctx, d: str, remote: str) -> Optional[str]:
+    v = _git_out(d, ["symbolic-ref", "-q", "refs/remotes/%s/HEAD" % remote], ctx)
+    prefix = "refs/remotes/%s/" % remote
+    return v[len(prefix):] if v and v.startswith(prefix) else None
+
+
+def _push_target(ctx: Ctx, d: str, spec: str, branch: Optional[str]) -> Tuple[Optional[str], str]:
+    """(branch, "") for a refspec that pushes the local branch B to the remote branch B, else (None, why)."""
+    src, colon, dst = spec.partition(":")
+    src = re.sub(r"^refs/heads/", "", src)
+    if src in ("HEAD", "@"):
+        if not branch:
+            return None, "HEAD is detached"
+        src = branch
+    dst = re.sub(r"^refs/heads/", "", dst) if colon else src
+    if src != dst:
+        return None, "refspec %s pushes %s under another name" % (spec[:60], src[:40])
+    from kitlib import gitutil
+    try:
+        if not gitutil.ref_exists("refs/heads/" + src, d):
+            return None, "%s is not a local branch" % src[:40]
+        for shadow in ("refs/tags/" + src, "refs/" + src, "refs/remotes/" + src):
+            if gitutil.ref_exists(shadow, d):
+                return None, "%s is ambiguous (%s exists too)" % (src[:40], shadow[:60])
+    except ValueError:
+        return None, "refspec %s cannot be read" % spec[:60]
+    if not colon:
+        # without `:dst`, push.default=upstream (or simple with a matching name) pushes to branch.<src>.merge: a branch
+        # created from origin/main tracks main, and `git push origin feat/y` would update main
+        merge = _git_out(d, ["config", "--get-all", "branch.%s.merge" % src], ctx)
+        if merge is not None:
+            ups = [re.sub(r"^refs/heads/", "", m.strip()) for m in merge.splitlines() if m.strip()]
+            if any(u != src for u in ups):
+                return None, ("%s tracks %s (branch.%s.merge), so git may push it there; push %s:%s explicitly"
+                              % (src[:40], ", ".join(ups)[:60], src[:40], src[:40], src[:40]))
+    return dst, ""
+
+
 def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
     rest, dyn = g.rest, g.rest_dyn
     force = delete = mirror = bulk = tags = no_verify = False
     exec_opt = False
+    odd = []       # type: List[str]   options outside PUSH_OK_*
     lease = None   # type: Optional[str]
     pos = []       # type: List[str]
     dynamic_arg = False
@@ -835,6 +1063,8 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
                 dynamic_arg = True
             i += 1
             continue
+        if dyn[i]:
+            dynamic_arg = True
         if a == "--":
             dd = True
             i += 1
@@ -848,8 +1078,6 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
                     force = True
                 elif c == "--force-with-lease":
                     lease = a.split("=", 1)[1] if "=" in a else ""
-                elif c == "--force-if-includes":
-                    pass
                 elif c == "--mirror":
                     mirror = True
                 elif c in ("--delete", "--prune"):
@@ -862,38 +1090,43 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
                     no_verify = True
                 elif c in ("--receive-pack", "--exec", "--repo"):
                     exec_opt = True
+                if c not in PUSH_OK_LONG or len(cands) > 1:
+                    odd.append(a)
+                elif c == "--recurse-submodules" and a.split("=", 1)[-1] not in ("check", "no"):
+                    odd.append(a)
             if "--push-option" in cands and "=" not in a:
                 i += 1
             i += 1
             continue
         # short options, possibly bundled
         letters = a[1:]
-        for ch in letters:
+        for k, ch in enumerate(letters):
             if ch == "f":
                 force = True
             elif ch == "d":
                 delete = True
-            elif ch == "o":
+            if ch not in PUSH_OK_SHORT:
+                odd.append("-" + ch)
+            if ch == "o":
                 break
         if "o" in letters and letters.endswith("o"):
             i += 1
         i += 1
     if no_verify:
         return deny(G, "no-verify", "git push --no-verify skips the pre-push hook (report §5.9)")
-    # NO agent pushes, the registered conductor included (review fixes D3): the push is made by a human, or by the Keeper inside the
-    # human-started `loopctl run`, which does not go through this hook. The checks below only choose the more specific message and rule id
-    # for a conductor; whatever they let through is denied at the end.
-    if ctx.kind != "conductor":
-        return deny(G, "push", "git push is a remote write: no agent pushes, the registered conductor included. The human pushes (`! git push ...`, or the commands "
-                    "`pr_prepare.py prepare` prints), or the Keeper does inside a `loopctl run` the human started")
+    # who: only the main session, and an unregistered one only at the push tier. Below the push tier the checks that follow only choose the
+    # more specific message and rule id for the conductor; whatever they let through is denied by push_tier_problem.
+    if not main_session(ctx) or (ctx.kind != "conductor" and ctx.git_autonomy != PUSH_TIER):
+        return deny(G, "push", "git push is a remote write: subagents never push, and the main session pushes only at git_autonomy: %s (a human "
+                    "commit to loop.config, H6). The human pushes (`! git push ...`, or the commands `pr_prepare.py prepare` prints)" % PUSH_TIER)
     if ctx.tainted:
         return deny(G, "push-tainted", "this session has read untrusted content (§5.3): it holds no push authority")
     delivery = str(ctx.cfg("delivery", "local") or "local")
     if delivery not in ("push-branch", "draft-pr", "pr-automerge"):
-        return deny(G, "push-delivery", "delivery is %r: nothing is pushed by an agent, whatever `delivery` says; the human pushes, or the Keeper inside a `loopctl run` the "
-                    "human started (`delivery` in loop.config, an H6 file, only chooses what the Keeper and `pr_prepare.py` do)" % delivery)
+        return deny(G, "push-delivery", "delivery is %r: nothing is pushed by an agent; the human pushes, or the Keeper inside a `loopctl run` the human "
+                    "started (`delivery` in loop.config is an H6 key)" % delivery)
     if dynamic_arg:
-        return deny(G, "dynamic-args", "git push with a remote or refspec computed at run time cannot be checked against the refspec allowlist")
+        return deny(G, "dynamic-args", "git push with a remote, refspec or option computed at run time cannot be checked against the refspec allowlist")
     if mirror:
         return deny(G, "push-mirror", "git push --mirror overwrites the remote's refs")
     if delete:
@@ -903,7 +1136,7 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
     if tags:
         return deny(G, "push-tags", "pushing tags is a release (H5)")
     if force:
-        return deny(G, "push-force", "git push --force rewrites remote history; use --force-with-lease=<ref>:<sha> on the run's own feat/* branch")
+        return deny(G, "push-force", "git push --force rewrites remote history; use --force-with-lease=<branch>:<sha> on the run's own feat/* branch")
     if exec_opt:
         return deny(G, "exec-option", "git push --receive-pack / --exec / --repo starts a program or redirects the push")
     remote = pos[0] if pos else None
@@ -925,8 +1158,40 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
         if not m or not FEAT_RE.match(re.sub(r"^refs/heads/", "", m.group(1))):
             return deny(G, "push-force", "--force-with-lease needs an explicit <feat/ref>:<expected-sha> (a bare lease compares with the last fetch, "
                         "report §10.3)")
-    return deny(G, "push", "git push is a remote write: agents never push, the conductor included. Run it yourself in a terminal (or with `!` at L0/L1); "
-                "`pr_prepare.py` prints the exact commands for the delivery mode")
+    # the push tier: git_autonomy branch+commit+push with delivery push-branch or draft-pr, in the working tree and at the
+    # base sha, a plain `git push <remote> <feat/branch>` of one existing local branch to the same name on a configured remote
+    d = _resolve_dir(ctx, g)
+    problem = push_tier_problem(ctx, d, PUSH_DELIVERY)
+    if problem:
+        return problem
+    if odd:
+        return deny(G, "push-option", "git push %s: at the push tier a push takes only -u, -q, -v, --dry-run, --porcelain, --atomic and an explicit "
+                    "--force-with-lease=<branch>:<sha>; push options (-o) reach server-side hooks" % odd[0][:40])
+    if not _plain_inv(g) or not _same_repo(ctx, d):
+        return deny(G, "push", "an agent's push is a plain `git push <remote> <feat/branch>` of this session's repository: no wrapper, no sh -c, no "
+                    "--git-dir or --namespace, no other repository")
+    if len(specs) != 1:
+        return deny(G, "push-refspec", "push one branch at a time: git push %s feat/<slug>" % (remote or "origin"))
+    target, why = _push_target(ctx, d, specs[0], branch)
+    if target is None:
+        return deny(G, "push-refspec", "git push %s: %s; push a local feat/* branch to the same name" % (specs[0][:60], why))
+    if lease is not None and re.sub(r"^refs/heads/", "", lease.split(":", 1)[0]) != target:
+        return deny(G, "push-force", "--force-with-lease names %s but the push updates %s" % (lease.split(":", 1)[0][:40], target[:40]))
+    why = _remote_problem(ctx, d, remote or "")
+    if why:
+        return deny(G, "push-url", "git push: %s" % why)
+    protected = [b.lower() for b in ctx.protected_branches]
+    bp = ctx.base_cfg("protected_branches", d, None)
+    protected += [b.lower() for b in bp if isinstance(b, str)] if isinstance(bp, list) else []
+    ib = ctx.base_cfg("integration_branch", d, "")
+    if isinstance(ib, str) and ib:
+        protected.append(ib.lower())
+    default = _remote_default(ctx, d, remote or "")
+    if default:
+        protected.append(default.lower())
+    if target.lower() in protected:
+        return deny(G, "push-protected", "pushing to the shared branch %s (H0/H3: reach it through a pull request)" % target)
+    return None
 
 
 def _refspec_ok(ctx: Ctx, spec: str, branch: Optional[str]) -> Optional[Decision]:
@@ -947,11 +1212,11 @@ def _refspec_ok(ctx: Ctx, spec: str, branch: Optional[str]) -> Optional[Decision
         return deny(G, "push-tags", "pushing a tag is a release (H5)")
     ref = re.sub(r"^refs/heads/", "", ref)
     if ref.startswith("refs/"):
-        return deny(G, "push-refspec", "refspec %s targets %s: only refs/heads/feat/* may be pushed" % (spec[:60], ref[:40]))
+        return deny(G, "push-refspec", "refspec %s targets %s: only refs/heads/<lane>/* (feat, quick, fix, chore, docs) may be pushed" % (spec[:60], ref[:40]))
     if ctx.is_protected_branch(ref):
         return deny(G, "push-protected", "pushing to the shared branch %s (H0/H3: reach it through a pull request)" % ref)
     if not FEAT_RE.match(ref):
-        return deny(G, "push-refspec", "refspec %s: only feat/* branches may be pushed by an agent (refspec allowlist)" % spec[:60])
+        return deny(G, "push-refspec", "refspec %s: only feat/*, quick/*, fix/*, chore/* and docs/* branches may be pushed by an agent (refspec allowlist)" % spec[:60])
     return None
 
 
@@ -987,9 +1252,11 @@ def _check_gh(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     if inv.name != "gh":
         return _check_hub_glab(ctx, inv)
     i, n = 0, len(args)
+    global_opts = False
     while i < n and args[i].startswith("-"):
         if dyn[i]:
             return deny(G, "dynamic-args", "a gh option is computed at run time")
+        global_opts = True
         i += 2 if (args[i] in GH_GLOBAL_ARG and "=" not in args[i]) else 1
     if i >= n:
         return None
@@ -1012,11 +1279,81 @@ def _check_gh(ctx: Ctx, inv: Inv) -> Optional[Decision]:
         return deny(G, "gh-pr-merge", "gh pr merge: merges are made by a human, or by auto-merge for low-risk paths only at L5 (report §6.1 H3, merge_policy)")
     if group in GH_READ and action in GH_READ[group]:
         return None
+    if group == "pr" and action == "create" and main_session(ctx) and ctx.git_autonomy == PUSH_TIER and ctx.cfg("delivery", "local") == "draft-pr":
+        return _gh_pr_create(ctx, inv, rest, rdyn, global_opts)
     rule = GH_RULES.get(group, "gh-mutation")
     if group == "auth" and action in ("status",):
         return None
     return deny(G, rule, "gh %s %s changes GitHub state or credentials; run it yourself with `!` (report §7.1: gh api non-GET, release, secret, workflow, "
                 "repo edit, ruleset are denied to agents)" % (group, action or "..."))
+
+
+# gh pr create flags allowed at the push tier: name -> takes a value. No --web, --editor, --recover, --template, -R/--repo.
+GH_PR_CREATE_FLAGS = {"--draft": False, "--base": True, "--head": True, "--title": True, "--body": True, "--body-file": True, "--label": True,
+                      "--reviewer": True, "--assignee": True, "--milestone": True, "--fill": False, "--fill-first": False, "--fill-verbose": False,
+                      "--no-maintainer-edit": False, "--dry-run": False}
+GH_PR_CREATE_SHORT = {"-d": "--draft", "-B": "--base", "-H": "--head", "-t": "--title", "-b": "--body", "-F": "--body-file", "-l": "--label",
+                      "-r": "--reviewer", "-a": "--assignee", "-m": "--milestone", "-f": "--fill"}
+
+
+def _gh_pr_create(ctx: Ctx, inv: Inv, rest: List[str], rdyn: List[bool], global_opts: bool) -> Optional[Decision]:
+    """`gh pr create --draft` at git_autonomy branch+commit+push with delivery draft-pr: opens a draft PR from a feat/* branch of
+    this repository. A merge stays a human's (`gh pr merge` is denied above)."""
+    def no(msg: str) -> Decision:
+        return deny(G, "gh-pr-create", "gh pr create: %s. At the push tier the main session runs only `gh pr create --draft --base <b> --head "
+                    "feat/<slug> --title <t> --body-file <file in the repo>.md` (the line `pr_prepare.py prepare` prints)" % msg)
+    if ctx.tainted:
+        return deny(G, "push-tainted", "this session has read untrusted content (§5.3): it opens no pull request")
+    if global_opts:
+        return no("no gh option before `pr` (-R/--repo, --hostname name another repository)")
+    if inv.origin != "top" or inv.depth != 0 or inv.wrappers or inv.xargs or inv.cwd_unknown:
+        return no("write it as a plain command, with no wrapper or sh -c")
+    problem = push_tier_problem(ctx, inv.cwd, ("draft-pr",))
+    if problem:
+        return problem
+    if not _same_repo(ctx, inv.cwd):
+        return no("run it in this session's repository")
+    vals = {}   # type: Dict[str, List[str]]
+    toks = rest[1:] if rest[:1] and rest[0].lower() == "create" else None
+    if toks is None:
+        return no("put the options after `create`")
+    tdyn = rdyn[1:]
+    k = 0
+    while k < len(toks):
+        a = toks[k]
+        if tdyn[k]:
+            return deny(G, "dynamic-args", "gh pr create with an argument computed at run time")
+        if a.startswith("--"):
+            name, eq, val = a.partition("=")
+        elif a.startswith("-"):
+            name, eq, val = GH_PR_CREATE_SHORT.get(a[:2], a), "", a[2:]
+        else:
+            return no("it takes no positional argument (%s)" % a[:40])
+        if name not in GH_PR_CREATE_FLAGS:
+            return no("%s is not allowed" % a[:40])
+        if GH_PR_CREATE_FLAGS[name]:
+            if not eq and not val:
+                if k + 1 >= len(toks) or tdyn[k + 1]:
+                    return no("%s needs a literal value" % name)
+                val = toks[k + 1]
+                k += 1
+            vals.setdefault(name, []).append(val)
+        else:
+            if (eq and val.lower() != "true") or (not eq and val):
+                return no("%s takes no value here" % a[:40])
+            vals.setdefault(name, []).append("true")
+        k += 1
+    if "--draft" not in vals:
+        return no("--draft is required: the human marks the PR ready and merges it")
+    for h in vals.get("--head", []):
+        if not FEAT_RE.match(h) or ctx.is_protected_branch(h):
+            return no("--head %s: the PR comes from a feat/*, quick/*, fix/*, chore/* or docs/* branch" % h[:40])
+    for f in vals.get("--body-file", []):
+        real = os.path.realpath(paths.lexical(f, inv.cwd, ctx.home))
+        top = os.path.realpath(ctx.root or "")
+        if f == "-" or not real.endswith(".md") or not paths.within(real, top) or paths.within(real, os.path.join(top, ".git")):
+            return no("--body-file %s: the body is a .md file inside the repository" % f[:60])
+    return None
 
 
 def _gh_api(ctx: Ctx, rest: List[str], rdyn: List[bool]) -> Optional[Decision]:

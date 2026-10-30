@@ -3,7 +3,7 @@
 Every `loop.config` key is declared here, one JSON file per phase. The loader
 (`kitlib/registry.py`) merges every `schema/*.json` (`v1.json` first, then the rest
 alphabetically) and refuses duplicate key names and duplicate section ids.
-`.claude/loop.config.md` and `examples/loop.config.md` are **generated** from the registry by
+`seed/.claude/loop.config.md` (the starter config `/chain-of-custody:init` copies) and `examples/loop.config.md` are **generated** from the registry by
 `python3 tools/gen-config.py --write`; a test fails if they drift. Never edit them by hand.
 
 To add a key: add it to your phase's file (create `schema/<phase>.json` if you have none),
@@ -50,6 +50,7 @@ run `python3 tools/gen-config.py --write`, commit both.
 | `section` | yes for rendered keys | A section id from any schema file. Keys render grouped by section, in registry order. |
 | `choices` | enum only | Allowed values. |
 | `after_doc` | no | Comment lines rendered at column 0 after the key. |
+| `seed` | no | The value the starter config sets, when a new project should start somewhere other than `default` (a project that leaves the key out still gets `default`). Must satisfy `type`. |
 | `example` | no | `true` to include the key in `examples/loop.config.md` as-is, or `{"value", "doc", "after_doc"}` to override. Keys with no `example` do not appear in the example file. |
 
 ## Sections
@@ -60,14 +61,14 @@ and default to the non-example values.
 
 ## Templates
 
-`templates/header.md` and `templates/notes.md` are the hand-written text before and after the yaml
-block of `.claude/loop.config.md`; `header.example.md` and `notes.example.md` do the same for the
+`scripts/kitlib/schema/templates/header.md` and `notes.md` are the hand-written text before and after the yaml
+block of the starter `loop.config.md`; `header.example.md` and `notes.example.md` do the same for the
 example file. `header*.md` must end with the opening ` ```yaml ` line.
 
 ## Rules the loader enforces
 
 - no duplicate key names or section ids across files
-- a key's `default` and `example.value` satisfy its `type`
+- a key's `default`, `seed` and `example.value` satisfy its `type`
 - `deprecated_by` points at an existing key, with no chains
 - no key sits underneath another leaf key
 - unknown fields are rejected, so a typo cannot silently do nothing

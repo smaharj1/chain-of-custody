@@ -36,16 +36,16 @@ Infrastructure apply, deploy and destroy are never automated at any level (H4). 
 
 ## The doctor
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` checks all of this and prints the autonomy level that is safe right now. It is standalone (Python 3.9 or newer, standard library only) and runs from any project the kit was copied into.
+`python3 "$KIT/scripts/doctor.py"` checks all of this and prints the autonomy level that is safe right now. It is standalone (Python 3.9 or newer, standard library only) and runs from any project the kit was copied into.
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py                    everything, human-readable
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --json             the doctor.v1 document
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --credentials      B2 only
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --deploy-surface   B5 only, with the fingerprint to attest
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level L3         the effective level if you configured L3, and every cap
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --gh-fixture FILE  GitHub facts from recorded gh api JSON
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --list-checks      every stable check id
+python3 "$KIT/scripts/doctor.py"                    everything, human-readable
+python3 "$KIT/scripts/doctor.py" --json             the doctor.v1 document
+python3 "$KIT/scripts/doctor.py" --credentials      B2 only
+python3 "$KIT/scripts/doctor.py" --deploy-surface   B5 only, with the fingerprint to attest
+python3 "$KIT/scripts/doctor.py" --level L3         the effective level if you configured L3, and every cap
+python3 "$KIT/scripts/doctor.py" --gh-fixture FILE  GitHub facts from recorded gh api JSON
+python3 "$KIT/scripts/doctor.py" --list-checks      every stable check id
 ```
 
 `--live` adds the checks that talk to other programs or the network (`aws sts get-caller-identity` per profile, `gh auth status`, `git credential fill`, `ssh -T git@github.com`, and a probe of the metadata endpoints). It is for a human at a plain terminal and refuses to run inside a Claude Code session. Agents never run it.
@@ -79,19 +79,19 @@ It sees what is stored and what is configured. It cannot see what your running p
 
 Shipped and tested offline: the doctor, `ci_lint.py`, the guard suite (on by default, [guards.md](guards.md)), the SessionStart canary hook (`session_start.py`), the sandboxed first-run probe (`probe_run.py`), ruleset JSON, the CODEOWNERS template, OIDC trust policy examples, a devcontainer template, a managed-settings example, a sandbox snippet, an MCP lockdown example, the workflow templates ([split-ci.md](split-ci.md), [infra-ci.md](infra-ci.md)), and two dry-run-by-default scripts for the GitHub side.
 
-Only a human can: create the bot and its credential, apply the rulesets (`${CLAUDE_PLUGIN_ROOT}/scripts/github/apply-boundary.sh`, dry run first), attest the deployment surface and the sandbox, install managed settings, pin the Claude Code CLI, run the canary, and commit the evidence file. Nothing in this kit merges, applies or deploys. The one program that starts `claude` is the opt-in driver `loopctl run`, which a human starts from a plain terminal. No agent pushes: the push, the remote lock, a merge approval and every other grant of authority are human steps the conductor prints. The live halves of the boundary fixtures (the real ruleset rejecting a bot push, a real CI job not creating a marker file) are verified by `${CLAUDE_PLUGIN_ROOT}/scripts/github/verify-boundary.sh` and by hand, and are listed as pending in the changelog fragment.
+Only a human can: create the bot and its credential, apply the rulesets (`scripts/github/apply-boundary.sh`, dry run first), attest the deployment surface and the sandbox, install managed settings, pin the Claude Code CLI, run the canary, and commit the evidence file. Nothing in this kit merges, applies or deploys. The one program that starts `claude` is the opt-in driver `loopctl run`, which a human starts from a plain terminal. No agent pushes a protected branch or merges: at `git_autonomy: branch+commit+push` the conductor pushes its own feature branch with the bot's credential ([git-escalation.md](git-escalation.md#the-push-tier)); the remote lock, a merge approval and every other grant of authority are human steps the conductor prints. The live halves of the boundary fixtures (the real ruleset rejecting a bot push, a real CI job not creating a marker file) are verified by `scripts/github/verify-boundary.sh` and by hand, and are listed as pending in the changelog fragment.
 
 ## Files
 
 | Path | What it is |
 |---|---|
-| `${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py`, `${CLAUDE_PLUGIN_ROOT}/scripts/doctorlib/` | the doctor and its checks |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py` | the workflow linter for the split-CI rules |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/session_start.py` | SessionStart: version check and liveness canary |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/probe_run.py` | the sandboxed first-run probe |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/github/` | `apply-boundary.sh`, `verify-boundary.sh`, `boundary.py` |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/guards/` | the guard suite: [guards.md](guards.md) |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/infra/`, `${CLAUDE_PLUGIN_ROOT}/templates/infra/` | source policy, gate checks and the `infra.*` lint rules; infrastructure workflows, OIDC, policy, MCP deny list: [infra-ci.md](infra-ci.md) |
-| `${CLAUDE_PLUGIN_ROOT}/templates/security/` | rulesets, CODEOWNERS, OIDC, IAM, devcontainer, managed settings, sandbox, MCP, gitignore |
-| `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/README.md` | which OIDC trust policy goes with which role, and why the two apply trusts are alternatives |
-| `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/label-guard.yml` | removes approval labels applied by non-approvers |
+| `scripts/doctor.py`, `scripts/doctorlib/` | the doctor and its checks |
+| `scripts/ci_lint.py` | the workflow linter for the split-CI rules |
+| `scripts/session_start.py` | SessionStart: version check and liveness canary |
+| `scripts/probe_run.py` | the sandboxed first-run probe |
+| `scripts/github/` | `apply-boundary.sh`, `verify-boundary.sh`, `boundary.py` |
+| `scripts/guards/` | the guard suite: [guards.md](guards.md) |
+| `scripts/infra/`, `templates/infra/` | source policy, gate checks and the `infra.*` lint rules; infrastructure workflows, OIDC, policy, MCP deny list: [infra-ci.md](infra-ci.md) |
+| `templates/security/` | rulesets, CODEOWNERS, OIDC, IAM, devcontainer, managed settings, sandbox, MCP, gitignore |
+| `templates/security/oidc/README.md` | which OIDC trust policy goes with which role, and why the two apply trusts are alternatives |
+| `templates/github/workflows/label-guard.yml` | removes approval labels applied by non-approvers |

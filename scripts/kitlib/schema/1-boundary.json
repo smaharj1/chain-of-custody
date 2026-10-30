@@ -7,7 +7,7 @@
       "title": "Boundary (security model, report \u00a75)",
       "comment": [
         "Attestations are things the repo cannot show; a human commits them under H6.",
-        "Everything here is read by `python3 .claude/scripts/doctor.py`."
+        "Everything here is read by `python3 \"$KIT/scripts/doctor.py\"`."
       ],
       "example_comment": []
     }
@@ -28,7 +28,7 @@
       "doc": [
         "L0 | L1 | L2 | L3 | L4 | L5   (report \u00a76.2). The level you ask for; the doctor prints the",
         "  EFFECTIVE level, which is lower whenever a prerequisite or cap fails. Run",
-        "  `python3 .claude/scripts/doctor.py --level` to see each cap and its reason.",
+        "  `python3 \"$KIT/scripts/doctor.py\" --level` to see each cap and its reason.",
         "  L0 assist | L1 supervised local loop (today's V1) | L2 push-branch | L3 draft-PR factory",
         "  L4 async factory | L5 low-risk auto-merge. L4 and L5 need docs/baseline/evidence.json."
       ],

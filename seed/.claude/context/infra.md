@@ -1,7 +1,7 @@
 <!-- INFRASTRUCTURE PRIMER — Domain context for the Infra Engineer -->
 <!-- This file is read by the Infra Engineer at the start of every task. -->
 <!-- Fill this in with YOUR project's infrastructure. -->
-<!-- If your project has NO infrastructure-as-code, delete this file and delete .claude/agents/infra-engineer.md. -->
+<!-- If your project has NO infrastructure-as-code, delete this file and take "infra" off the engineer list in .claude/CLAUDE.md (the agent itself ships with the kit). -->
 
 ## IaC Tool
 

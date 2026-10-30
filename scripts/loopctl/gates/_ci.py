@@ -1,11 +1,12 @@
 """The CI halves of G3 (held-out), G4 (mutation) and G10 (product checks): what `heldout.yml`, `mutation.yml` and `g10-product.yml` run (report section 8.4, section 9, RC-6).
 
-    PYTHONPATH=<kit>/.claude/scripts python3 -m loopctl.gates._ci heldout  --repo DIR --base SHA --dir HELDOUT_DIR
-    PYTHONPATH=<kit>/.claude/scripts python3 -m loopctl.gates._ci mutation --repo DIR --base SHA
-    PYTHONPATH=<kit>/.claude/scripts python3 -m loopctl.gates._ci g10      --repo DIR --base SHA
+    PYTHONPATH=<kit>/scripts python3 -m loopctl.gates._ci heldout  --repo DIR --base SHA --dir HELDOUT_DIR
+    PYTHONPATH=<kit>/scripts python3 -m loopctl.gates._ci mutation --repo DIR --base SHA
+    PYTHONPATH=<kit>/scripts python3 -m loopctl.gates._ci g10      --repo DIR --base SHA
 
-`<kit>` is the kit EXTRACTED FROM THE BASE SHA by the workflow, never the pull request's copy. Config and plan are read at `--base`, so a pull
-request cannot change what is run or what is required (CO-11). The branch name (`HEAD_REF` in the environment, untrusted text, matched
+`<kit>` is the plugin the workflow checks out into `$RUNNER_TEMP/kit` at a pinned tag and commit, never anything in the pull request (the
+project holds no kit files). Config and plan are project files read at `--base`, so a pull request cannot change what is run or what is
+required (CO-11). The branch name (`HEAD_REF` in the environment, untrusted text, matched
 against a strict pattern) picks the plan item; a pull request that is not an item branch has no held-out tests to run.
 
 Output is GitHub workflow annotations. For the held-out job they carry **only criterion ids and counts**: the bot that wrote the code has no

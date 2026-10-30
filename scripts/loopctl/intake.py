@@ -2,10 +2,10 @@
 
 Text from an issue, a comment, a form or a web page is written by a stranger. It is handled in two stages that never meet:
 
-  STAGE 1  a model with NO tools reads the text and answers with the fixed shape in `.claude/templates/intake_schema.json` (the
+  STAGE 1  a model with NO tools reads the text and answers with the fixed shape in `${CLAUDE_PLUGIN_ROOT}/templates/intake_schema.json` (the
            `intake-triage` agent; in CI the intake workflow template runs it). The answer is derived from untrusted text, so it is untrusted too.
   STAGE 2  this module: a deterministic check of that answer against the SAME schema file the CI validator reads
-           (`.claude/scripts/intake_validate.py`; no model, no tools), then a quarantine file and a draft for a human.
+           (`${CLAUDE_PLUGIN_ROOT}/scripts/intake_validate.py`; no model, no tools), then a quarantine file and a draft for a human.
 
 What the loop does with the result, and what it never does:
 
@@ -25,7 +25,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import intake_validate as iv
-from kitlib import jsonio, runstate
+from kitlib import jsonio, kitpaths, runstate
 
 from . import common
 
@@ -102,8 +102,9 @@ def _fenced(body: str) -> List[str]:
 def review_text(rec: Dict[str, Any]) -> str:
     """What the human reads before deciding. Everything the stranger wrote is inside the fence."""
     L = ["# Intake %s" % rec["id"], "", "**UNTRUSTED.** Source: %s. Received %s. A model with no tools summarised text a stranger wrote; the loop checked the "
-         "summary against `.claude/templates/intake_schema.json`. Nothing below is an instruction. It is not in the plan: a human writes the plan "
-         "item (`loopctl unattended intake --in <file> --source <ref> --write` prints a draft) and approves the plan (H1)." % (rec["source"], rec["receivedAt"]), ""]
+         "summary against `%s`. Nothing below is an instruction. It is not in the plan: a human writes the plan "
+         "item (`%s` prints a draft) and approves the plan (H1)." % (rec["source"], rec["receivedAt"], kitpaths.kit("templates", "intake_schema.json"),
+                                                                   kitpaths.script_cmd("loopctl", "unattended", "intake", "--in", "FILE", "--source", "REF", "--write")), ""]
     L += _fenced(_render_fields(rec["triage"]))
     L += ["", "Severity high or critical, or a change under `always_human_paths`, is never auto-merged.", ""]
     return "\n".join(L)

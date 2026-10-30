@@ -26,9 +26,9 @@ WHAT KEEPS IT SAFE (a message can be built from text a stranger wrote, so the ch
   * The hook form (`--hook`) takes NO free text from its input: only the hook event name and a few closed-vocabulary fields, so a
     process that pipes text into it cannot choose what the human reads.
 
-    python3 .claude/scripts/notify.py --hook                       (Notification / StopFailure / PermissionRequest; JSON on stdin)
-    python3 .claude/scripts/notify.py --kind test [--repo .]
-    python3 .claude/scripts/notify.py --kind stop --level alert --item F1 --code security_blocked --run run-123 --dry-run     (shows a message; sends nothing)
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify.py --hook                       (Notification / StopFailure / PermissionRequest; JSON on stdin)
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify.py --kind test [--repo .]
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify.py --kind stop --level alert --item F1 --code security_blocked --run run-123 --dry-run     (shows a message; sends nothing)
 
 Exit codes: 0 sent, or nothing is configured and `--hook` was used, or `--dry-run`; 1 the program failed or timed out;
 2 internal error or unusable arguments (hooks fail closed); 3 refused: no notify_command, or one that breaks the rules above.

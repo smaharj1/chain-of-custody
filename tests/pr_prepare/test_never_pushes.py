@@ -13,7 +13,7 @@ import pr_prepare
 from . import FeatureCase, good_body
 from .. import REPO_ROOT
 
-SCRIPT = os.path.join(REPO_ROOT, ".claude", "scripts", "pr_prepare.py")
+SCRIPT = os.path.join(REPO_ROOT, "scripts", "pr_prepare.py")
 
 
 def git_subcommand(argv):
@@ -91,6 +91,35 @@ class Runtime(FeatureCase):
             sub = git_subcommand(argv)
             self.assertIn(sub, pr_prepare.READ_ONLY_GIT, argv)
             self.assertNotIn("push", argv)
+
+    def test_the_conductor_tier_prints_the_push_and_still_runs_only_read_only_git(self):
+        r = self.make_feature({"git_autonomy": "branch+commit+push"})
+        self.ready(r)
+        seen = []
+        real_run = subprocess.run
+        real_popen = subprocess.Popen
+
+        def run(argv, *a, **kw):
+            seen.append(list(argv))
+            return real_run(argv, *a, **kw)
+
+        def popen(argv, *a, **kw):
+            seen.append(list(argv))
+            return real_popen(argv, *a, **kw)
+
+        before = (r.git("for-each-ref"), r.git("config", "--local", "--list"))
+        with mock.patch.object(subprocess, "run", run), mock.patch.object(subprocess, "Popen", popen):
+            res = pr_prepare.check(r.path, mode="prepare")
+        self.assertTrue(res["ok"], res["findings"])
+        self.assertEqual(res["commands_by"], "conductor")
+        self.assertIn("git push --set-upstream origin feat/x", res["commands"])
+        self.assertTrue(any(c.startswith("gh pr create --draft") for c in res["commands"]))
+        self.assertTrue(seen)
+        for argv in seen:
+            self.assertEqual(argv[0], "git", argv)
+            self.assertIn(git_subcommand(argv), pr_prepare.READ_ONLY_GIT, argv)
+            self.assertNotIn("push", argv)
+        self.assertEqual(before, (r.git("for-each-ref"), r.git("config", "--local", "--list")))
 
     def test_nothing_changed_in_the_repository(self):
         r = self.make_feature()

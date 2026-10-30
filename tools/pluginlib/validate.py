@@ -3,8 +3,8 @@
 It cannot know what the real validator knows (the manifest schema may have changed, `${CLAUDE_PLUGIN_ROOT}` expansion is probe V13),
 so passing here is necessary, not sufficient. The real command is a pending-human step: `tools/validate-plugin-real.sh`.
 
-`validate(plugin, marketplace)` takes {path: bytes} for the plugin tree (paths relative to the plugin root) and the bytes of
-`.claude-plugin/marketplace.json`, and returns a list of problems. Empty means the plugin is structurally sound.
+The repository root is the plugin root. `validate(files, marketplace)` takes {path: bytes} for the repository's files (paths relative
+to the root) and the bytes of `.claude-plugin/marketplace.json`, and returns a list of problems. Empty means the plugin is sound.
 """
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ import ast
 import json
 import re
 from typing import Dict, List, Optional, Set
-
-from . import rewrite
 
 KNOWN_EVENTS = {"PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "PermissionDenied", "Notification", "UserPromptSubmit",
                 "Stop", "StopFailure", "SubagentStart", "SubagentStop", "TaskCreated", "TaskCompleted", "TeammateIdle", "ConfigChange",
@@ -31,6 +29,17 @@ SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 KEBAB = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 ROOT_REF = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)")
 MD_LINK = re.compile(r"\]\(([^)\s#]+)(?:#[^)]*)?\)")
+# the parts of the repository a user's session reads as kit prose (CLAUDE.md "Paths in prose")
+PROSE_AREAS = ("agents/", "skills/", "context/", "spec/", "templates/")
+# human docs: their ${CLAUDE_PLUGIN_ROOT}/ paths must exist too, but they may name an old install's `.claude/scripts/` on purpose
+# (docs/migrating-to-v2.md describes the copy layout), so the leftover check is for kit prose only. docs/design and docs/baseline are history.
+DOC_AREAS = ("docs/",)
+PROSE_SKIP = ("docs/design/", "docs/baseline/")
+# a kit-owned `.claude/...` path left in kit prose: the kit is not in the project's .claude/ any more. `<role>`, `*` and `{` forms name
+# project overrides and patterns; the project skill launch-app is a project file.
+LEFTOVER = re.compile(r"(?<![A-Za-z0-9_./${}~-])\.claude/(?:scripts|spec|templates|skills)/(?![*<{]|launch-app)")
+# Skills that detect or take apart an old copy install name its `.claude/scripts/...` on purpose: only their ${CLAUDE_PLUGIN_ROOT} paths are checked.
+OLD_INSTALL_PROSE = ("skills/init/SKILL.md", "skills/migrate/SKILL.md", "skills/bootstrap/SKILL.md")
 RUNTIME_FILES = {"loop.jsonl", "metrics.jsonl", "orchestrate.lock", "settings.local.json", "bootstrap-receipt.json", "launch.json"}
 
 
@@ -53,6 +62,9 @@ def frontmatter(text: str):
         v = m.group(2).strip()
         if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
             v = v[1:-1]
+        elif v[:1] not in ("", "|", ">", "[", "{", "\"", "'") and (": " in v or " #" in v):
+            # YAML reads `a: b` inside a plain scalar as a nested mapping (an error) and ` #` as the start of a comment (truncation)
+            return data, "line %d: the unquoted value of %s contains %r; quote it or reword it" % (n, m.group(1), ": " if ": " in v else " #")
         data[m.group(1)] = v
     return data, None
 
@@ -226,30 +238,44 @@ def check_skills(files: Dict[str, bytes], problems: List[str]) -> None:
 
 
 def check_paths(files: Dict[str, bytes], problems: List[str]) -> None:
-    """Every ${CLAUDE_PLUGIN_ROOT}/... in prose exists; no kit-owned .claude/ path is left over."""
+    """Every ${CLAUDE_PLUGIN_ROOT}/... in kit prose exists; no kit-owned .claude/ path is left over."""
+    kit_context = sorted(p[len("context/"):] for p in files if re.match(r"^context/[^/]+\.md$", p))
     for p, data in sorted(files.items()):
-        if not p.endswith((".md", ".mdc")) or p.startswith("seed/"):
+        if not p.endswith((".md", ".mdc")) or not p.startswith(PROSE_AREAS + DOC_AREAS) or p.startswith(PROSE_SKIP):
             continue
         text = data.decode("utf-8", "replace")
         for r in ROOT_REF.findall(text):
             r = r.rstrip(".,;:)")
-            if "*" in r or "<" in r:
-                continue
+            if "*" in r or "<" in r or not r.strip("./"):
+                continue        # a pattern, a placeholder, or the bare `${CLAUDE_PLUGIN_ROOT}/...` that names the form itself
             if r.endswith("/"):
                 if not any(f.startswith(r) for f in files):
                     problems.append("%s: ${CLAUDE_PLUGIN_ROOT}/%s is not in the plugin" % (p, r))
             elif r not in files and not any(f.startswith(r + "/") for f in files):
                 problems.append("%s: ${CLAUDE_PLUGIN_ROOT}/%s is not in the plugin" % (p, r))
-        for n, line in rewrite.leftovers(text):
+        for n, line in ([] if p in OLD_INSTALL_PROSE or not p.startswith(PROSE_AREAS) else leftovers(text, kit_context)):
             problems.append("%s:%d: kit path not rewritten for the plugin: %s" % (p, n, line))
             break
+
+
+def leftovers(text: str, kit_context=()):
+    """Kit-owned `.claude/...` paths still present in kit prose: [(line number, line)]. `kit_context` are the kit's own context files
+    (engineer-protocol.md, ...), which are no longer in the project's .claude/context/; the primers there are project files."""
+    ctx = re.compile(r"(?<![A-Za-z0-9_./${}~-])\.claude/context/(?:%s)\b" % "|".join(re.escape(c) for c in kit_context)) if kit_context else None
+    found = []
+    for n, line in enumerate(text.split("\n"), 1):
+        if LEFTOVER.search(line) or (ctx and ctx.search(line)):
+            found.append((n, line.strip()[:120]))
+    return found
 
 
 def check_layout(files: Dict[str, bytes], problems: List[str], parse_python: bool = True) -> None:
     for p in sorted(files):
         parts = p.split("/")
-        if parts[0] in ("tests", "tools", ".git", ".claude", "worktrees") or "__pycache__" in parts:
-            problems.append("%s: does not belong in a plugin" % p)
+        if parts[0] in (".git", "plugin", "dist") or "__pycache__" in parts:
+            problems.append("%s: does not belong in the plugin" % p)
+        if parts[0] in ("tests", "evals"):
+            continue        # fixtures may hold runtime-looking files on purpose
         if parts[-1] in RUNTIME_FILES or parts[-1] == ".DS_Store" or p.endswith((".pyc", ".lock")):
             problems.append("%s: runtime or junk file in the plugin" % p)
     sj = files.get("settings.json")
@@ -260,6 +286,9 @@ def check_layout(files: Dict[str, bytes], problems: List[str], parse_python: boo
             keys = set()
         if keys - {"agent", "subagentStatusLine"}:
             problems.append("settings.json: a plugin's settings.json applies only `agent` and `subagentStatusLine` (P19); the deny block is written by /init")
+    # `.claude/settings*.json` is not checked: Claude Code reads it only when the plugin's folder is itself the project, never from an
+    # installed copy, so it cannot switch the plugin off for anyone else. This repository's own .claude/settings.json sets
+    # enabledPlugins false on purpose, so the kit's guards do not block edits to the kit (.claude/CLAUDE.md).
     for p, data in files.items():
         if parse_python and p.endswith(".py"):
             try:
@@ -270,7 +299,7 @@ def check_layout(files: Dict[str, bytes], problems: List[str], parse_python: boo
         problems.append("KIT_VERSION is missing")
 
 
-def check_marketplace(plugin_doc: Optional[dict], marketplace: Optional[bytes], plugin_dir: str, has_dir: bool, problems: List[str]) -> None:
+def check_marketplace(plugin_doc: Optional[dict], marketplace: Optional[bytes], problems: List[str]) -> None:
     if marketplace is None:
         problems.append(".claude-plugin/marketplace.json is missing")
         return
@@ -302,8 +331,8 @@ def check_marketplace(plugin_doc: Optional[dict], marketplace: Optional[bytes], 
         if isinstance(src, str):
             if not src.startswith("./") or ".." in src.split("/"):
                 problems.append("marketplace.json: source %r must be a relative ./ path inside the repository" % src)
-            elif src.rstrip("/") != "./" + plugin_dir or not has_dir:
-                problems.append("marketplace.json: source %s does not point at the generated ./%s" % (src, plugin_dir))
+            elif src != "./":
+                problems.append("marketplace.json: source %s does not point at the repository root ./, where the plugin is" % src)
         if plugin_doc is not None:
             if ent["name"] != plugin_doc.get("name"):
                 problems.append("marketplace.json: plugin name %r differs from plugin.json %r" % (ent["name"], plugin_doc.get("name")))
@@ -311,7 +340,7 @@ def check_marketplace(plugin_doc: Optional[dict], marketplace: Optional[bytes], 
                 problems.append("marketplace.json: version %r differs from plugin.json %r" % (ent.get("version"), plugin_doc.get("version")))
 
 
-def validate(plugin: Dict[str, bytes], marketplace: Optional[bytes], plugin_dir: str = "plugin", parse_python: bool = True) -> List[str]:
+def validate(plugin: Dict[str, bytes], marketplace: Optional[bytes], parse_python: bool = True) -> List[str]:
     problems = []   # type: List[str]
     doc = check_manifest(plugin, problems)
     check_hooks(plugin, problems)
@@ -321,5 +350,5 @@ def validate(plugin: Dict[str, bytes], marketplace: Optional[bytes], plugin_dir:
     check_layout(plugin, problems, parse_python)
     if doc and "KIT_VERSION" in plugin and (doc.get("version") or "x") not in plugin["KIT_VERSION"].decode("utf-8", "replace"):
         problems.append("KIT_VERSION does not match plugin.json version %s" % doc.get("version"))
-    check_marketplace(doc, marketplace, plugin_dir, bool(plugin), problems)
+    check_marketplace(doc, marketplace, problems)
     return problems

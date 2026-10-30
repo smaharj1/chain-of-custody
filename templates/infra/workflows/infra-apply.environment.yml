@@ -17,8 +17,8 @@
 # would ask the reviewers to approve something that had not been planned yet (ci_lint: infra.apply-same-job-as-plan).
 #
 # Roles (OIDC, no stored keys): `plan` uses the plan-main role (environment `plan-main`, no reviewers; read access, state lock,
-# no secrets); `apply` uses the apply role (environment `production`). See .claude/templates/infra/oidc/ and
-# .claude/templates/security/oidc/aws-apply-environment.trust.json. Repository variables: INFRA_PLAN_MAIN_ROLE_ARN,
+# no secrets); `apply` uses the apply role (environment `production`). See the kit's templates/infra/oidc/ and
+# templates/security/oidc/aws-apply-environment.trust.json. Repository variables: INFRA_PLAN_MAIN_ROLE_ARN,
 # INFRA_APPLY_ROLE_ARN, AWS_REGION, FACTORY_APPROVERS, FACTORY_BOT_LOGIN, CONFTEST_VERSION and CONFTEST_SHA256 (the release you
 # vetted). Set TF_ROOT below.
 #
@@ -59,6 +59,24 @@ jobs:
         uses: actions/checkout@v4 # pin to SHA
         with:
           persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: Install terraform
         uses: hashicorp/setup-terraform@v3 # pin to SHA
         with:
@@ -88,14 +106,14 @@ jobs:
           terraform -chdir="$TF_ROOT" plan -lock=true -refresh=true -out=tfplan -no-color
           terraform -chdir="$TF_ROOT" show -json tfplan > "$TF_ROOT/plan.json"
       - name: Policy on the plan JSON
-        run: ./conftest test --policy .claude/templates/infra/policy --namespace kit.infra.plan "$TF_ROOT/plan.json"
+        run: ./conftest test --policy "$RUNNER_TEMP/kit/templates/infra/policy" --namespace kit.infra.plan "$TF_ROOT/plan.json"
       - name: Record what was planned
         id: hash
         run: |
           set -eu
-          echo "plan_sha256=$(python3 .claude/scripts/infra/gate.py hash-file "$TF_ROOT/tfplan")" >> "$GITHUB_OUTPUT"
+          echo "plan_sha256=$(python3 $RUNNER_TEMP/kit/scripts/infra/gate.py hash-file "$TF_ROOT/tfplan")" >> "$GITHUB_OUTPUT"
           echo "planned_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          python3 .claude/scripts/infra/gate.py plan-summary --plan-json "$TF_ROOT/plan.json" --title "Plan of main for approval" >> "$GITHUB_STEP_SUMMARY"
+          python3 $RUNNER_TEMP/kit/scripts/infra/gate.py plan-summary --plan-json "$TF_ROOT/plan.json" --title "Plan of main for approval" >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the plan for the apply job of this run
         uses: actions/upload-artifact@v4 # pin to SHA
         with:
@@ -117,6 +135,24 @@ jobs:
         uses: actions/checkout@v4 # pin to SHA
         with:
           persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: A listed approver approved this run in the Environment
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,7 +163,7 @@ jobs:
         run: |
           set -eu
           gh api "repos/$REPO/actions/runs/$RUN_ID/approvals" > approvals.json
-          python3 .claude/scripts/infra/gate.py require-run-approval --approvals-json approvals.json --environment production --approvers "$APPROVERS" --bot "$BOT_LOGIN"
+          python3 $RUNNER_TEMP/kit/scripts/infra/gate.py require-run-approval --approvals-json approvals.json --environment production --approvers "$APPROVERS" --bot "$BOT_LOGIN"
       - name: Fetch the saved plan
         uses: actions/download-artifact@v4 # pin to SHA
         with:
@@ -136,7 +172,7 @@ jobs:
       - name: The saved plan is the file that was made and reviewed
         env:
           EXPECTED: ${{ needs.plan.outputs.plan_sha256 }}
-        run: python3 .claude/scripts/infra/gate.py verify-hash --file "$TF_ROOT/tfplan" --sha256 "$EXPECTED"
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py verify-hash --file "$TF_ROOT/tfplan" --sha256 "$EXPECTED"
       - name: The planned commit is still the tip of main
         env:
           GH_TOKEN: ${{ github.token }}
@@ -145,7 +181,7 @@ jobs:
         run: |
           set -eu
           main_sha="$(gh api "repos/$REPO/commits/main" --jq .sha)"
-          python3 .claude/scripts/infra/gate.py base-is-main --planned-sha "$PLANNED_SHA" --main-sha "$main_sha"
+          python3 $RUNNER_TEMP/kit/scripts/infra/gate.py base-is-main --planned-sha "$PLANNED_SHA" --main-sha "$main_sha"
       - name: Install terraform
         uses: hashicorp/setup-terraform@v3 # pin to SHA
         with:

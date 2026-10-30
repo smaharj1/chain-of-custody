@@ -2,7 +2,7 @@
 
 No mutating cloud, database or deploy credential, and no credential of yours for GitHub, may be reachable by the OS user the agent runs as. The agent can run arbitrary code as that user, so "reachable" means a process of that user could read it or ask something to hand it over.
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --credentials` looks for every route below. It reports names and paths, never values. Any error-level hit caps the effective level at **L1**, and the message says what to remove.
+`python3 "$KIT/scripts/doctor.py" --credentials` looks for every route below. It reports names and paths, never values. Any error-level hit caps the effective level at **L1**, and the message says what to remove.
 
 ## What it looks for
 
@@ -41,7 +41,7 @@ Say these out loud to yourself before you trust a clean run:
 `cred.same-user` says so while `agent_isolation` is `none`. The answer is not a cleverer scan; it is to stop sharing the identity:
 
 1. **Run the agent as a separate OS user** that has none of the above (no keychain, no shell history, no credentials), or
-2. **run it in a credential-free container** (see `${CLAUDE_PLUGIN_ROOT}/templates/security/devcontainer/devcontainer.json`), or
+2. **run it in a credential-free container** (see `templates/security/devcontainer/devcontainer.json`), or
 3. both, with the OS sandbox on top ([sandbox.md](sandbox.md)).
 
 Then run the doctor **as that user, in that environment**, and set `agent_isolation` in `.claude/loop.config.md`. The doctor evaluates the environment it is started in: if you run it from your own shell and start the agent from another, it has checked the wrong machine.
@@ -56,7 +56,7 @@ The kit's driver strips `AWS_*`, `GOOGLE_*`, `AZURE_*`, `KUBECONFIG`, `GH_TOKEN`
 
 ## Read-only cloud access is also a hit
 
-`terraform plan`, `cdk diff` and `pulumi preview` run provider and program code, so a "read-only" credential used from the agent's machine is still code execution with that credential. Plans run in CI after a policy check, with a plan-only role reached through OIDC ([infra-human-gate.md](infra-human-gate.md)). A read-only IAM policy example for that role is in `${CLAUDE_PLUGIN_ROOT}/templates/security/iam/plan-readonly.policy.json`.
+`terraform plan`, `cdk diff` and `pulumi preview` run provider and program code, so a "read-only" credential used from the agent's machine is still code execution with that credential. Plans run in CI after a policy check, with a plan-only role reached through OIDC ([infra-human-gate.md](infra-human-gate.md)). A read-only IAM policy example for that role is in `templates/security/iam/plan-readonly.policy.json`.
 
 ## Fixing a hit
 

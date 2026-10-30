@@ -165,10 +165,10 @@ class BaseShaLoading(BaseTestCase):
         c = config.load_text(cfg_text("max_items_per_run: 5\ndb_local: postgres\ngates:\n  g6: on\n"), reg)
         self.assertEqual(config.h6_changes(a, c), [])
 
-    def test_the_real_config_loads_from_a_sha_in_this_repo(self):
+    def test_the_seed_config_loads_from_a_sha_in_this_repo(self):
         from tests import REPO_ROOT
         head = config.gitutil.rev_parse("HEAD", REPO_ROOT)
-        self.assertEqual(config.load_at_sha(REPO_ROOT, head).errors, [])
+        self.assertEqual(config.load_at_sha(REPO_ROOT, head, path="seed/.claude/loop.config.md").errors, [])
 
 
 if __name__ == "__main__":

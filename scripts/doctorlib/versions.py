@@ -1,5 +1,7 @@
 """Claude Code version range and the kit's own version (report §14, IMP-8, IMP-21).
 
+The kit version is the plugin's `KIT_VERSION` (`ctx.kit_root`), never a file in the project.
+
 The doctor never runs the real `claude` from inside a Claude Code session (an agent must not
 launch it, CS-2). The order of precedence is: an explicit version (`--claude-version`,
 `KIT_CLAUDE_VERSION`); `KIT_CLAUDE_BIN` (tests point it at the fake); the `claude` on PATH, but
@@ -45,10 +47,10 @@ def read_claude_version(ctx: Context, allow_path_claude: bool = False) -> Tuple[
 
 @gatherer("kit_version")
 def gather_kit_version(ctx: Context) -> Dict[str, Any]:
-    p = ctx.repo_path(".claude", "KIT_VERSION")
+    p = ctx.kit_path("KIT_VERSION")
     text, problem = safeio.read_text_status(p, 8192)
     if problem:
-        return {"ok": False, "error": ".claude/KIT_VERSION %s" % ("not found" if problem == safeio.MISSING else problem), "version": None, "date": None,
+        return {"ok": False, "error": "%s %s" % (p, "not found" if problem == safeio.MISSING else problem), "version": None, "date": None,
                 "claude_code_min": None, "claude_code_tested_max": None}
     try:
         parsed = semver.parse_kit_version_file(text)
@@ -71,7 +73,7 @@ def gather_claude_version(ctx: Context) -> Dict[str, Any]:
 def check_kit_version(ctx: Context) -> Result:
     kv = ctx.fact("kit_version")
     if not kv["ok"]:
-        return failed("version.kit", kv["error"], "restore .claude/KIT_VERSION from the kit release", severity=WARN)
+        return failed("version.kit", kv["error"], "reinstall the plugin (/plugin install chain-of-custody@chain-of-custody): its KIT_VERSION is missing or broken", severity=WARN)
     extra = ""
     if kv.get("claude_code_min") is None:
         extra = "; no claude_code_min recorded (using the floor %s)" % DEFAULT_MIN
@@ -88,7 +90,7 @@ def check_claude_version(ctx: Context) -> Result:
     rem = {
         semver.UNKNOWN: "run the doctor from a plain terminal (not inside a Claude Code session), or pass --claude-version; unknown caps the level at L1",
         semver.BELOW_MIN: "upgrade Claude Code to at least %s (the floor changes how dispatch waits and how headless permissions start, CS-41)" % cv["min"],
-        semver.UNTESTED: "run the canary on your pinned CLI, then set claude_code_tested_max in .claude/KIT_VERSION (human, H6)",
+        semver.UNTESTED: "run the canary on your pinned CLI; the kit release records claude_code_tested_max in its KIT_VERSION (%s)" % ctx.kit_path("KIT_VERSION"),
         semver.ABOVE_TESTED: "run the canary on this CLI version, or pin the CLI to %s (report §14.3)" % cv["tested_max"],
     }[st]
     msg = {

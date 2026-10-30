@@ -84,8 +84,7 @@ class Refusals(DriverTestCase):
 
     def test_a_version_above_the_tested_maximum_refuses_at_l3(self):
         lr = self.dr(items=[item_doc("A", estimate=ENG)], cfg={"autonomy_level": "L3"})
-        lr.repo.write(".claude/KIT_VERSION", "2.0.0 (2026-10-01)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: 2.1.310\n")
-        lr.commit_all("kit version")
+        self.kit_version("2.0.0 (2026-10-01)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: 2.1.310\n")
         lr.set_scenario(lr.happy())
         lr.approve()
         self.refused(lr, {"KIT_CLAUDE_VERSION": "2.1.399"}, "above the tested maximum")

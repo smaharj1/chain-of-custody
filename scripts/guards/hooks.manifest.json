@@ -1,6 +1,6 @@
 {
   "schema": "kit-hooks-manifest/1",
-  "doc": "Single source of the guard wiring (report §7.1, IMP-13). wiring.py turns this into .claude/settings.v2.json now and into the plugin hooks.json in Phase 9. Edit this file, run `python3 .claude/scripts/guards/wiring.py --write`, never edit the outputs by hand.",
+  "doc": "Single source of the guard wiring (report §7.1, IMP-13). wiring.py turns this into the plugin's hooks/hooks.json, the only wiring. Edit this file, run `python3 scripts/guards/wiring.py --write`, never edit the outputs by hand.",
   "entries": [
     {"id": "pre-bash", "event": "PreToolUse", "matcher": "Bash",
      "guards": ["halt", "file", "git", "infra", "exec", "critic"], "blocking": true, "timeout": 10},

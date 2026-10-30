@@ -18,15 +18,15 @@ This mode is for a person at the keyboard. **If this session was launched with a
 
 | Situation | Mode |
 |---|---|
-| New folder or new repo, kit just copied in | **Bootstrap**, then `/planner` for the first build plan |
-| Existing codebase, kit just copied in | **Bootstrap** (it derives what the code shows), then `/pm` or `/tech-lead` |
+| New folder or new repo, kit plugin just installed | **Bootstrap**, then `/planner` for the first build plan |
+| Existing codebase, kit plugin just installed | **Bootstrap** (it derives what the code shows), then `/pm` or `/tech-lead` |
 | The kit is installed and you want a feature | `/pm` |
 | You want to change one setting | edit `.claude/loop.config.md` yourself (guard keys are a human's change) |
 
 ## What you never do
 
 - Run `gh`, `aws`, `ssh`, `docker push` or anything that talks to GitHub or a cloud account. You print commands; the human runs them.
-- Edit `.claude/loop.config.md`, `.github/**`, `CODEOWNERS`, `.claude/scripts/**`, `.claude/skills/**` or settings files. The guards deny it, and the plan/script flow below exists so you never need to.
+- Edit `.claude/loop.config.md`, `.github/**`, `CODEOWNERS`, the kit's own files (`${CLAUDE_PLUGIN_ROOT}/**`), `.claude/skills/**` or settings files. The guards deny it, and the plan/script flow below exists so you never need to.
 - Ask for, read, or write a password, token or API key. `ANTHROPIC_API_KEY` is set by the human with `gh secret set`, which prompts.
 - Pass `--go` to `probe_run.py`, run the project's own scripts in the host shell, or run `verify.py` on a repository nobody has vetted. Commands are proven in the sandbox the human approves (`${CLAUDE_PLUGIN_ROOT}/context/probe-protocol.md`).
 - Merge, tag, release or deploy. Release-automation pull requests (release-please, changesets) are H5: a human merges them, always.
@@ -34,7 +34,7 @@ This mode is for a person at the keyboard. **If this session was launched with a
 
 ## The receipt
 
-Every step you take is recorded in `.claude/bootstrap-receipt.json` through `${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py`: the command, its exit code and the hash of its output. `run` executes only the kit's own read-only scripts; anything else you or the human did goes in with `record`. Use these ids so a later session can resume: `detect`, `config-plan`, `setup-script`, `doctor`, `ci-lint`, and `loopctl` when it exists. The human reads `bootstrap_receipt.py show` at the end.
+Every step you take is recorded in `.claude/bootstrap-receipt.json` through `${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py`: the command, its exit code and the hash of its output. `run` executes only the kit's own read-only scripts, named by their path in the kit (`${CLAUDE_PLUGIN_ROOT}/scripts/<name>` or the absolute path), never a copy in the project; anything else you or the human did goes in with `record`. Use these ids so a later session can resume: `detect`, `config-plan`, `setup-script`, `doctor`, `ci-lint`, and `loopctl` when it exists. The human reads `bootstrap_receipt.py show` at the end.
 
 ```
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_receipt.py status                      # none | in-progress | complete | invalid
@@ -55,7 +55,7 @@ Run `status`. `in-progress`: read `show`, say what is done and what is left, and
 
 Run detect on its own first (`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_detect.py --json`; it writes nothing). Then `bootstrap_receipt.py init --mode <the hint>`, and run detect again through `run --id detect ...` so the receipt holds it.
 
-The detect JSON gives a mode hint (greenfield or existing), the stack the manifests show, suggested verify commands, deploy-host files, release automation, the state of `CLAUDE.md` and `loop.config.md`, and the git remotes (host and OWNER/NAME only). Say what you found in three or four lines and confirm the mode. If the kit is not installed (`.claude/scripts` missing), stop: the install comes first.
+The detect JSON gives a mode hint (greenfield or existing), the stack the manifests show, suggested verify commands, deploy-host files, release automation, the state of `CLAUDE.md` and `loop.config.md`, and the git remotes (host and OWNER/NAME only). Say what you found in three or four lines and confirm the mode. If detect reports `kit.copy_install` (a v1 copy of the kit's scripts in `.claude/scripts`), stop: the project needs `/migrate` first, so it runs the plugin's scripts and not that copy.
 
 ### 2. Interview
 
@@ -70,7 +70,7 @@ Use `AskUserQuestion` for choices. 3 to 6 questions per turn, plain language. As
 
 ### 3. Git (greenfield)
 
-No git repository or no commit yet: ask the human to run `! git init -b main` and, after the files from this session exist, the first commit. (`git_autonomy` is `none` by default, so you do not run git writes.) Record it with `record` once it is done.
+No git repository or no commit yet: ask the human to run `! git init -b main` and, after the files from this session exist, the first commit. (With no commit there is no config at the base sha, so `git_autonomy` counts as `none`, the default when the key is absent, and you do not run git writes.) Record it with `record` once it is done.
 
 ### 4. The stack, in the files you may write
 
@@ -109,7 +109,7 @@ Optional, existing or greenfield: write `.claude/launch.json` (the desktop previ
 
 Tell the user, in this order, with the exact commands:
 
-1. `sh .claude/bootstrap/setup.sh local` (a dry run: it prints), read it, then `sh .claude/bootstrap/setup.sh local --apply`. It applies the config plan and copies the workflows. **From a plain terminal, not from this session** (it refuses inside one). Then pin each `uses:` in `.github/workflows/` to a commit SHA, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py`, and commit.
+1. `sh .claude/bootstrap/setup.sh local` (a dry run: it prints), read it, then `sh .claude/bootstrap/setup.sh local --apply`. It applies the config plan and writes the workflows. **From a plain terminal, not from this session** (it refuses inside one). A workflow that runs kit code fetches the kit from its own repository at a pinned release, never from the pull request's tree: the script fills in the release tag (`v<KIT_VERSION>`) and, with `--apply`, reads the commit that tag names once with `git ls-remote` (pass `--kit-sha <40 hex>` to `repo_script.py` to bake it in instead). CI refuses to run if the tag has moved. Then pin each `uses:` in `.github/workflows/` to a commit SHA, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py`, and commit.
 2. `sh .claude/bootstrap/setup.sh remote`, read it, then `--apply`: creates the repository and the first push (greenfield), then the rulesets, labels and the `FACTORY_APPROVERS` variable.
 3. The rest is theirs and the script lists it: the bot identity (`${CLAUDE_PLUGIN_ROOT}/docs/security/bot-identity.md`), CODEOWNERS, the `ANTHROPIC_API_KEY` secret, the `deploy_triggers` attestation.
 
@@ -128,9 +128,9 @@ bootstrap_receipt.py run --id loopctl --title "loopctl doctor" -- python3 ${CLAU
 
 Report what blocks the next level in the doctor's own words. `finish` marks the receipt complete (it needs `detect` and `doctor` and no step whose last attempt failed). The receipt is committed with the rest, so the reviewer of the first pull request sees what was done and what was only reported.
 
-## Plugin installs
+## Where the kit is
 
-In a plugin install the kit's scripts live under `${CLAUDE_PLUGIN_ROOT}/scripts/` (the plugin copy of this skill already says so) and the project has no `${CLAUDE_PLUGIN_ROOT}/scripts/`. Everything up to the config plan works. The generated `setup.sh` checks for `${CLAUDE_PLUGIN_ROOT}/scripts/github/labels.py` in the project and stops without it, because the GitHub steps were written for the copy install. Say so to the user and give them the choice: install the scripts into the project (`${CLAUDE_PLUGIN_ROOT}/docs/packaging.md`), or run the printed GitHub steps by hand from a kit checkout. Do not rewrite `setup.sh` yourself.
+The kit is a plugin: its scripts, templates and context are under `${CLAUDE_PLUGIN_ROOT}`, and the project's `.claude/` holds only the project's own files. The generated `setup.sh` names the kit by the absolute path of the plugin copy that made it, and stops if that path has gone (a plugin update moves it): generate it again then, do not edit it. It also stops unless it is run as `.claude/bootstrap/setup.sh` of the project it was made for.
 
 ## Release automation (H5)
 

@@ -11,11 +11,11 @@ There are five parts. All of them work offline on the run data; none starts a mo
 | Gaps to drafts | `loopctl gaps [--write]` | L-33: brief gaps never became rules |
 | Critic calibration | `loopctl calibration scan\|record\|report` | L-34: critics were uncalibrated |
 | Docs Delta gate | `gates.docs` (`loopctl/gates/docs_delta.py`) | F-30: no doc gate |
-| Harness review | `loopctl harness`, `tools/evals/ablate.py`, `${CLAUDE_PLUGIN_ROOT}/docs/harness-review.md` | 16.2: prune what no longer pays |
+| Harness review | `loopctl harness`, `tools/evals/ablate.py`, `docs/harness-review.md` | 16.2: prune what no longer pays |
 
 ## 1. Report trailers: warn, then block
 
-An engineer ends its final message with a JSON trailer and writes its own report (`${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md` section 7). `report_trailers` says how strictly the driver reads them:
+An engineer ends its final message with a JSON trailer and writes its own report (`context/engineer-protocol.md` section 7). `report_trailers` says how strictly the driver reads them:
 
 - **hard** problems fail the item in both modes (`malformed_report`): the report is missing, a symlink, over 1 MiB or outside `docs/features/<slug>/reports/`; `## Status` is missing or not in the enum; a **well-formed trailer that disagrees with the report** (status, path, iteration); a last line that looks like a trailer but a strict parser refuses (duplicate keys, `NaN`, deep nesting). A trailer someone forged, or half-forged, is never tolerated.
 - **soft** problems are the form: no trailer, a trailer with an extra key or in a code fence, a missing section other than Status, `NONE` with no `checked:` line. `block` fails the item on them. `warn` (the default) lets the item go on and records a `report_warning` event with the kinds.
@@ -26,7 +26,7 @@ An engineer ends its final message with a JSON trailer and writes its own report
 
 ## 2. The retro
 
-`loopctl retro [--milestone M]` prints one document (`--json` for `loopctl.retro.v1`): flow, failures by class and reason, rescues, gate runs and the finding ids that repeat, spend, report form and brief gaps by domain, critic precision, unattended stops, parallel events and cascades, and the empty-Primer-Delta streak. Every number is a count over a closed vocabulary; **no log text appears in it**. `/retro` (`${CLAUDE_PLUGIN_ROOT}/skills/retro/SKILL.md`) is the mode that walks a person through it.
+`loopctl retro [--milestone M]` prints one document (`--json` for `loopctl.retro.v1`): flow, failures by class and reason, rescues, gate runs and the finding ids that repeat, spend, report form and brief gaps by domain, critic precision, unattended stops, parallel events and cascades, and the empty-Primer-Delta streak. Every number is a count over a closed vocabulary; **no log text appears in it**. `/retro` (`skills/retro/SKILL.md`) is the mode that walks a person through it.
 
 The numbers to read first:
 
@@ -55,13 +55,13 @@ README.md        the gaps, the drafts, and the evidence, quoted
 COMMANDS.txt     the git and gh commands, for you to run
 PR_BODY.md       a pull request description with a checklist (when there is a rule)
 MANIFEST.json    every file and its sha256
-files/.claude/rules/<name>.md   rule skeletons, from ${CLAUDE_PLUGIN_ROOT}/templates/rule.md
+files/.claude/rules/<name>.md   rule skeletons, from templates/rule.md
 proposals/NN-<kind>-<key>.md    notes: a primer, a rubric, the doctor
 ```
 
 The commands are printed and not run: `git switch -c learning/<id> <integration>`, `cp -R <draft>/files/. .`, `git add`, `git commit`, `git push -u origin`, `gh pr create --draft --body-file`. You read the draft, fill every `<fill>` in the copied rule, and run them when you agree.
 
-**What a draft cannot do.** It writes nowhere but its own directory, and the only file it may ever propose into the repository is `.claude/rules/<name>.md`; hooks, settings, agents, commands, skills, `.claude/scripts`, `loop.config`, workflows, CODEOWNERS and `docs/baseline/evidence.json` are refused twice over (a shape check and a protected list), with no symlink followed on the way. **What a draft cannot contain.** A rule's words are template text and `<fill>` marks. Its file name comes from a domain, a gate finding id or a failure reason that passed a closed-vocabulary check, and its `paths` suggestion from the approved plan. The quoted evidence (report sections, gate messages) is in the README and the proposals only, inside a fence longer than any run of `~` in the text and labelled UNTRUSTED DATA, with control and bidi characters replaced.
+**What a draft cannot do.** It writes nowhere but its own directory, and the only file it may ever propose into the repository is `.claude/rules/<name>.md`; hooks, settings, agents, commands, skills, the kit's own files, `loop.config`, workflows, CODEOWNERS and `docs/baseline/evidence.json` are refused twice over (a shape check and a protected list), with no symlink followed on the way. **What a draft cannot contain.** A rule's words are template text and `<fill>` marks. Its file name comes from a domain, a gate finding id or a failure reason that passed a closed-vocabulary check, and its `paths` suggestion from the approved plan. The quoted evidence (report sections, gate messages) is in the README and the proposals only, inside a fence longer than any run of `~` in the text and labelled UNTRUSTED DATA, with control and bidi characters replaced.
 
 ## 4. Critic calibration
 

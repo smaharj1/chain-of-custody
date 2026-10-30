@@ -284,7 +284,7 @@ def _emit(ctx: _Ctx, sc: Script, cmd: Cmd, cwd: str, depth: int, origin: str, ou
         if low == "popd" or (opts and opts[0] == "-") or any(dyn):
             ctx.cwd_unknown = True
         elif opts and any(c in opts[0] for c in "*?["):
-            # `cd .claude/scripts/gith*`: the shell expands the glob; only a single directory match is a known place to be
+            # `cd <kit>/scripts/gith*`: the shell expands the glob; only a single directory match is a known place to be
             dirs = [d for d in paths.expand_glob(opts[0], cwd, ctx.home) if os.path.isdir(d)]
             if len(dirs) == 1:
                 cwd2 = paths.lexical(dirs[0], cwd, ctx.home)
@@ -342,6 +342,12 @@ def _dispatch(ctx: _Ctx, sc: Script, cmd: Cmd, name_raw: str, args: List[str], d
             ana.problem("opaque-command", "the command name is partly computed at run time", "partial:" + origin)
         base = _lc_base(pure) if pure else ""
         name = base
+    if not name_dynamic and name.startswith("git-") and len(name) > 4:
+        # git-core installs each sub-command as its own binary (libexec/git-core/git-push, git-lfs, ...):
+        # read `git-<sub> args` as `git <sub> args` so every git rule applies; raw keeps the dashed path.
+        args = [name[4:]] + list(args)
+        dyn = [False] + list(dyn)
+        name = "git"
     inv_env = dict(env)
 
     def again(n: str, a: List[str], d: List[bool], extra_env: Optional[Dict[str, str]] = None, wrapper: str = "",

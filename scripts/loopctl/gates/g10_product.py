@@ -18,7 +18,7 @@ This module is the contract around them, not a tool:
   `checked` must be at least 1 (a check that looked at nothing proves nothing, as in G4) and `violations` must be 0. A result for another check, a
   missing line, a count that is not a whole number and any extra success-looking field are failures.
 
-CONTRACT TESTS against `api-contract.md` are DESIGN-ONLY (IMP-1): they need an app-specific runner. They are written up in `.claude/spec/loopctl-extras.md`
+CONTRACT TESTS against `api-contract.md` are DESIGN-ONLY (IMP-1): they need an app-specific runner. They are written up in `${CLAUDE_PLUGIN_ROOT}/spec/loopctl-extras.md`
 and have no key, no code and no test here.
 
 Runs in CI (`g10-product.yml`, which reads its gate state at the base sha) or locally; it refuses to run until the evidence gate has passed. A change

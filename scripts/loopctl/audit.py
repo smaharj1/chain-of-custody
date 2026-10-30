@@ -5,7 +5,7 @@ holds (state, plan, gate results, engineer reports, the ledger, git) and leaves 
 the fact, so `pr_prepare.validate_body` (Phase 3, reused, not copied) still refuses an incomplete block. The PR is the unit of
 audit; squash merges cannot destroy a block that is in the PR body.
 
-    render_body(ctx, st, iid)   -> markdown in the exact shape of `.claude/templates/pr-body.md`
+    render_body(ctx, st, iid)   -> markdown in the exact shape of `${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md`
     check_body(text, ctx, st, iid) -> findings: pr_prepare's textual rules plus cross-checks against state and git
 
 Cross-checks (all `error`): the body's Head sha is the branch tip now; every plan acceptance criterion id appears in the matrix;
@@ -173,7 +173,7 @@ def render_body(ctx: Any, st: Any, iid: str, lane: str = "full") -> str:
     cif = ", ".join(s[:12] for s in f["ci_fix"]) or "NONE"
     waivers = "; ".join("%s until %s: %s" % (common.md_cell(w["approver"], 40), w["expiry"], ", ".join(w["finding_ids"][:4])) for w in f["waivers"]) or "NONE"
     title = common.md_text(item.get("title"), 72)
-    L = ["<!-- kit:pr-body v1. Built by loopctl audit from the run state; `python3 .claude/scripts/pr_prepare.py check` still validates it. -->",
+    L = ["<!-- kit:pr-body v1. Built by loopctl audit from the run state; `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py check` still validates it. -->",
          "# %s" % title, "", "## Summary", "", common.md_text(item.get("intent"), 600), "", "## Audit block", "", "<!-- audit:begin v1 -->",
          "| Field | Value |", "|---|---|",
          "| Feature | %s |" % f["slug"], "| Lane | %s |" % lane, "| Delivery | %s |" % f["delivery"],

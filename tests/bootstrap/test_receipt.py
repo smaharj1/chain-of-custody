@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import bootstrap_receipt as br
 
@@ -21,13 +22,21 @@ CLI = os.path.join(SCRIPTS_DIR, "bootstrap_receipt.py")
 
 
 def mkrepo(test, with_kit=True):
-    """A temp directory with a .claude/ holding copies of the kit scripts the run allowlist names."""
+    """A temp project with a .claude/, and a stub kit outside it whose scripts/ (test.kit) holds the scripts the run allowlist names.
+
+    The receipt runs kit scripts from the kit (kitpaths.SCRIPTS), never from the project; the stub kit stands in for it for the test.
+    """
     root = os.path.realpath(test.tmpdir())
-    os.makedirs(os.path.join(root, ".claude", "scripts"))
+    os.makedirs(os.path.join(root, ".claude"))
+    test.kit = os.path.join(os.path.realpath(test.tmpdir()), "scripts")
+    os.makedirs(test.kit)
     if with_kit:
         for name in ("doctor.py", "ci_lint.py", "bootstrap_detect.py", "bootstrap_receipt.py", "probe_run.py"):
-            with open(os.path.join(root, ".claude", "scripts", name), "w") as fh:
+            with open(os.path.join(test.kit, name), "w") as fh:
                 fh.write("import sys\nprint('stub', sys.argv[1:])\nsys.exit(int(__import__('os').environ.get('KIT_STUB_EXIT', '0')))\n")
+    patcher = mock.patch.object(br.kitpaths, "SCRIPTS", test.kit)
+    patcher.start()
+    test.addCleanup(patcher.stop)
     return root
 
 
@@ -49,12 +58,12 @@ class Format(BaseTestCase):
     def test_init_record_emit_finish_roundtrip(self):
         root = mkrepo(self)
         br.init(root, "greenfield", {"frontend": "Next.js", "database": "PostgreSQL"}, now=T0)
-        br.add_step(root, "detect", "detect the stack", "python3 .claude/scripts/bootstrap_detect.py --json", 0, b"out", "ran", now=T0)
+        br.add_step(root, "detect", "detect the stack", "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_detect.py --json", 0, b"out", "ran", now=T0)
         os.makedirs(os.path.join(root, ".claude", "bootstrap"))
         with open(os.path.join(root, ".claude", "bootstrap", "setup.sh"), "w") as fh:
             fh.write("echo hi\n")
         br.add_emit(root, "setup-script", "human-script", ".claude/bootstrap/setup.sh", now=T0)
-        br.add_step(root, "doctor", "doctor", "python3 .claude/scripts/doctor.py --json", 1, b"x", "ran", "ok", now=T0)
+        br.add_step(root, "doctor", "doctor", "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --json", 1, b"x", "ran", "ok", now=T0)
         br.finish(root, now=T0)
         doc = read_doc(root)
         self.assertEqual(br.validate(doc), [])
@@ -349,23 +358,46 @@ class Run(BaseTestCase):
     def test_runs_an_allowed_kit_script_and_records_exit_and_hash(self):
         root = mkrepo(self)
         br.init(root, "existing", {}, now=T0)
-        e = self.run_argv(root, ["python3", ".claude/scripts/doctor.py", "--json", "--level", "L2"])
+        e = self.run_argv(root, ["python3", self.kit + "/doctor.py", "--json", "--level", "L2"])
         self.assertEqual((e["status"], e["exit_code"], e["source"]), ("ok", 0, "ran"))
         self.assertIn(b"stub", e["_output"])
         self.assertEqual(e["output_sha256"], hashlib.sha256(e["_output"]).hexdigest())
-        self.assertEqual(read_doc(root)["steps"][0]["command"], "python3 .claude/scripts/doctor.py --json --level L2")
+        # the receipt names the kit by its variable, not by anyone's home directory
+        self.assertEqual(read_doc(root)["steps"][0]["command"], "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --json --level L2")
+
+    def test_the_kit_prose_form_of_the_path_is_the_same_script(self):
+        root = mkrepo(self)
+        br.init(root, "existing", {}, now=T0)
+        e = self.run_argv(root, ["python3", "${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py", "--json"])
+        self.assertEqual((e["status"], e["exit_code"]), ("ok", 0))
+        self.assertEqual(read_doc(root)["steps"][0]["command"], "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py --json")
+
+    def test_a_copy_of_a_kit_script_in_the_project_is_never_run(self):
+        root = mkrepo(self)
+        br.init(root, "existing", {}, now=T0)
+        marker = os.path.join(root, "ran")
+        for rel in (os.path.join(".claude", "scripts", "doctor.py"), os.path.join("scripts", "doctor.py")):
+            os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write("open(%r, 'w').close()\n" % marker)
+            for argv in (["python3", rel.replace(os.sep, "/")], ["python3", os.path.join(root, rel)], ["python3", "${CLAUDE_PLUGIN_ROOT}/../" + rel]):
+                with self.subTest(argv):
+                    with self.assertRaises(br.ReceiptError):
+                        self.run_argv(root, argv)
+        self.assertFalse(os.path.exists(marker))
+        self.assertEqual(read_doc(root)["steps"], [])
 
     def test_exit_codes_outside_the_scripts_ok_set_are_failures(self):
         root = mkrepo(self)
         br.init(root, "existing", {}, now=T0)
         env = plain_env(root, {"KIT_STUB_EXIT": "1"})
-        doctor = self.run_argv(root, ["python3", ".claude/scripts/doctor.py", "--json"], env)   # exit 1 = "errors present": an answer, not a failure
-        lint = self.run_argv(root, ["python3", ".claude/scripts/ci_lint.py"], env)
-        detect = self.run_argv(root, ["python3", ".claude/scripts/bootstrap_detect.py"], env)
+        doctor = self.run_argv(root, ["python3", self.kit + "/doctor.py", "--json"], env)   # exit 1 = "errors present": an answer, not a failure
+        lint = self.run_argv(root, ["python3", self.kit + "/ci_lint.py"], env)
+        detect = self.run_argv(root, ["python3", self.kit + "/bootstrap_detect.py"], env)
         self.assertEqual((doctor["exit_code"], doctor["status"]), (1, "ok"))
         self.assertEqual((lint["exit_code"], lint["status"]), (1, "ok"))
         self.assertEqual((detect["exit_code"], detect["status"]), (1, "failed"))
-        self.assertEqual(br.ALLOWED[".claude/scripts/guards/wiring.py"].ok_codes, (0,))
+        self.assertEqual(br.ALLOWED["guards/wiring.py"].ok_codes, (0,))
 
     def test_refused_commands(self):
         root = mkrepo(self)
@@ -376,25 +408,29 @@ class Run(BaseTestCase):
             ["sh", "-c", "id"],
             ["python3", "-c", "print(1)"],
             ["python3", "script.py"],
-            ["python3", ".claude/scripts/verify.py"],
-            ["python3", ".claude/scripts/doctor.py", "--live"],
-            ["python3", ".claude/scripts/doctor.py", "--home", "/tmp"],
-            ["python3", ".claude/scripts/doctor.py", "--repo", "/etc"],
-            ["python3", ".claude/scripts/doctor.py", "--repo", ".."],
-            ["python3", ".claude/scripts/doctor.py", "--gh-fixture", "/etc/passwd"],
-            ["python3", ".claude/scripts/doctor.py", "rm"],
-            ["python3", ".claude/scripts/doctor.py", "--json;id"],
-            ["python3", ".claude/scripts/doctor.py", "--json\n--live"],
-            ["python3", ".claude/scripts/ci_lint.py", "/etc"],
-            ["python3", ".claude/scripts/ci_lint.py", "../../etc"],
-            ["python3", ".claude/scripts/probe_run.py", "--go", "abc", "--image", "x"],
-            ["python3", ".claude/scripts/probe_run.py", "--docker", "evil"],
-            ["python3", ".claude/scripts/../scripts/doctor.py"],
+            ["python3", self.kit + "/verify.py"],
+            ["python3", self.kit + "/doctor.py", "--live"],
+            ["python3", self.kit + "/doctor.py", "--home", "/tmp"],
+            ["python3", self.kit + "/doctor.py", "--repo", "/etc"],
+            ["python3", self.kit + "/doctor.py", "--repo", ".."],
+            ["python3", self.kit + "/doctor.py", "--gh-fixture", "/etc/passwd"],
+            ["python3", self.kit + "/doctor.py", "rm"],
+            ["python3", self.kit + "/doctor.py", "--json;id"],
+            ["python3", self.kit + "/doctor.py", "--json\n--live"],
+            ["python3", self.kit + "/ci_lint.py", "/etc"],
+            ["python3", self.kit + "/ci_lint.py", "../../etc"],
+            ["python3", self.kit + "/probe_run.py", "--go", "abc", "--image", "x"],
+            ["python3", self.kit + "/probe_run.py", "--docker", "evil"],
+            ["python3", self.kit + "/../scripts/doctor.py"],
             ["python3", "./.claude/scripts/doctor.py"],
             ["python3", "/abs/.claude/scripts/doctor.py"],
+            ["python3", ".claude/scripts/doctor.py"],
+            ["python3", self.kit + "//doctor.py"],
+            ["python3", "${CLAUDE_PLUGIN_ROOT}/scripts/../scripts/doctor.py"],
+            ["python3", "$CLAUDE_PLUGIN_ROOT/scripts/doctor.py"],
             ["python3"],
             [],
-            ["python3", ".claude/scripts/bootstrap_receipt.py", "init", "--force"],
+            ["python3", self.kit + "/bootstrap_receipt.py", "init", "--force"],
         ]
         for argv in bad:
             with self.subTest(argv=argv):
@@ -408,26 +444,26 @@ class Run(BaseTestCase):
         outside = os.path.join(self.tmpdir(), "evil.py")
         with open(outside, "w") as fh:
             fh.write("print('pwned')\n")
-        os.unlink(os.path.join(root, ".claude", "scripts", "doctor.py"))
-        os.symlink(outside, os.path.join(root, ".claude", "scripts", "doctor.py"))
+        os.unlink(os.path.join(self.kit, "doctor.py"))
+        os.symlink(outside, os.path.join(self.kit, "doctor.py"))
         with self.assertRaises(br.ReceiptError):
-            self.run_argv(root, ["python3", ".claude/scripts/doctor.py", "--json"])
+            self.run_argv(root, ["python3", self.kit + "/doctor.py", "--json"])
 
     def test_environment_is_scrubbed(self):
         root = mkrepo(self)
         br.init(root, "existing", {}, now=T0)
-        with open(os.path.join(root, ".claude", "scripts", "ci_lint.py"), "w") as fh:
+        with open(os.path.join(self.kit, "ci_lint.py"), "w") as fh:
             fh.write("import os\nprint(sorted(k for k in os.environ if k.startswith(('AWS','GH_','GITHUB','ANTHROPIC','SECRET','KIT_','CLAUDE'))))\n")
         env = plain_env(root, {"AWS_SECRET_ACCESS_KEY": "x", "GH_TOKEN": "y", "ANTHROPIC_API_KEY": "z", "SECRET_THING": "q", "KIT_CLAUDE_BIN": "/fake", "CLAUDECODE": "1"})
-        e = self.run_argv(root, ["python3", ".claude/scripts/ci_lint.py"], env)
+        e = self.run_argv(root, ["python3", self.kit + "/ci_lint.py"], env)
         self.assertEqual(e["_output"].decode().strip(), "['KIT_CLAUDE_BIN']")
 
     def test_a_timeout_is_a_failed_step(self):
         root = mkrepo(self)
         br.init(root, "existing", {}, now=T0)
-        with open(os.path.join(root, ".claude", "scripts", "ci_lint.py"), "w") as fh:
+        with open(os.path.join(self.kit, "ci_lint.py"), "w") as fh:
             fh.write("import time\ntime.sleep(30)\n")
-        e = br.run_and_record(root, "r", "slow", ["python3", ".claude/scripts/ci_lint.py"], plain_env(root), timeout=0.5)
+        e = br.run_and_record(root, "r", "slow", ["python3", self.kit + "/ci_lint.py"], plain_env(root), timeout=0.5)
         self.assertEqual((e["status"], e["exit_code"]), ("failed", 124))
 
     def test_cli_run_and_the_repo_root_is_the_working_directory(self):
@@ -437,7 +473,7 @@ class Run(BaseTestCase):
         p = subprocess.run([sys.executable, CLI, "--repo", root, "init", "--mode", "existing", "--stack", "backend=FastAPI"], env=plain_env(root),
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(p.returncode, 0, p.stderr)
-        p = subprocess.run([sys.executable, CLI, "--repo", root, "run", "--id", "detect", "--title", "d", "--", "python3", ".claude/scripts/bootstrap_detect.py", "--json"],
+        p = subprocess.run([sys.executable, CLI, "--repo", root, "run", "--id", "detect", "--title", "d", "--", "python3", os.path.join(SCRIPTS_DIR, "bootstrap_detect.py"), "--json"],
                            env=plain_env(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=sub)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("step detect ok", p.stdout)

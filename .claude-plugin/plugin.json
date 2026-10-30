@@ -1,6 +1,6 @@
 {
   "name": "chain-of-custody",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0",
   "description": "Make Claude Code work like a small software team: it plans your app, designs each feature, writes the code, reviews its own work, and shows you each piece running.",
   "author": {
     "name": "Sujil Maharjan"

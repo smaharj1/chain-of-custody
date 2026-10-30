@@ -33,7 +33,7 @@ Importable API (loopctl wraps these):
     parse_test_counts(text) -> (collected or None, skipped or None)
     exit_code(result, apply_gate=False) -> 0 | 1 | 2
 
-CLI:  python3 .claude/scripts/verify.py [--repo DIR] [--base REV] [--item ID] [--items-file PATH]
+CLI:  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/verify.py [--repo DIR] [--base REV] [--item ID] [--items-file PATH]
           [--route /path]... [--only build,lint,typecheck,item-tests,tests,smoke] [--keep-going]
           [--attempt N] [--env NAME=VALUE]... [--log-dir DIR | --no-log] [--apply-gate]
           [--allow-head-config] [--json]
@@ -155,9 +155,9 @@ def _check_env_name(name: str, where: str) -> None:
 
 
 _GIT_PINS = ["-c", "core.fsmonitor=false"]
-# Files that define or run the gate. A change to one of them in the branch is a guardrail change (H6): flagged, not blocked.
-_KIT_SURFACE = (".claude/scripts", ".claude/hooks", ".claude/settings.json", ".claude/settings.local.json", ".claude/loop.config.md",
-                ".github/workflows")
+# Files in the project that configure or run the gate (the kit itself lives in the plugin, outside the repository). A change to one
+# of them in the branch is a guardrail change (H6): flagged, not blocked.
+_KIT_SURFACE = (".claude/settings.json", ".claude/settings.local.json", ".claude/loop.config.md", ".claude/agents", ".github/workflows")
 
 
 def _is_clean(top: str) -> bool:

@@ -1,19 +1,19 @@
-"""kitmanifest: the shape of `KIT_MANIFEST` and the rules for who owns which installed file (Phase 9; IMP-3, report CO-33).
+"""kitmanifest: recognise the files of an old copy install, so migrate.py can move a project to the plugin (IMP-3, report CO-33).
 
-A copy install is `.claude/` (plus, optionally, the root adapters and the docs the kit's prose points at) copied into a project.
-`tools/build-dist.py` writes `.claude/KIT_MANIFEST`: one entry per shipped file with its SHA-256 and its class. `migrate.py` reads
-the manifest of the kit being installed, the manifest of the version already installed (derived from a shipped base archive such
-as `.claude/migrate/v1.2.0.tar`), and the project's files, and decides per file what to do. This module is the one place that
-knows the format and the classes, so the builder and the migrator cannot disagree.
+Before 2.0 the kit was installed by copying `.claude/` (and, in v1, the root adapters `AGENTS.md`, `.cursor/rules/`, `skills/`) into
+a project. The kit is a plugin now and a project's `.claude/` holds only the project's own files. To take the old copy out without
+losing anything the person changed, migrate.py needs the SHA-256 of every file the old version shipped:
 
-Classes (who may change the installed file):
+  * a v2 copy install carries them in `.claude/KIT_MANIFEST` (written by the old build, schema `kit-manifest/1`);
+  * a v1.x install has none, so the kit ships the v1.2.0 tree (`migrate/v1.2.0.tar`, `git archive v1.2.0`) and the hashes come from it.
 
-    kit      the kit owns it. An update replaces it when the project has not touched it, and three-way merges it when the project has.
-    seed     the project owns it once installed (CLAUDE.md, loop.config.md, the domain primers). Added when absent, replaced only when
-             the project's copy is byte-identical to the base (it was never filled in), otherwise left alone.
-    frozen   a guardrail file (H6): `.claude/settings.json` and `settings.local.json`. Added when absent, never changed.
+A file whose content still has the old hash is the kit's and is removed; any other content is the person's edit. The class says what
+the file was for:
 
-`KIT_VERSION` and `KIT_MANIFEST` are bookkeeping: they are not listed in the manifest and migrate.py writes them last.
+    kit      the kit's own file (agents, scripts, skills, hooks, kit context, spec, templates, the adapters)
+    seed     the project's from the start (CLAUDE.md, loop.config.md, the domain primers, rules/): always kept
+    frozen   `.claude/settings.json` and `settings.local.json`: kept; migrate removes only the kit's hook entries
+
 Standard library only, Python 3.9.
 """
 from __future__ import annotations
@@ -26,9 +26,10 @@ import tarfile
 from typing import Any, Dict, Optional
 
 __all__ = ["SCHEMA", "MANIFEST_REL", "VERSION_REL", "CLASS_KIT", "CLASS_SEED", "CLASS_FROZEN", "PRIMERS", "classify", "sha256_bytes",
-           "build_manifest", "dumps", "loads", "parse_version", "read_tar_tree", "tree_manifest"]
+           "build_manifest", "dumps", "loads", "parse_version", "read_tar_tree"]
 
 SCHEMA = "kit-manifest/1"
+# where an old copy install kept its bookkeeping, inside the project
 MANIFEST_REL = ".claude/KIT_MANIFEST"
 VERSION_REL = ".claude/KIT_VERSION"
 BOOKKEEPING = (MANIFEST_REL, VERSION_REL)
@@ -37,7 +38,7 @@ CLASS_KIT = "kit"
 CLASS_SEED = "seed"
 CLASS_FROZEN = "frozen"
 
-# Project primers: the kit ships them as templates, the Architect and the Tech Lead derive them from the project's code.
+# Project primers: the kit ships them as templates (seed/.claude/context/), the Architect and the Tech Lead derive them from the code.
 PRIMERS = ("admin-app", "app", "architect", "backend", "database", "infra", "local-dev", "shared-frontend")
 
 _SEED_EXACT = {".claude/CLAUDE.md", ".claude/loop.config.md"}
@@ -45,7 +46,7 @@ _FROZEN_EXACT = {".claude/settings.json", ".claude/settings.local.json"}
 
 
 def classify(rel: str) -> str:
-    """The class of an install-relative path (forward slashes)."""
+    """The class of a project-relative path of a copy install (forward slashes)."""
     if rel in _FROZEN_EXACT:
         return CLASS_FROZEN
     if rel in _SEED_EXACT or rel.startswith(".claude/rules/"):
@@ -61,7 +62,7 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def build_manifest(version: str, files: Dict[str, bytes]) -> Dict[str, Any]:
-    """The manifest dict for `files` (install-relative path -> content). Bookkeeping files are left out."""
+    """The manifest dict for `files` (project-relative path -> content). Bookkeeping files are left out."""
     entries = {}   # type: Dict[str, Dict[str, str]]
     for rel in sorted(files):
         if rel in BOOKKEEPING:
@@ -100,7 +101,7 @@ def parse_version(text: str) -> Optional[str]:
 
 def read_tar_tree(path_or_bytes: Any) -> Dict[str, bytes]:
     """The regular files of a tar archive as {path: content}. Refuses absolute paths, `..` and links, so a hostile archive cannot
-    name a file outside the tree. File modes are not kept (migrate.py copies the mode from the live source tree)."""
+    name a file outside the tree."""
     fh = io.BytesIO(path_or_bytes) if isinstance(path_or_bytes, (bytes, bytearray)) else open(path_or_bytes, "rb")
     out = {}   # type: Dict[str, bytes]
     with fh:
@@ -114,8 +115,3 @@ def read_tar_tree(path_or_bytes: Any) -> Dict[str, bytes]:
                 f = tf.extractfile(m)
                 out[name] = f.read() if f is not None else b""
     return out
-
-
-def tree_manifest(version: str, tree: Dict[str, bytes]) -> Dict[str, Any]:
-    """Manifest of an archive's tree, for the base version. Same shape as the shipped one."""
-    return build_manifest(version, tree)

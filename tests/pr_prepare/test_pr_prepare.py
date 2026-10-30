@@ -13,7 +13,7 @@ from . import FeatureCase, GOOD_REPORT, good_body
 from .. import REPO_ROOT
 from ..helpers import inproc
 
-SCRIPT = os.path.join(REPO_ROOT, ".claude", "scripts", "pr_prepare.py")
+SCRIPT = os.path.join(REPO_ROOT, "scripts", "pr_prepare.py")
 
 
 def ids(res, severity=None):
@@ -107,7 +107,7 @@ class BodyText(unittest.TestCase):
         self.assertIn("audit.section-missing", self.errors(self.body().replace("## Notes", "## Other")))
 
     def test_the_template_lists_exactly_the_fields_in_the_code_in_order(self):
-        with open(os.path.join(REPO_ROOT, ".claude", "templates", "pr-body.md")) as fh:
+        with open(os.path.join(REPO_ROOT, "templates", "pr-body.md")) as fh:
             text = fh.read()
         parsed = pr_prepare.parse_body(text)
         self.assertEqual(list(parsed.fields), [f.name for f in pr_prepare.FIELDS])
@@ -233,7 +233,8 @@ class Checks(FeatureCase):
         self.assertEqual(res["schema"], "pr_prepare.v1")
         self.assertEqual((res["branch"], res["base"], res["delivery"], res["ahead"]), ("feat/x", "main", "draft-pr", 1))
         cmds = res["commands"]
-        self.assertTrue(cmds[0].startswith("# Run these yourself"))
+        self.assertTrue(cmds[0].startswith("# HUMAN STEP: run these yourself"))
+        self.assertEqual(res["commands_by"], "human")
         self.assertIn("git push --set-upstream origin feat/x", cmds)
         create = [c for c in cmds if c.startswith("gh pr create")][0]
         self.assertIn("--draft", create)
@@ -269,6 +270,93 @@ class Checks(FeatureCase):
         text = "\n".join(self.check(r, mode="prepare")["commands"])
         self.assertIn("git push --set-upstream origin feat/x", text)
         self.assertNotIn("gh pr", text)
+
+    def conductor_tier(self, delivery, autonomy="branch+commit+push", **kw):
+        r = self.make_feature({"delivery": delivery, "git_autonomy": autonomy})
+        self.ready(r, delivery=delivery)
+        res = self.check(r, mode="prepare", **kw)
+        self.assertTrue(res["ok"], res["findings"])
+        self.assertEqual(res["git_autonomy"], autonomy)
+        return r, res
+
+    def test_the_push_tier_with_draft_pr_prints_conductor_steps(self):
+        r, res = self.conductor_tier("draft-pr")
+        cmds = res["commands"]
+        self.assertEqual(res["commands_by"], "conductor")
+        self.assertTrue(cmds[0].startswith("# CONDUCTOR STEPS (git_autonomy: branch+commit+push)"), cmds[0])
+        self.assertIn("pr_prepare.py ran none of them", cmds[0])
+        self.assertIn("git push --set-upstream origin feat/x", cmds)
+        create = [c for c in cmds if c.startswith("gh pr create")]
+        self.assertEqual(len(create), 1)
+        self.assertIn("--draft --base main --head feat/x", create[0])
+        self.assertIn(os.path.join(r.path, ".claude", "pr", "x.md"), create[0])
+        text = "\n".join(cmds)
+        self.assertNotIn("HUMAN STEP", text)
+        self.assertIn("never run `gh pr merge`, never push main", text)
+        for forbidden in ("--force", "-f ", "--no-verify", "--delete", " +refs", "gh pr merge --", "gh pr ready"):
+            self.assertNotIn(forbidden, text)
+
+    def test_the_push_tier_with_push_branch_prints_only_the_push_as_a_conductor_step(self):
+        r, res = self.conductor_tier("push-branch")
+        text = "\n".join(res["commands"])
+        self.assertEqual(res["commands_by"], "conductor")
+        self.assertTrue(res["commands"][0].startswith("# CONDUCTOR STEPS"))
+        self.assertIn("git push --set-upstream origin feat/x", res["commands"])
+        self.assertEqual([c for c in res["commands"] if c.startswith("gh ")], [])
+        self.assertNotIn("HUMAN STEP", text)
+
+    def test_a_delivery_override_never_widens_what_the_base_config_lets_the_conductor_run(self):
+        # base delivery push-branch: the guard denies `gh pr create`, so --delivery draft-pr prints it as a human step
+        r = self.make_feature({"delivery": "push-branch", "git_autonomy": "branch+commit+push"})
+        self.ready(r, delivery="draft-pr")
+        res = self.check(r, mode="prepare", delivery="draft-pr")
+        self.assertTrue(res["ok"], res["findings"])
+        self.assertEqual((res["delivery"], res["base_delivery"]), ("draft-pr", "push-branch"))
+        cmds = res["commands"]
+        self.assertTrue(cmds[0].startswith("# CONDUCTOR STEPS"), cmds[0])
+        self.assertIn("git push --set-upstream origin feat/x", cmds)
+        create = [i for i, c in enumerate(cmds) if c.startswith("gh pr create")]
+        self.assertEqual(len(create), 1)
+        self.assertTrue(cmds[create[0] - 1].startswith("# HUMAN STEP: delivery at the base sha is push-branch"), cmds[create[0] - 1])
+        # below the push tier at the base, an override to a pushing delivery is a human step from the first line
+        r = self.make_feature({"delivery": "local", "git_autonomy": "branch+commit+push"})
+        self.ready(r, delivery="draft-pr")
+        res = self.check(r, mode="prepare", delivery="draft-pr")
+        self.assertTrue(res["ok"], res["findings"])
+        self.assertEqual(res["commands_by"], "human")
+        self.assertTrue(res["commands"][0].startswith("# HUMAN STEP: run these yourself"), res["commands"][0])
+        self.assertNotIn("CONDUCTOR", "\n".join(res["commands"]))
+
+    def test_the_push_tier_leaves_editing_an_existing_pr_to_a_human(self):
+        r = self.make_feature({"git_autonomy": "branch+commit+push"})
+        self.ready(r)
+        r.git("update-ref", "refs/remotes/origin/feat/x", r.head())
+        res = self.check(r, mode="prepare", pr_number=12)
+        self.assertTrue(res["ok"], res["findings"])
+        cmds = res["commands"]
+        self.assertTrue(cmds[0].startswith("# CONDUCTOR STEPS"))
+        self.assertIn("git push origin feat/x", cmds)
+        i = cmds.index("# HUMAN STEP: the PR already exists; a person updates it:")
+        self.assertTrue(cmds[i + 1].startswith("gh pr edit 12 "))
+        self.assertNotIn("gh pr create", "\n".join(cmds))
+
+    def test_the_push_tier_with_local_delivery_is_still_a_human_merge(self):
+        r, res = self.conductor_tier("local")
+        self.assertEqual(res["commands_by"], "human")
+        self.assertTrue(res["commands"][0].startswith("# HUMAN STEP: run these yourself"))
+        text = "\n".join(res["commands"])
+        self.assertIn("git merge --no-ff feat/x", text)
+        self.assertNotIn("git push", text)
+
+    def test_below_the_push_tier_every_delivery_is_a_human_step(self):
+        for autonomy in ("none", "branch", "branch+commit"):
+            for delivery in ("push-branch", "draft-pr"):
+                with self.subTest(autonomy=autonomy, delivery=delivery):
+                    r, res = self.conductor_tier(delivery, autonomy)
+                    self.assertEqual(res["commands_by"], "human")
+                    self.assertTrue(res["commands"][0].startswith("# HUMAN STEP: run these yourself"), res["commands"][0])
+                    self.assertNotIn("CONDUCTOR", "\n".join(res["commands"]))
+                    self.assertIn("git push --set-upstream origin feat/x", res["commands"])
 
     def test_delivery_override_must_match_the_body(self):
         r = self.make_feature()
@@ -342,7 +430,10 @@ class Checks(FeatureCase):
     def test_missing_body_and_missing_template_markers(self):
         r = self.make_feature()
         self.write_verify(r)
-        self.assertIn("audit.no-body", ids(self.check(r), "error"))
+        res = self.check(r)
+        self.assertIn("audit.no-body", ids(res, "error"))
+        msg = [x["message"] for x in res["findings"] if x["id"] == "audit.no-body"][0]
+        self.assertIn("python3 %s init" % os.path.join(REPO_ROOT, "scripts", "pr_prepare.py"), msg)  # the kit's copy, by absolute path
 
     def test_wip_commit_without_trailer_warns(self):
         r = self.make_feature()
@@ -656,6 +747,15 @@ class Cli(FeatureCase):
         text = self.run_cli("prepare", "--repo", r.path)
         self.assertIn("READY", text.stdout)
         self.assertIn("git push --set-upstream origin feat/x", text.stdout)
+
+    def test_the_cli_shows_who_runs_the_steps(self):
+        r = self.make_feature({"git_autonomy": "branch+commit+push"})
+        self.ready(r)
+        text = self.run_cli("prepare", "--repo", r.path)
+        self.assertEqual(text.returncode, 0, text.stdout + text.stderr)
+        self.assertIn("# CONDUCTOR STEPS (git_autonomy: branch+commit+push)", text.stdout)
+        self.assertIn("gh pr create --draft", text.stdout)
+        self.assertEqual(json.loads(self.run_cli("prepare", "--repo", r.path, "--json").stdout)["commands_by"], "conductor")
 
     def test_usage_and_not_a_repo(self):
         self.assertEqual(self.run_cli(real=True).returncode, 2)             # the one real process: a script on the command line

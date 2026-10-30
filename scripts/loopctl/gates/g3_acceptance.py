@@ -8,7 +8,7 @@ Visible tests are written by the separate acceptance-author in a fresh context a
   (Python by `ast`: an error; other languages by regex: a low-confidence warning);
 * the HELD-OUT tests, hidden from the engineer, also pass. They live in `<git-common-dir>/loopctl/heldout/<item>/` and are run only
   under `runner: driver` (the child's sandbox denies reading that directory). Under `sequential` no per-subagent sandbox is documented
-  (P42), so held-out tests are CI-only (the `heldout` job, `.claude/templates/github/workflows/heldout.yml`) and this gate says so.
+  (P42), so held-out tests are CI-only (the `heldout` job, `${CLAUDE_PLUGIN_ROOT}/templates/github/workflows/heldout.yml`) and this gate says so.
   If the plan declares held-out tests for the item (`ext.g3.heldout: true`), a driver run without them is a failure, not a skip;
 * a `characterization` item (a refactor) must be green on the base as well (G2 proved it) and is flagged to the human.
 

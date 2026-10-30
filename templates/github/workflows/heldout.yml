@@ -10,8 +10,9 @@
 #     contents: read, so it passes ci_lint's "no secrets in a pull_request job" rule;
 #   * the restore is the last step before the tests run, and nothing from the pull request runs before it (no install scripts: use
 #     --ignore-scripts / a frozen lockfile in the toolchain step, placed BEFORE the restore if you must install);
-#   * the kit that runs the tests is extracted from the BASE sha, and so are the config and the plan: a pull request cannot change what is
-#     run or which items need held-out tests (CO-11);
+#   * the kit that runs the tests is fetched from its own repository at the release this file pins (KIT_REF, checked against KIT_SHA),
+#     never from the pull request, and the config and the plan are read at the BASE sha: a pull request cannot change what is run or
+#     which items need held-out tests (CO-11);
 #   * the output is annotations with criterion ids and counts only. The bot that wrote the code has no `actions: read`, so it sees the check
 #     result and the failing ids, never the log and never what a test asserts (RC-6). The harness's own output is parsed and dropped.
 #
@@ -19,7 +20,7 @@
 # counts, because the workflow that runs on a pull request is the pull request's own copy.
 #
 # Needs: loop.config at the base with `heldout_cmd` (and `runner`), plan items with `ext.g3.heldout: true`, and the store populated
-# (heldout-sync.yml). The first pull request that installs the kit cannot pass this job; a human merges that one.
+# (heldout-sync.yml). The first pull request that adds loop.config cannot pass this job; a human merges that one.
 # Actions are referenced by tag; pin each to a commit SHA before you rely on this (ci_lint warns).
 name: heldout
 
@@ -45,17 +46,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Take the kit from the base sha
+      - name: Fetch the kit at its pinned release (never from the pull request)
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
         run: |
           set -eu
-          if ! git cat-file -e "$BASE_SHA:.claude/scripts/loopctl/gates/_ci.py" 2>/dev/null; then
-            echo "::error::The base branch has no loopctl gates. A human merges the PR that installs the kit; heldout protects the PRs after it."
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
             exit 1
           fi
-          mkdir -p "$RUNNER_TEMP/kit"
-          git archive "$BASE_SHA" .claude/scripts | tar -x -C "$RUNNER_TEMP/kit"
 
       # TOOLCHAIN (project-specific; pick yours and pin it to the same versions as .tool-versions / .nvmrc). Install BEFORE the restore below,
       # with install scripts off, so no code from the pull request runs while the held-out tests are on disk:
@@ -77,8 +85,12 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           HELDOUT_DIR: ${{ runner.temp }}/heldout
-          KIT_SCRIPTS: ${{ runner.temp }}/kit/.claude/scripts
+          KIT_SCRIPTS: ${{ runner.temp }}/kit/scripts
         run: |
           set -eu
+          if ! git cat-file -e "$BASE_SHA:.claude/loop.config.md" 2>/dev/null; then
+            echo "::error::The base branch has no .claude/loop.config.md. A human merges the PR that adds it; heldout protects the PRs after it."
+            exit 1
+          fi
           PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci heldout --repo "$GITHUB_WORKSPACE" --base "$BASE_SHA" \
             --head-ref "$HEAD_REF" --dir "$HELDOUT_DIR"

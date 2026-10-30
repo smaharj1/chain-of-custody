@@ -15,6 +15,8 @@ import re
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from kitlib import kitpaths
+
 from . import safeio
 from .model import (Context, Result, check, failed, gatherer, passed, skipped, unknown, ERROR, WARN)
 
@@ -335,7 +337,7 @@ def check_bypass(ctx: Context) -> List[Result]:
     return out
 
 
-_SANDBOX_REM = "merge .claude/templates/security/sandbox.settings.json into your settings (report §7.2)"
+_SANDBOX_REM = "merge %s into your settings (report §7.2)" % kitpaths.kit("templates", "security", "sandbox.settings.json")
 
 
 @check("sandbox.enabled", "sandbox")
@@ -436,11 +438,11 @@ def check_sandbox_paths(ctx: Context) -> List[Result]:
         miss_w = [e for e in h6 if e != ".git/loopctl/sessions" and not _has_entry(e, have)]     # the registry is the next row's
     if not rd and not wr:
         out = [unknown("sandbox.deny-paths", "no sandbox denyRead/denyWrite lists found",
-                       "merge .claude/templates/security/sandbox.settings.json; the key names follow report §7.2 and must be checked against your Claude Code version (V19)")]
+                       "merge %s; the key names" % kitpaths.kit("templates", "security", "sandbox.settings.json") + " follow report §7.2 and must be checked against your Claude Code version (V19)")]
     elif miss_r or miss_w:
         # a guardrail path the sandbox lets a Bash command write is a hole in H6; a missing credential directory is the older, softer finding
         out = [failed("sandbox.deny-paths", "sandbox lists miss: denyRead %s; denyWrite %s" % (miss_r or "ok", (", ".join(miss_w[:8]) + (" (+%d more)" % (len(miss_w) - 8) if len(miss_w) > 8 else "")) if miss_w else "ok"),
-                      "merge .claude/templates/security/sandbox.settings.json (denyWrite is the whole H6 write set, D1)", severity=ERROR if miss_w else WARN)]
+                      "merge %s (denyWrite is the whole H6 write set, D1)" % kitpaths.kit("templates", "security", "sandbox.settings.json"), severity=ERROR if miss_w else WARN)]
     else:
         out = [passed("sandbox.deny-paths", "sandbox denyRead/denyWrite cover the credential directories and the whole H6 write set (hooks, scripts, agents, skills, settings, CI, ...)")]
     out.extend(_registry_row(ctx, wr))
@@ -461,7 +463,7 @@ def _git_pointer_row(ctx: Context, wr: List[str]) -> List[Result]:
         return [passed("sandbox.git-pointer", "the sandbox denies writes to the worktree's `.git` pointer file")]
     return [failed("sandbox.git-pointer",
                    "`.git` is a pointer file in this linked worktree and the sandbox does not deny writes to it: a sandboxed command could rewrite it to point the hooks at a git directory of its own (and its own session registry)",
-                   "add \"%s\" to sandbox.filesystem.denyWrite in .claude/settings.local.json (`python3 .claude/scripts/guards/wiring.py --sandbox-snippet` prints it)" % dotgit,
+                   "add \"%s\" to sandbox.filesystem.denyWrite in .claude/settings.local.json (`%s` prints it)" % (dotgit, kitpaths.script_cmd("guards/wiring.py", "--sandbox-snippet")),
                    severity=WARN)]
 
 
@@ -498,7 +500,7 @@ def _registry_row(ctx: Context, wr: List[str]) -> List[Result]:
     return [failed("sandbox.registry-path",
                    "the sandbox does not deny writes to the session registry %s: a sandboxed command could register itself as the conductor (%s)" % (
                        want_abs, why or "level unknown"),
-                   "add %s to sandbox.filesystem.denyWrite in .claude/settings.local.json (`python3 .claude/scripts/guards/wiring.py --sandbox-snippet` prints the lines for this checkout)" % line,
+                   "add %s to sandbox.filesystem.denyWrite in .claude/settings.local.json (`%s` prints the lines for this checkout)" % (line, kitpaths.script_cmd("guards/wiring.py", "--sandbox-snippet")),
                    severity=ERROR if strict else WARN)]
 
 
@@ -584,7 +586,7 @@ def check_mcp_deny(ctx: Context) -> Result:
     miss = [n for n in need if n not in deny]
     if miss:
         return failed("mcp.deny-rules", "permissions.deny lacks %s" % ", ".join(miss),
-                      "add them (see .claude/templates/security/mcp-lockdown.settings.json); a typo guard, not a boundary", severity=WARN)
+                      "add them (see %s); a typo guard" % kitpaths.kit("templates", "security", "mcp-lockdown.settings.json") + ", not a boundary", severity=WARN)
     return passed("mcp.deny-rules", "permissions.deny covers mcp__*__run_script and mcp__*deploy*")
 
 
@@ -602,9 +604,34 @@ def check_managed(ctx: Context) -> Result:
             problems.append("allowManagedHooksOnly is not true")
         if dig(d, "permissions.disableBypassPermissionsMode") != "disable":
             problems.append("permissions.disableBypassPermissionsMode is not \"disable\"")
+        if d.get("allowManagedHooksOnly") is True:
+            # allowManagedHooksOnly turns off user, project AND plugin hooks: the managed file must carry the blocking guards itself,
+            # or no guard runs while the SessionStart canary still looks healthy
+            try:
+                scripts = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if scripts not in sys.path:
+                    sys.path.insert(0, scripts)
+                from guards import wiring
+                need = [(e["event"], e["id"]) for e in wiring.load_manifest()["entries"] if e.get("blocking")]
+                cmds = wiring.hook_commands(d)
+            except Exception:       # the guard package does not import: ask for the PreToolUse guard at least
+                need, cmds = [("PreToolUse", "")], []
+                hooks = d.get("hooks") if isinstance(d.get("hooks"), dict) else {}
+                for g in hooks.get("PreToolUse") or []:
+                    for h in (g.get("hooks") or []) if isinstance(g, dict) else []:
+                        if isinstance(h, dict) and isinstance(h.get("command"), str):
+                            cmds.append(("PreToolUse", h["command"]))
+            miss = [i or ev for ev, i in need
+                    if not any(e == ev and "guards/run.py" in c and (not i or re.search(r"--id %s\b" % re.escape(i), c)) for e, c in cmds)]
+            if miss:
+                return failed("managed.settings", "managed settings at %s set allowManagedHooksOnly, which turns off the plugin's hooks, but do not "
+                              "wire the guards %s: no guard runs" % (managed[0]["path"], ", ".join(miss)),
+                              "copy the hooks block of %s into the managed file, with /opt/chain-of-custody replaced by a copy of the kit "
+                              "folder that the agent's user cannot write" % kitpaths.kit("templates", "security", "managed-settings.example.json"),
+                              severity=ERROR)
         if problems:
             return failed("managed.settings", "managed settings at %s: %s" % (managed[0]["path"], "; ".join(problems)),
-                          "see .claude/templates/security/managed-settings.example.json", severity=WARN)
+                          "see %s" % kitpaths.kit("templates", "security", "managed-settings.example.json"), severity=WARN)
         return passed("managed.settings", "managed settings found with allowManagedHooksOnly and disableBypassPermissionsMode")
     if iso in ("devcontainer", "container"):
         return passed("managed.settings", "no managed settings file; agent_isolation: %s (credential-free container attested)" % iso)
@@ -612,7 +639,7 @@ def check_managed(ctx: Context) -> Result:
     if when:
         return passed("managed.settings", "managed_settings_verified: %s (attested; not visible to this OS user)" % when)
     return unknown("managed.settings", "no managed settings visible and no container attested (needed at L3+)",
-                   "install .claude/templates/security/managed-settings.example.json as the OS-level managed settings for the user that runs the loop, then set managed_settings_verified; or run in a credential-free container (agent_isolation)",
+                   "install %s as the OS-level" % kitpaths.kit("templates", "security", "managed-settings.example.json") + " managed settings for the user that runs the loop, then set managed_settings_verified; or run in a credential-free container (agent_isolation)",
                    severity=WARN)
 
 

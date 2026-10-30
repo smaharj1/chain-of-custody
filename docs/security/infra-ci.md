@@ -17,17 +17,17 @@ The preview plan is a preview. It is never applied. The plan that is applied is 
 
 | Path | What it is |
 |---|---|
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/workflows/infra-check.yml`, `infra-plan.yml`, `infra-drift.yml` | the three workflows that never apply |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/workflows/infra-apply.environment.yml` | apply behind an Environment with required reviewers (public repositories, or Enterprise for private ones) |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/workflows/infra-apply.dispatch.yml` | apply by a human-only `workflow_dispatch`, for plans without Environment reviewers (the doctor calls this "apply gate = human dispatch" and caps IaC projects at L3) |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/oidc/` | trust policies for the post-merge plan role, next to the four in `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/` |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/iam/state-lock.policy.json` | the lock-only permissions the post-merge plan role adds to `${CLAUDE_PLUGIN_ROOT}/templates/security/iam/plan-readonly.policy.json` |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/policy/` | the rego bundle for the plan JSON (`plan.rego`, `plan_test.rego`). TEMPLATE: not run by the kit's tests |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/infra-policy.json` | the allowance file the source policy reads from the base ref |
-| `${CLAUDE_PLUGIN_ROOT}/templates/infra/mcp-deploy-deny.settings.json` | deny rules for deploy-class MCP tools |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/infra/source_policy.py`, `hcl.py` | the pre-plan source policy and its HCL scanner |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/infra/gate.py` | the small checks the workflows call |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/infra/ci_rules.py` | the `infra.*` rules `ci_lint.py` applies |
+| `templates/infra/workflows/infra-check.yml`, `infra-plan.yml`, `infra-drift.yml` | the three workflows that never apply |
+| `templates/infra/workflows/infra-apply.environment.yml` | apply behind an Environment with required reviewers (public repositories, or Enterprise for private ones) |
+| `templates/infra/workflows/infra-apply.dispatch.yml` | apply by a human-only `workflow_dispatch`, for plans without Environment reviewers (the doctor calls this "apply gate = human dispatch" and caps IaC projects at L3) |
+| `templates/infra/oidc/` | trust policies for the post-merge plan role, next to the four in `templates/security/oidc/` |
+| `templates/infra/iam/state-lock.policy.json` | the lock-only permissions the post-merge plan role adds to `templates/security/iam/plan-readonly.policy.json` |
+| `templates/infra/policy/` | the rego bundle for the plan JSON (`plan.rego`, `plan_test.rego`). TEMPLATE: not run by the kit's tests |
+| `templates/infra/infra-policy.json` | the allowance file the source policy reads from the base ref |
+| `templates/infra/mcp-deploy-deny.settings.json` | deny rules for deploy-class MCP tools |
+| `scripts/infra/source_policy.py`, `hcl.py` | the pre-plan source policy and its HCL scanner |
+| `scripts/infra/gate.py` | the small checks the workflows call |
+| `scripts/infra/ci_rules.py` | the `infra.*` rules `ci_lint.py` applies |
 | `tests/infra/`, `tests/fixtures/infra/` | the tests, the fixture repositories and the planted-change corpus |
 
 ## Installing it (a human, once)
@@ -37,12 +37,12 @@ The preview plan is a preview. It is never applied. The plan that is applied is 
 
    | Role | Trust file | Permissions |
    |---|---|---|
-   | preview plan | `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/aws-plan-preview.trust.json` | `plan-readonly.policy.json` only (no lock, hence `-lock=false`) |
-   | post-merge plan of `main` | `${CLAUDE_PLUGIN_ROOT}/templates/infra/oidc/aws-plan-main.trust.json`, or `aws-plan-main-job-workflow-ref.trust.json` for the dispatch variant | `plan-readonly.policy.json` plus `${CLAUDE_PLUGIN_ROOT}/templates/infra/iam/state-lock.policy.json` |
-   | apply | `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/aws-apply-environment.trust.json`, or `aws-apply-job-workflow-ref.trust.json` (pick one: they are alternatives, see below) | yours to scope, and no wider than the change needs |
-   | drift | `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/aws-drift-readonly.trust.json` | `plan-readonly.policy.json` only |
+   | preview plan | `templates/security/oidc/aws-plan-preview.trust.json` | `plan-readonly.policy.json` only (no lock, hence `-lock=false`) |
+   | post-merge plan of `main` | `templates/infra/oidc/aws-plan-main.trust.json`, or `aws-plan-main-job-workflow-ref.trust.json` for the dispatch variant | `plan-readonly.policy.json` plus `templates/infra/iam/state-lock.policy.json` |
+   | apply | `templates/security/oidc/aws-apply-environment.trust.json`, or `aws-apply-job-workflow-ref.trust.json` (pick one: they are alternatives, see below) | yours to scope, and no wider than the change needs |
+   | drift | `templates/security/oidc/aws-drift-readonly.trust.json` | `plan-readonly.policy.json` only |
 
-   **The two apply trusts are alternatives.** `aws-apply-environment.trust.json` goes with the Environment variant of `infra-apply.yml`; `aws-apply-job-workflow-ref.trust.json` goes with the dispatch variant. Create one apply role, not both. The workflow-ref trust only matches after you change the repository's OIDC subject claim template to include `job_workflow_ref`, and that template applies to every job in the repository: the Environment-style subjects of the other roles stop appearing, so their trust policies must be rewritten too. Choose the dispatch variant only if you are ready to do that. See `${CLAUDE_PLUGIN_ROOT}/templates/security/oidc/README.md`.
+   **The two apply trusts are alternatives.** `aws-apply-environment.trust.json` goes with the Environment variant of `infra-apply.yml`; `aws-apply-job-workflow-ref.trust.json` goes with the dispatch variant. Create one apply role, not both. The workflow-ref trust only matches after you change the repository's OIDC subject claim template to include `job_workflow_ref`, and that template applies to every job in the repository: the Environment-style subjects of the other roles stop appearing, so their trust policies must be rewritten too. Choose the dispatch variant only if you are ready to do that. See `templates/security/oidc/README.md`.
 
 3. Set repository variables (not secrets): `FACTORY_APPROVERS` (the same logins as `factory_approvers`), `FACTORY_BOT_LOGIN` (the bot's login, so a listed bot is still refused), `AWS_REGION`, the role ARNs the workflows name, and for the apply workflows `CONFTEST_VERSION` and `CONFTEST_SHA256` (the release you vetted; the workflow checks the download against the hash). Optional: `INFRA_CHECKOV_VERSION`.
 4. Create the Environments `plan-preview`, `plan-main` (Environment variant), `drift` and `production` (Environment variant). Restrict each to the `main` branch (deployment branch policy; the doctor warns, as `deploy.environment-branch-policy`, when an Environment that an apply job or any other credentialed job (OIDC, a credential action, a stored cloud key) names has none in the GitHub data it can read. The plan and drift roles trust the Environment name alone, so a branch the bot pushed could name one and get the role. That check is best effort: with no GitHub data it is skipped). `production` needs **required reviewers and "prevent self-review"**. GitHub creates an Environment with no reviewers the first time a workflow names it, which gates nothing: the apply job refuses when the run's review history holds no approval from a listed approver, and the doctor reads the reviewers when it has GitHub data.
@@ -52,11 +52,11 @@ The preview plan is a preview. It is never applied. The plan that is applied is 
 8. Attest the deployment surface ([deploy-surface.md](deploy-surface.md)): the Environment variant's `infra-apply.yml` is a deploy that fires on `push:main` with `gate: gated-by-environment`; the dispatch variant is human-started and needs no trigger entry.
 9. Merge `mcp-deploy-deny.settings.json` into the settings an agent session uses (the rules are the same list as `mcp-lockdown.settings.json`; remove a pattern only for a server you named on purpose, [mcp.md](mcp.md)).
 
-`${CLAUDE_PLUGIN_ROOT}/templates/infra/policy/` is read from the checkout of `main` at run time. Copy it wherever you like and change the `--policy` path in the two apply workflows.
+`templates/infra/policy/` is read from the checkout of `main` at run time. Copy it wherever you like and change the `--policy` path in the two apply workflows.
 
 ## The source policy
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/infra/source_policy.py --root <PR checkout> --base <base checkout> --policy <base>/.claude/infra-policy.json`
+`python3 "$KIT/scripts/infra/source_policy.py" --root <PR checkout> --base <base checkout> --policy <base>/.claude/infra-policy.json`
 
 Plan executes provider and module code, so the check runs first and reads the source with a scanner of its own (no terraform binary). Run it from the **base** ref's copy: a pull request cannot edit the policy that judges it. Run it again with `--post-init` after `terraform init -backend=false` to scan the modules that init downloaded (their unpinned nested sources are warnings, since you cannot edit them; every other ban is an error).
 
@@ -99,7 +99,7 @@ It scans `*.tf`, `*.tf.json`, `*.tofu`, `*.tofu.json`, `*.tftest.hcl` and `*.tft
 
 ## gate.py
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/infra/gate.py <command>`. Exit 0 ok, 1 refused (one line on stderr), 2 usage or internal error.
+`python3 "$KIT/scripts/infra/gate.py" <command>`. Exit 0 ok, 1 refused (one line on stderr), 2 usage or internal error.
 
 | Command | Refuses unless |
 |---|---|
@@ -125,7 +125,7 @@ In both, `terraform apply tfplan` also refuses a saved plan when the state chang
 
 ## ci_lint rules for infrastructure workflows
 
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py` now also applies `infra/ci_rules.py` to any workflow that runs terraform, tofu, terragrunt, pulumi, cdk, cloudformation, kubectl or helm. The rules are structural: they check the gates are in the workflow, in order. They cannot check that an Environment has reviewers or that a variable is set. A gate is recognised only if it uses `gate.py`; a hand-written comparison is reported, so a person reads it.
+`python3 "$KIT/scripts/ci_lint.py"` now also applies `infra/ci_rules.py` to any workflow that runs terraform, tofu, terragrunt, pulumi, cdk, cloudformation, kubectl or helm. The rules are structural: they check the gates are in the workflow, in order. They cannot check that an Environment has reviewers or that a variable is set. A gate is recognised only if it uses `gate.py`; a hand-written comparison is reported, so a person reads it.
 
 | Rule | Severity | Catches |
 |---|---|---|
@@ -170,7 +170,7 @@ Every gate command (`authorize`, `require-main-ref`, `require-run-approval`, `ve
 
 ## Policy on the plan
 
-`plan.rego` denies deleting or replacing a stateful resource, an IAM policy that allows every action on every resource, a trust policy with a wildcard principal or a `repo:` wildcard subject, ingress from the whole internet on ports other than 80 and 443, a public bucket ACL, and (as a second layer behind the source policy) `external` and `http` data sources and provisioners in the plan's configuration. It warns about other deletions. Run `opa test ${CLAUDE_PLUGIN_ROOT}/templates/infra/policy` once yourself: this kit has no `opa` or `conftest`, so the bundle is TEMPLATE (IMP-25) and the tests check only its structure.
+`plan.rego` denies deleting or replacing a stateful resource, an IAM policy that allows every action on every resource, a trust policy with a wildcard principal or a `repo:` wildcard subject, ingress from the whole internet on ports other than 80 and 443, a public bucket ACL, and (as a second layer behind the source policy) `external` and `http` data sources and provisioners in the plan's configuration. It warns about other deletions. Run `opa test templates/infra/policy` once yourself: this kit has no `opa` or `conftest`, so the bundle is TEMPLATE (IMP-25) and the tests check only its structure.
 
 ## Who may run what (report section 8.2)
 
@@ -224,4 +224,4 @@ A flag value can hold blanks and still be one word to the shell: a quoted string
 
 ## The posted review comment
 
-`claude-review.yml` passes the review text through `kitlib.redact` (from the default branch's `.claude/scripts`) before it posts it, and posts nothing if the redactor cannot run. A plugin-only install that has no `${CLAUDE_PLUGIN_ROOT}/scripts/kitlib` in the repository must copy `kitlib/` there or edit that step.
+`claude-review.yml` passes the review text through `kitlib.redact` before it posts it, and posts nothing if the redactor cannot run. The redactor comes from the kit's own repository at the release the workflow pins (`KIT_REF`, checked against `KIT_SHA`), not from the pull request.

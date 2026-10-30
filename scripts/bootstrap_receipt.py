@@ -7,7 +7,7 @@ person who can write the file can write a receipt that checks out. Entries are c
 an edit, a deletion or a reordering in the middle shows up in `check`.
 
     bootstrap_receipt.py [--repo DIR] init   --mode greenfield|existing [--stack key=value]... [--force]
-    bootstrap_receipt.py [--repo DIR] run    --id ID --title TEXT -- python3 .claude/scripts/doctor.py --json
+    bootstrap_receipt.py [--repo DIR] run    --id ID --title TEXT -- python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --json
     bootstrap_receipt.py [--repo DIR] record --id ID --title TEXT --command TEXT --exit N [--output-file F | --output-stdin | --no-output]
                                              [--status ok|failed|skipped] [--note TEXT]
     bootstrap_receipt.py [--repo DIR] emit   --id ID --kind human-script|config-plan --path .claude/bootstrap/NAME
@@ -16,8 +16,10 @@ an edit, a deletion or a reordering in the middle shows up in `check`.
     bootstrap_receipt.py [--repo DIR] show          a readable summary and the commands still yours to run
     bootstrap_receipt.py [--repo DIR] status        {"state": none|in-progress|complete|invalid, ...} as JSON
 
-`run` is the only way this script executes anything, and it runs only the kit's own read-only scripts, by an exact relative path, with
-the flags in ALLOWED below, in a scrubbed environment (no token or cloud variable), without a shell, with a timeout. It cannot run
+`run` is the only way this script executes anything, and it runs only the kit's own read-only scripts, named by their absolute path in
+this kit (the plugin's scripts/, never a file in the repository), with the flags in ALLOWED below, in a scrubbed environment (no token
+or cloud variable), without a shell, with a timeout. The receipt records the script as `${CLAUDE_PLUGIN_ROOT}/scripts/<name>`, so it
+names no one's home directory and reads the same after a plugin update. It cannot run
 `gh`, `git`, a package manager, a project script, `verify.py`, or `probe_run.py --go`. A command you ran another way goes in with
 `record`; the entry says `source: recorded` so a reader knows it was reported, not run here.
 
@@ -51,7 +53,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio  # noqa: E402
-from kitlib import gitutil, jsonio, redact, semver  # noqa: E402
+from kitlib import gitutil, jsonio, kitpaths, redact, semver  # noqa: E402
 
 SCHEMA = "bootstrap_receipt.v1"
 RECEIPT_REL = os.path.join(".claude", "bootstrap-receipt.json")
@@ -142,7 +144,7 @@ def _claude_dir(root: str) -> str:
     try:
         st = os.lstat(d)
     except OSError:
-        raise ReceiptError(".claude/ does not exist in this repository: install the kit first")
+        raise ReceiptError(".claude/ does not exist in this repository: run the kit's setup first")
     if not stat.S_ISDIR(st.st_mode) or os.path.realpath(d) != os.path.join(root, ".claude"):
         raise ReceiptError(".claude is a symlink or not a directory: refusing to write through it")
     return d
@@ -358,7 +360,8 @@ def save(root: str, doc: Dict[str, Any]) -> None:
 
 
 def kit_version(root: str) -> Optional[str]:
-    text = safeio.read_text(os.path.join(root, ".claude", "KIT_VERSION"), 8192)
+    """The version of the kit that writes the receipt (the plugin's KIT_VERSION), not anything the repository holds."""
+    text = safeio.read_text(kitpaths.kit("KIT_VERSION"), 8192)
     if not text:
         return None
     try:
@@ -496,29 +499,45 @@ class Rule(object):
         self.bare, self.values, self.positional, self.first, self.ok_codes = set(bare), values or {}, positional, tuple(first), tuple(ok_codes)
 
 
+# keyed by the path under the kit's scripts/
 ALLOWED = {
-    ".claude/scripts/doctor.py": Rule(bare=("--json", "--credentials", "--deploy-surface", "--level"), values={"--repo": "path", "--gh-fixture": "path"},
-                                      positional="level", ok_codes=(0, 1)),
-    ".claude/scripts/ci_lint.py": Rule(bare=("--json",), values={"--repo": "path"}, positional="path", ok_codes=(0, 1)),
-    ".claude/scripts/bootstrap_detect.py": Rule(bare=("--json",), values={"--repo": "path"}),
-    ".claude/scripts/probe_run.py": Rule(bare=("--no-config", "--json"), values={"--repo": "path", "--cmd": "text"}, ok_codes=(0, 3)),
-    ".claude/scripts/guards/wiring.py": Rule(bare=("--check",)),
-    ".claude/scripts/loopctl": Rule(bare=("--json",), first=("doctor", "validate", "status"), ok_codes=(0, 1)),
+    "doctor.py": Rule(bare=("--json", "--credentials", "--deploy-surface", "--level"), values={"--repo": "path", "--gh-fixture": "path"},
+                      positional="level", ok_codes=(0, 1)),
+    "ci_lint.py": Rule(bare=("--json",), values={"--repo": "path"}, positional="path", ok_codes=(0, 1)),
+    "bootstrap_detect.py": Rule(bare=("--json",), values={"--repo": "path"}),
+    "probe_run.py": Rule(bare=("--no-config", "--json"), values={"--repo": "path", "--cmd": "text"}, ok_codes=(0, 3)),
+    "guards/wiring.py": Rule(bare=("--check",)),
+    "loopctl": Rule(bare=("--json",), first=("doctor", "validate", "status"), ok_codes=(0, 1)),
 }
 _LEVEL = re.compile(r"^L[0-5]\Z")
 
 
-def check_run_argv(root: str, argv: Sequence[str]) -> Tuple[List[str], Rule]:
+def kit_script_name(arg: str, kit_scripts: str) -> Optional[str]:
+    """The ALLOWED name `arg` names: exactly `<kit_scripts>/<name>`, or `${CLAUDE_PLUGIN_ROOT}/scripts/<name>` as written in the kit's prose."""
+    if not isinstance(arg, str):
+        return None
+    if arg.startswith(kitpaths.PLUGIN_ROOT_VAR + "/scripts/"):
+        arg = os.path.join(kit_scripts, arg[len(kitpaths.PLUGIN_ROOT_VAR + "/scripts/"):])
+    for name in ALLOWED:
+        if arg == os.path.join(kit_scripts, *name.split("/")):
+            return name
+    return None
+
+
+def check_run_argv(root: str, argv: Sequence[str], kit_scripts: Optional[str] = None) -> Tuple[List[str], Rule]:
     """The exact argv to execute (python -I -B <script> ...) and its rule, or a ReceiptError naming why it is refused."""
+    kit_scripts = kit_scripts or kitpaths.SCRIPTS
     if len(argv) < 2 or argv[0] not in ("python3", "python"):
         raise ReceiptError("run executes only `python3 <kit script> ...`; record other commands with `record`")
-    script = argv[1]
-    rule = ALLOWED.get(script)
-    if rule is None:
-        raise ReceiptError("run does not execute %r. Allowed: %s" % (safe_show(script)[:60], ", ".join(sorted(ALLOWED))))
-    real = inside(root, script)
-    if real is None or not (os.path.isfile(real) or os.path.isfile(os.path.join(real, "__main__.py"))):
-        raise ReceiptError("%s is not in this repository (is the kit installed?)" % script)
+    script = kit_script_name(argv[1], kit_scripts)
+    if script is None:
+        raise ReceiptError("run does not execute %r. It runs the kit's own %s, named by their path in the kit (%s/<name>)"
+                           % (safe_show(argv[1])[:60], ", ".join(sorted(ALLOWED)), kit_scripts))
+    rule = ALLOWED[script]
+    base = os.path.realpath(kit_scripts)
+    real = os.path.realpath(os.path.join(kit_scripts, *script.split("/")))
+    if not real.startswith(base + os.sep) or not (os.path.isfile(real) or os.path.isfile(os.path.join(real, "__main__.py"))):
+        raise ReceiptError("%s is not in the kit at %s" % (script, kit_scripts))
     out = [sys.executable, "-I", "-B", real]
     args = list(argv[2:])
     i = 0
@@ -573,9 +592,15 @@ def scrubbed_env(env: Dict[str, str]) -> Dict[str, str]:
     return keep
 
 
+def recorded_command(argv: Sequence[str], kit_scripts: Optional[str] = None) -> str:
+    """The command as the receipt keeps it: the script as `${CLAUDE_PLUGIN_ROOT}/scripts/<name>`, every other word quoted."""
+    name = kit_script_name(argv[1], kit_scripts or kitpaths.SCRIPTS)
+    return " ".join([shlex.quote(argv[0]), "%s/scripts/%s" % (kitpaths.PLUGIN_ROOT_VAR, name)] + [shlex.quote(a) for a in argv[2:]])
+
+
 def run_and_record(root: str, step_id: str, title: str, argv: Sequence[str], env: Optional[Dict[str, str]] = None,
-                   now: Optional[datetime.datetime] = None, timeout: float = RUN_TIMEOUT) -> Dict[str, Any]:
-    real_argv, rule = check_run_argv(root, argv)
+                   now: Optional[datetime.datetime] = None, timeout: float = RUN_TIMEOUT, kit_scripts: Optional[str] = None) -> Dict[str, Any]:
+    real_argv, rule = check_run_argv(root, argv, kit_scripts)
     proc = subprocess.Popen(real_argv, cwd=root, env=scrubbed_env(dict(os.environ if env is None else env)), stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False, start_new_session=True)
     try:
@@ -593,7 +618,7 @@ def run_and_record(root: str, step_id: str, title: str, argv: Sequence[str], env
     total = len(blob)
     blob = blob[:OUTPUT_CAP]
     status_ = "ok" if rc in rule.ok_codes and not timed_out else "failed"
-    entry = add_step(root, step_id, title, " ".join(shlex.quote(a) for a in argv), rc, blob, "ran", status_,
+    entry = add_step(root, step_id, title, recorded_command(argv, kit_scripts), rc, blob, "ran", status_,
                      "timed out after %ds" % int(timeout) if timed_out else "", now, output_bytes=total)
     entry["_output"] = blob  # for the CLI to show; never stored
     return entry
@@ -609,7 +634,7 @@ def next_steps(doc: Dict[str, Any]) -> List[str]:
         if e["kind"] == "human-script":
             out.append("sh %s            (a dry run: it prints every command), read it, then: sh %s --apply   [from a plain terminal, not a Claude session]" % (e["path"], e["path"]))
         else:
-            out.append("python3 .claude/scripts/bootstrap_config.py apply %s            (a dry run), then add --write   [from a plain terminal]" % e["path"])
+            out.append("%s            (a dry run), then add --write   [from a plain terminal]" % kitpaths.script_cmd("bootstrap_config.py", "apply", shlex.quote(e["path"])))
     return out
 
 

@@ -328,7 +328,7 @@ def check_main_protection(ctx: Context) -> List[Result]:
     out = []  # type: List[Result]
     if not v["pr_required"]:
         out.append(failed("gh.main-protection", "no ruleset or protection on %s requires a pull request" % gh["default_branch"],
-                          "apply .claude/scripts/github/apply-boundary.sh (dry-run first); without it the bot's contents: write can push to main directly"))
+                          "apply %s (dry-run first); without it" % ctx.kit_path("scripts", "github", "apply-boundary.sh") + " the bot's contents: write can push to main directly"))
     else:
         out.append(passed("gh.main-protection", "%s requires pull requests (%s)" % (gh["default_branch"], ", ".join(v["sources"]))))
     if v["pr_required"] and v["approvals"] < 1:
@@ -398,7 +398,7 @@ def check_bypass(ctx: Context) -> List[Result]:
         if sev == "info":
             out.append(passed("gh.bypass", msg))
         else:
-            out.append(failed("gh.bypass", msg, "remove the actor; apply the %s ruleset from .claude/templates/security/rulesets/" % ("solo" if solo else "team")))
+            out.append(failed("gh.bypass", msg, "remove the actor; apply the %s ruleset from %s" % ("solo" if solo else "team", ctx.kit_path("templates", "security", "rulesets") + "/")))
     if v["classic_restricts_bot"]:
         out.append(failed("gh.bypass", "classic branch protection lets the bot push to %s" % gh["default_branch"], "remove it from the push restrictions"))
     if v["classic_admin_bypass"]:

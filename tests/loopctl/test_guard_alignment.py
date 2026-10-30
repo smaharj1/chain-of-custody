@@ -11,7 +11,7 @@ import unittest
 from guards import g_exec, g_halt
 from guards.invoke import analyze
 
-from kitlib import loopctl_table
+from kitlib import kitpaths, loopctl_table
 
 from loopctl import cli, common, gates, state as sm
 
@@ -72,7 +72,7 @@ def _subparsers():
 
 
 def inv(args):
-    ana = analyze("python3 .claude/scripts/loopctl " + " ".join(args), "/tmp")
+    ana = analyze(kitpaths.script_cmd("loopctl", *args), "/tmp")        # the command the kit prints: the plugin's absolute path
     found = [i for i in ana.invs if i.name.startswith("python")]
     return found[0]
 

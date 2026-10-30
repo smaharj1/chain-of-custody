@@ -1,8 +1,8 @@
 # Interactive PR delivery
 
-How a feature built in the interactive lane (`/pm`, `/architect`, `/tech-lead`) leaves your machine as a draft pull request, with the audit trail inside the PR. This page is the interactive lane. The autonomous loop (`loopctl`, the driver) builds the same audit block with `loopctl audit render` and stops an item that needs a pull request at `awaiting_human`; it does not push either. Nothing here pushes: **you** run the last two commands.
+How a feature built in the interactive lane (`/pm`, `/architect`, `/tech-lead`) leaves your machine as a draft pull request, with the audit trail inside the PR. This page is the interactive lane. The autonomous loop (`loopctl`, the driver) builds the same audit block with `loopctl audit render` and stops an item that needs a pull request at `awaiting_human`; the driver does not push. `pr_prepare.py` itself never pushes. Who runs the push and the draft-PR commands it prints is set by `git_autonomy`: at `branch+commit+push` the Tech Lead runs them (its own feature branch only); below that, **you** do. Merging is always yours.
 
-The agent-facing version of this page is `${CLAUDE_PLUGIN_ROOT}/context/delivery.md`. This page is for the person who installs and runs it.
+The agent-facing version of this page is `context/delivery.md`. This page is for the person who installs and runs it.
 
 ## What you get
 
@@ -10,20 +10,21 @@ The agent-facing version of this page is `${CLAUDE_PLUGIN_ROOT}/context/delivery
 /tech-lead  ->  branch feat/<slug>  ->  one WIP commit per engineer  ->  code review on each
             ->  verify.py (build, lint, typecheck, tests, smoke; definition from the base sha)
             ->  pr_prepare.py init + fill  ->  pr_prepare.py prepare
-            ->  HUMAN STEP, you run:  git push ...   and   gh pr create --draft --body-file ...
+            ->  git push ...   and   gh pr create --draft --body-file ...
+                (the Tech Lead at git_autonomy: branch+commit+push; otherwise a HUMAN STEP you run)
             ->  CI: verify (untrusted), optional claude-review (trusted)  ->  CI-fix if red (max 2)
             ->  YOU merge (squash, "PR title and description")
 ```
 
 Three dials in `.claude/loop.config.md`. All are H6-protected and read at the base sha, so a feature branch cannot loosen them.
 
-| Key | Default | Set it to |
-|---|---|---|
-| `git_autonomy` | `none` | `branch+commit` to let the Tech Lead create the branch and the WIP commits |
-| `delivery` | `local` | `draft-pr` once your rulesets and required checks are in place (`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py --level`) |
-| `max_ci_fix_attempts` | `2` | leave it |
+| Key | Default (key absent) | `/chain-of-custody:init` writes | Set it to |
+|---|---|---|---|
+| `git_autonomy` | `none` | `branch+commit+push`: the Tech Lead creates the branch, makes the WIP commits and pushes its own feature branch | `branch+commit` to run the push yourself; `none` to make every git write yourself |
+| `delivery` | `local` | `push-branch`: the feature branch is pushed; you open the PR | `draft-pr` once your rulesets and required checks are in place (`python3 "$KIT/scripts/doctor.py" --level`); `local` to push nothing |
+| `max_ci_fix_attempts` | `2` | `2` | leave it |
 
-With the defaults nothing changes from v1.
+A project that leaves the keys out gets `none` and `local`: nothing leaves the machine, as in v1. A project set up by `/chain-of-custody:init` starts at `branch+commit+push` and `push-branch`, so the agent pushes its own feature branch (never `main` or a protected branch). The push counts only once those values are committed on the base branch.
 
 ## Setup, once per project
 
@@ -36,14 +37,14 @@ With the defaults nothing changes from v1.
    ```bash
    echo '.claude/pr/' >> .gitignore
    ```
-4. Copy the workflows you want into `.github/workflows/`: `verify.yml` (recommended; make the job `verify` a required check, pinned to the GitHub Actions app) and, optionally, `claude-review.yml`. Pin each `uses:` to a commit SHA. `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/ci_lint.py` must stay free of errors. `${CLAUDE_PLUGIN_ROOT}/docs/security/split-ci.md` explains why they look the way they do.
+4. Copy the workflows you want into `.github/workflows/`: `verify.yml` (recommended; make the job `verify` a required check, pinned to the GitHub Actions app) and, optionally, `claude-review.yml`. Pin each `uses:` to a commit SHA. The templates hold two placeholders, `{{KIT_REF}}` and `{{KIT_SHA}}`, which name the kit release CI fetches. The bootstrap setup script (`.claude/bootstrap/setup.sh`, printed by `scripts/github/repo_script.py`) fills them when it writes a workflow. To copy one by hand, set KIT_REF to `v<KIT_VERSION>` (the kit's `KIT_VERSION` file) and KIT_SHA to the commit that tag points at (`git ls-remote <kit repository> refs/tags/v<KIT_VERSION>^{}`). A placeholder left in a file is the `ci_lint` error `ci.kit-placeholder`. `python3 "$KIT/scripts/ci_lint.py"` must stay free of errors. `docs/security/split-ci.md` explains why they look the way they do.
 5. For `claude-review.yml`: set the secret `ANTHROPIC_API_KEY` (spend-capped workspace) and the variable `CLAUDE_CODE_VERSION` (the version your canary passed). A maintainer comments `/review` on a PR to run it. The CLI flags in the file are the ones the report names; check them once against your pinned version.
 6. The first PR that installs the kit cannot pass `verify` (the base has no `verify.py` yet). A human merges that one; every later PR is protected.
 
 ## verify.py
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/verify.py [--base REV] [--item ID --items-file FILE] [--route /path]... [--json] [--keep-going] [--only STAGES]
+python3 "$KIT/scripts/verify.py" [--base REV] [--item ID --items-file FILE] [--route /path]... [--json] [--keep-going] [--only STAGES]
 ```
 
 Stages, in order: `build`, `lint`, `typecheck`, `item-tests`, `tests`, `smoke`. Each runs in its own session under an allowlisted environment (`PATH`, `HOME`, locale and toolchain locators; no token, key or cloud variable of your shell), and its whole process group is killed afterwards. A process that outlives its stage is reported as a leak; a verify port still bound after the smoke stage is a leak too.
@@ -72,10 +73,10 @@ It does not parse acceptance criteria (G1, G3), compare skip counts against the 
 ## pr_prepare.py
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py init      # write .claude/pr/<slug>.md from the template, pre-filled
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py check     # validate the body and the git state
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py prepare   # check, then print the commands for your delivery setting
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/pr_prepare.py reverts --sha <commit>... | --prs-json FILE --pr N
+python3 "$KIT/scripts/pr_prepare.py" init      # write .claude/pr/<slug>.md from the template, pre-filled
+python3 "$KIT/scripts/pr_prepare.py" check     # validate the body and the git state
+python3 "$KIT/scripts/pr_prepare.py" prepare   # check, then print the commands for your delivery setting
+python3 "$KIT/scripts/pr_prepare.py" reverts --sha <commit>... | --prs-json FILE --pr N
 ```
 
 It runs read-only git only and never runs `gh`. When `prepare` is clean it prints, for `delivery: draft-pr`:
@@ -85,7 +86,7 @@ git push --set-upstream origin feat/<slug>
 gh pr create --draft --base main --head feat/<slug> --title '...' --body-file .../.claude/pr/<slug>.md
 ```
 
-When the branch is already pushed it prints a plain `git push origin feat/<slug>` and, with `--pr N`, `gh pr edit N --title ... --body-file ...`. It never prints a force push. With `delivery: local` it prints `git switch main` and `git merge --no-ff feat/<slug>`; with `push-branch`, only the push. Run them in your own terminal, or in the session with `!` at L0 and L1. The Tech Lead and the Orchestrator print each as a line `HUMAN STEP: <command>` and wait for you to say it is done; they never run it. From L2 up use a terminal outside the agent's session, because the push needs your own credentials.
+When the branch is already pushed it prints a plain `git push origin feat/<slug>` and, with `--pr N`, `gh pr edit N --title ... --body-file ...`. It never prints a force push. With `delivery: local` it prints `git switch main` and `git merge --no-ff feat/<slug>`; with `push-branch`, only the push. The first line says who runs them. `# CONDUCTOR STEPS` (at `git_autonomy: branch+commit+push` with `delivery: push-branch` or `draft-pr`): the Tech Lead or the Orchestrator runs them itself; the guards allow only that shape of push, of that feature branch. `# HUMAN STEP` (any lower setting, `delivery: local`, and `gh pr edit` of a PR that already exists): run them in your own terminal, or in the session with `!` at L0 and L1; the Tech Lead and the Orchestrator print each as a line `HUMAN STEP: <command>` and wait for you to say it is done. From L2 up the agent's push uses the bot's credential ([security/bot-identity.md](security/bot-identity.md)) and yours runs from a terminal outside the agent's session.
 
 It refuses (exit 1, no commands) for: an unfilled `<fill: ...>` marker or empty audit field; Verify not PASS; an engineer or code review that is not approved; an acceptance criterion without evidence and PASS; Doc Delta or Primer Delta written as NONE without a `checked:` line, or dropped from an engineer report; a stale `Head sha`; an uncommitted tree; a saved verify result that is not a complete, trusted pass for this exact HEAD; a diff touching a path a human must review (migrations, `.github/`, `.claude/`, lockfiles, test and CI config, deploy files, plus `always_human_paths` from the base config) while the body says NONE; more CI-fix commits than `max_ci_fix_attempts`, or one that edits workflows, tests or lockfiles; a remote branch the local one has diverged from; a protected or malformed branch name; approver-only labels (`factory:*`, `plan-ok`, `preview`); a secret-shaped string in the body.
 
@@ -93,11 +94,11 @@ Result, schema `pr_prepare.v1` (`--json`): `ok`, `branch`, `base`, `base_sha`, `
 
 ## The audit block
 
-`${CLAUDE_PLUGIN_ROOT}/templates/pr-body.md` is the template. The block records, per PR: feature, lane, delivery, branch, base and head shas, design-critic verdict, the verify run, security review, human-gated paths, CI-fix commits, waivers and the CI evidence link, then the engineers table, the acceptance matrix, Doc Delta, Primer Delta and notes. Under `loopctl`, `loopctl audit render ITEM` builds the block from state, plan, gate results, reports, the spend ledger and git, and leaves a `<fill: ...>` marker where it does not hold the fact; `loopctl audit check ITEM --body FILE` validates a body with the same rules plus cross-checks against state and git. The Notes carry a `Manifest:` line: the hash of the reproducibility manifest that `loopctl manifest write ITEM --head <head sha>` stored for this head, and whether it still verifies against git (`Manifest: <hash> (seal and ... re-read from git at the recorded commits: they hold)`, or `... DOES NOT HOLD (...)`, or `Manifest: none written for this head` because the manifest is optional). Because the hash sits in the PR body, where the writer of the manifest cannot edit it, `loopctl manifest verify --expect-hash <hash>` has a trusted channel. `audit check` raises the error `audit.manifest-broken` when a stored manifest does not verify (or the hash in the Notes is not the stored one), and the warnings `audit.manifest-absent` (a manifest exists but the Notes have no `Manifest:` line) and `audit.manifest-unknown` (the Notes name a hash this machine has no manifest for). The PR body is the durable record (DEC-10): squash merges drop commit trailers, so set the repository's squash message to "PR title and description" (`${CLAUDE_PLUGIN_ROOT}/docs/security/rulesets.md`).
+`templates/pr-body.md` is the template. The block records, per PR: feature, lane, delivery, branch, base and head shas, design-critic verdict, the verify run, security review, human-gated paths, CI-fix commits, waivers and the CI evidence link, then the engineers table, the acceptance matrix, Doc Delta, Primer Delta and notes. Under `loopctl`, `loopctl audit render ITEM` builds the block from state, plan, gate results, reports, the spend ledger and git, and leaves a `<fill: ...>` marker where it does not hold the fact; `loopctl audit check ITEM --body FILE` validates a body with the same rules plus cross-checks against state and git. The Notes carry a `Manifest:` line: the hash of the reproducibility manifest that `loopctl manifest write ITEM --head <head sha>` stored for this head, and whether it still verifies against git (`Manifest: <hash> (seal and ... re-read from git at the recorded commits: they hold)`, or `... DOES NOT HOLD (...)`, or `Manifest: none written for this head` because the manifest is optional). Because the hash sits in the PR body, where the writer of the manifest cannot edit it, `loopctl manifest verify --expect-hash <hash>` has a trusted channel. `audit check` raises the error `audit.manifest-broken` when a stored manifest does not verify (or the hash in the Notes is not the stored one), and the warnings `audit.manifest-absent` (a manifest exists but the Notes have no `Manifest:` line) and `audit.manifest-unknown` (the Notes name a hash this machine has no manifest for). The PR body is the durable record (DEC-10): squash merges drop commit trailers, so set the repository's squash message to "PR title and description" (`docs/security/rulesets.md`).
 
 ## Limits
 
-- This is not autonomy level L2. The push is yours, with your own credentials; the agent holds none (`${CLAUDE_PLUGIN_ROOT}/docs/security/credentials.md`). No agent pushes, the Orchestrator included: it prints what you run (`pr_prepare.py` prints the push and PR commands, the `HUMAN STEP` lines in `/orchestrate` print the rest) and waits. The remote lock and claims (`loopctl remote-lock`, `claim`) are pushes too and are human-only.
+- The agent pushes only its own feature branch, at the push tier. No agent pushes `main` or a protected branch, and none merges; the server-side rules are what make that hold (`docs/security/rulesets.md`), and from L2 up the only credential the agent can reach is the bot's (`docs/security/credentials.md`). Below the push tier the Orchestrator prints what you run (`pr_prepare.py` prints the push and PR commands, the `HUMAN STEP` lines in `/orchestrate` print the rest) and waits. The remote lock and claims (`loopctl remote-lock`, `claim`) are pushes too and are human-only at every setting.
 - A merge approval is for one head. `loopctl approve item` records the head it was given for; if the branch moves afterwards (a CI fix, a rebase) the approval is void and you approve the new head. The approval attests the item's diff, not what the integration branch becomes once other items have merged.
 - Nothing reads GitHub. CI results, review comments and revert PRs reach the Tech Lead because you paste them (or save `gh` output you ran yourself and pass it with `--prs-json`).
 - The saved verify result and the engineer reports are files in your working tree: they catch mistakes and stale work, not a determined forger. The evidence that counts is the CI check run on the PR (DEC-10); the audit block links it once the PR exists.

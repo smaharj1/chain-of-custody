@@ -4,14 +4,18 @@
 Standalone, Python 3.9+ stdlib only, no loopctl. It answers one question: given what this
 machine and this repo look like right now, what autonomy level is safe?
 
-    python3 .claude/scripts/doctor.py                       everything, human-readable
-    python3 .claude/scripts/doctor.py --json                the doctor.v1 document
-    python3 .claude/scripts/doctor.py --credentials         B2: credentials the agent's OS user could reach
-    python3 .claude/scripts/doctor.py --deploy-surface      B5: how a commit becomes a deploy, and the attestation
-    python3 .claude/scripts/doctor.py --level [L3]          the effective level and every cap with its reason
-    python3 .claude/scripts/doctor.py --gh-fixture FILE     read GitHub facts from recorded `gh api` JSON
-    python3 .claude/scripts/doctor.py --live                human only: also run sts, gh auth status, git credential fill,
+    python3 "$KIT/scripts/doctor.py"                        everything, human-readable
+    python3 "$KIT/scripts/doctor.py" --json                 the doctor.v1 document
+    python3 "$KIT/scripts/doctor.py" --credentials          B2: credentials the agent's OS user could reach
+    python3 "$KIT/scripts/doctor.py" --deploy-surface       B5: how a commit becomes a deploy, and the attestation
+    python3 "$KIT/scripts/doctor.py" --level [L3]           the effective level and every cap with its reason
+    python3 "$KIT/scripts/doctor.py" --gh-fixture FILE      read GitHub facts from recorded `gh api` JSON
+    python3 "$KIT/scripts/doctor.py" --live                 human only: also run sts, gh auth status, git credential fill,
                                                             ssh -T, and probe the metadata endpoints
+
+$KIT is the plugin folder (`${CLAUDE_PLUGIN_ROOT}` in a skill or a hook). The doctor checks the project in the current directory
+(or --repo) and prints the plugin folder it runs from as its first line, `kit: <folder>`, so a person can copy the kit's other
+commands with full paths.
 
 The effective level is min(configured, prerequisites, credentials, sandbox, MCP, B5, platform,
 evidence, version). Out of the box, with nothing attested, that is L1.
@@ -35,7 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import humanonly  # noqa: E402
 from kitlib import gitutil, levels  # noqa: E402
 
-from doctorlib import (ci, codeowners, creds, deploy, extras, github, guardchecks, levelcalc, parallel, secrets, settings, versions)  # noqa: E402,F401
+from doctorlib import (ci, codeowners, creds, deploy, extras, github, guardchecks, levelcalc, parallel, plugin, secrets, settings, versions)  # noqa: E402,F401
 from doctorlib.model import CHECKS, ERROR, FAIL, UNKNOWN, WARN, Context, Result, default_reach, default_run, run_checks  # noqa: E402
 
 SCHEMA = "doctor.v1"
@@ -45,7 +49,7 @@ MODE_GROUPS = {
     "credentials": {"credentials"},
     "deploy-surface": {"deploy-surface"},
 }
-GROUP_TITLES = [("credentials", "Credentials reachable by the agent (B2)"), ("deploy-surface", "Deployment surface (B5)"),
+GROUP_TITLES = [("plugin", "Plugin install"), ("credentials", "Credentials reachable by the agent (B2)"), ("deploy-surface", "Deployment surface (B5)"),
                 ("github", "GitHub: identity, rulesets, platform (B1, B4)"), ("codeowners", "CODEOWNERS (H3, H6)"), ("ci", "CI (split CI, RC-3)"),
                 ("settings", "Settings, MCP and containers"), ("sandbox", "Sandbox (B3)"), ("mcp", "MCP (CS-10)"), ("secrets", "Secrets policy (§5.4)"),
                 ("version", "Versions (§14)"), ("config", "loop.config")]
@@ -106,7 +110,7 @@ def run(ctx: Context, groups: Optional[set]) -> Dict[str, Any]:
     results = run_checks(ctx)
     eff = levelcalc.compute(ctx, results)
     shown = [r for r in results if groups is None or _group_of(r) in groups]
-    return {"schema": SCHEMA, "repo": ctx.repo, "level": eff.to_dict(), "next": levelcalc.next_blocker(eff),
+    return {"schema": SCHEMA, "repo": ctx.repo, "kit": ctx.kit_root, "level": eff.to_dict(), "next": levelcalc.next_blocker(eff),
             "checks": [r.to_dict() for r in shown], "attestations": attestations(ctx), "_eff": eff, "_results": shown}
 
 
@@ -136,9 +140,18 @@ def clean(text: str) -> str:
     return _CONTROL_RE.sub("?", text)
 
 
+def _id_list(ids: List[str], limit: int = 12) -> str:
+    """` (a, b, +3 more)` for a count line: each id once, in the order the checks ran; "" for none."""
+    uniq = list(dict.fromkeys(ids))
+    if not uniq:
+        return ""
+    more = " +%d more" % (len(uniq) - limit) if len(uniq) > limit else ""
+    return " (%s%s)" % (", ".join(uniq[:limit]), more)
+
+
 def format_text(doc: Dict[str, Any], ctx: Context, show_level_only: bool = False) -> str:
     eff = doc["_eff"]
-    lines = []  # type: List[str]
+    lines = ["kit: %s" % ctx.kit_root, ""]  # type: List[str]
     if not show_level_only:
         results = doc["_results"]
         for group, title in GROUP_TITLES:
@@ -160,10 +173,11 @@ def format_text(doc: Dict[str, Any], ctx: Context, show_level_only: bool = False
     lines.append("== Autonomy level ==")
     lines.append(eff.explain())
     lines.append("next: " + doc["next"])
-    errors = sum(1 for r in doc["_results"] if r.status == FAIL and r.severity == ERROR)
-    warns = sum(1 for r in doc["_results"] if r.severity == WARN and r.status in (FAIL, UNKNOWN))
+    errors = [r.id for r in doc["_results"] if r.status == FAIL and r.severity == ERROR]
+    warns = [r.id for r in doc["_results"] if r.severity == WARN and r.status in (FAIL, UNKNOWN)]
     lines.append("")
-    lines.append("%d error(s), %d warning(s)" % (errors, warns))
+    # the ids too: with --level the rows are not printed, and a bare count does not say what to fix
+    lines.append("%d error(s)%s, %d warning(s)%s" % (len(errors), _id_list(errors), len(warns), _id_list(warns)))
     return clean("\n".join(lines))
 
 

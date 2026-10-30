@@ -10,14 +10,14 @@ You set `autonomy: unattended` and `autonomy_level: L4` in a committed `loop.con
 
 ## First-time setup (once)
 
-1. **The evidence gate.** `autonomy: unattended`, `autonomy_level: L4` and `L5` are evidence-gated keys: `loopctl` refuses every Tier 2 command while they are set and `docs/baseline/evidence.json` is missing or incomplete. The file is yours to commit, when three clean fixture runs and one real feature at L2 with loopctl are done (`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl evidence --check`). An unattended start also requires the committed copy at the base sha to be the file on disk, so a branch cannot bring its own evidence.
-2. **Pin the CLI and run the canary.** L3 and above need `claude_code_tested_max` in `.claude/KIT_VERSION`; the doctor's effective level is capped at L2 while it is `none`. Unattended runners use the same pin and have auto-update off.
+1. **The evidence gate.** `autonomy: unattended`, `autonomy_level: L4` and `L5` are evidence-gated keys: `loopctl` refuses every Tier 2 command while they are set and `docs/baseline/evidence.json` is missing or incomplete. The file is yours to commit, when three clean fixture runs and one real feature at L2 with loopctl are done (`python3 "$KIT/scripts/loopctl" evidence --check`). An unattended start also requires the committed copy at the base sha to be the file on disk, so a branch cannot bring its own evidence.
+2. **Pin the CLI and run the canary.** L3 and above need `claude_code_tested_max` in the kit's `KIT_VERSION`; the doctor's effective level is capped at L2 while it is `none`. Unattended runners use the same pin and have auto-update off.
 3. **Ceilings.** `run_budget_usd` and `day_budget_usd` greater than zero. Nobody is watching the spend, so both are required.
-4. **A way to reach you.** Write a small program of your own, outside the repository, and put its path in `notify_command` (below). Test it: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl unattended notify-test`.
-5. **The external watchdog.** Schedule `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl unattended watch --repo <the loop worktree>` every five minutes (cron, launchd or a systemd timer). It writes `unattended.watch.json` in the git directory each time; an unattended start is refused unless it checked in within the last 15 minutes. A driver that is killed cannot tell anyone it died, so something else has to. Cron's `PATH` is short: give `notify_command` as an absolute path.
-6. **Check.** `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl unattended check` prints every row and exits 0 only when a run could start and make progress now. `loopctl run --dry-run` shows the same rows.
+4. **A way to reach you.** Write a small program of your own, outside the repository, and put its path in `notify_command` (below). Test it: `python3 "$KIT/scripts/loopctl" unattended notify-test`.
+5. **The external watchdog.** Schedule `python3 "$KIT/scripts/loopctl" unattended watch --repo <the loop worktree>` every five minutes (cron, launchd or a systemd timer). It writes `unattended.watch.json` in the git directory each time; an unattended start is refused unless it checked in within the last 15 minutes. A driver that is killed cannot tell anyone it died, so something else has to. Cron's `PATH` is short: give `notify_command` as an absolute path.
+6. **Check.** `python3 "$KIT/scripts/loopctl" unattended check` prints every row and exits 0 only when a run could start and make progress now. `loopctl run --dry-run` shows the same rows.
 
-The config keys are in [the registry](../loop.config.md) under "Unattended": `notify_command`, `notify_timeout_s`, `notify_env_allow`, `stall_run_min`, `stall_storm_n`, `stall_storm_window_min` and the four `promotion_*` keys. All are read from the base sha, never from the branch under judgement.
+The config keys are in your `.claude/loop.config.md` ([starter copy](../seed/.claude/loop.config.md)) under "Unattended": `notify_command`, `notify_timeout_s`, `notify_env_allow`, `stall_run_min`, `stall_storm_n`, `stall_storm_window_min` and the four `promotion_*` keys. All are read from the base sha, never from the branch under judgement.
 
 ## The start: no acknowledgement, no waiting
 
@@ -68,7 +68,7 @@ Every attempt is logged in `events/notify.jsonl` in the git directory with wheth
 
 ### Interactive sessions (DEC-31)
 
-Where the platform has a push-notification tool, use it from the conductor at a hard stop. Otherwise merge the hooks in `${CLAUDE_PLUGIN_ROOT}/templates/notify/notify-hooks.settings.json` into `.claude/settings.json` (a reviewed commit, H6): a `Notification`, `StopFailure` and `PermissionRequest` hook runs `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/notify.py --hook`. The hook takes **no free text** from its input (only the event name, a notification type and a tool name, each matched against a pattern), so nothing that pipes text into it can choose what you read, and it sends at most one message every 30 seconds. Do not put these hooks in a driver child's profile. The hook event names and input fields are [probe] items.
+Where the platform has a push-notification tool, use it from the conductor at a hard stop. Otherwise merge the hooks in `templates/notify/notify-hooks.settings.json` into `.claude/settings.json` (a reviewed commit, H6): a `Notification`, `StopFailure` and `PermissionRequest` hook runs `[ -f "<kit>/scripts/notify.py" ] && python3 -B "<kit>/scripts/notify.py" --hook; exit 0`, where `<kit>` is the absolute path `/chain-of-custody:init` prints as `kit:` (settings cannot expand a variable here, and the path changes with each plugin update, so paste it again after one). The command always exits 0: with a stale path it does nothing, where an exit 2 on `PermissionRequest` would deny every permission prompt. The hook takes **no free text** from its input (only the event name, a notification type and a tool name, each matched against a pattern), so nothing that pipes text into it can choose what you read, and it sends at most one message every 30 seconds. Do not put these hooks in a driver child's profile. The hook event names and input fields are [probe] items.
 
 ## What ends a run, and what you get
 
@@ -99,10 +99,10 @@ A child the driver killed prints no result, so its cost is unknown, and an unkno
 
 ## Demotion and promotion (report 6.3)
 
-**Promotion is a person's decision** on server-side facts: the merged-PR revert rate, the CI-fix rate, escaped defects, reviewer `CHANGES_REQUESTED` and the pass^k eval in CI. Never the local event log, which anything that can write the git directory can forge. Make a facts file from GitHub or CI (`promotion.facts.v1`, see `${CLAUDE_PLUGIN_ROOT}/scripts/loopctl/promotion.py`) and run:
+**Promotion is a person's decision** on server-side facts: the merged-PR revert rate, the CI-fix rate, escaped defects, reviewer `CHANGES_REQUESTED` and the pass^k eval in CI. Never the local event log, which anything that can write the git directory can forge. Make a facts file from GitHub or CI (`promotion.facts.v1`, see `scripts/loopctl/promotion.py`) and run:
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl unattended promotion --facts promotion-facts.json
+python3 "$KIT/scripts/loopctl" unattended promotion --facts promotion-facts.json
 ```
 
 How you fill the facts file is yours, because a "correctness" change is a convention of your reviews. A starting point with the GitHub CLI, run by you and never by an agent: `gh pr list --state merged --limit 50 --json number,mergedAt,labels,reviews,title` gives the merged PRs, the review states and the labels; count a PR as reverted when a later merged PR is titled `Revert "<its title>"`; count a requested change as `correctness` when your reviewer labelled it so (for example `review:correctness`); take `test_integrity_flags` and `ci_fix_attempts` from the audit block in each PR body; `eval_pass_k` is the result of the pass^k eval job in CI. Set `source` to `github` or `ci` and your name in `collected_by`. The file's `source` is its own claim: the report shows `origin` (the file loopctl read, for example `file:promotion-facts.json`) and `claimed_source`, and nothing is verified against GitHub. A person reads the numbers; the tool does not authenticate them.
@@ -118,14 +118,14 @@ It prints "ELIGIBLE" or each unmet condition against the bar in `promotion_*` (d
 | a test-integrity flag (`g5` blocking, `reward_hack`) | `integrity_flag` |
 | `stall_storm_n` stalls inside `stall_storm_window_min` | `stall_storm` |
 
-While it is set, `loopctl run` with `autonomy: unattended` is refused and `unattended check` is not ready; attended runs (`autonomy: per-feature` or `per-milestone`) are unaffected. After you have looked at why: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl approve demotion --by <name>`. This is a human step: the conductor prints it as a `HUMAN STEP:` line and never runs it.
+While it is set, `loopctl run` with `autonomy: unattended` is refused and `unattended check` is not ready; attended runs (`autonomy: per-feature` or `per-milestone`) are unaffected. After you have looked at why: `python3 "$KIT/scripts/loopctl" approve demotion --by <name>`. This is a human step: the conductor prints it as a `HUMAN STEP:` line and never runs it.
 
 ## Two-stage intake for untrusted sources (report 5.3)
 
 An issue, a comment or a form is written by a stranger. It never reaches anything that can act.
 
-1. **Stage 1: a model with no tools** (`${CLAUDE_PLUGIN_ROOT}/agents/intake-triage.md`; in CI, `intake.yml`) reads the text and answers with the fixed shape in `${CLAUDE_PLUGIN_ROOT}/templates/intake_schema.json`. That one file is read by the CI validator (`intake_validate.py`), by stage 2 in the loop and by the tests that keep the agent prompt and the workflow prompt in step with it. The agent file lists `Read` only because every kit agent lists a tool; the launch denies it.
-2. **Stage 2: a script, no model** checks the answer against the same schema. In the loop: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl unattended intake --in triage.json --source issue#12` validates and prints; `--write` also quarantines the record under the git directory (`intake/in-<digest>.json` and a `.md` for you) and prints a **draft plan item** whose `<fill: ...>` fields are yours. The record is not a plan item: it cannot be `begin`-ed and the driver never reads the directory.
+1. **Stage 1: a model with no tools** (`agents/intake-triage.md`; in CI, `intake.yml`) reads the text and answers with the fixed shape in `templates/intake_schema.json`. That one file is read by the CI validator (`intake_validate.py`), by stage 2 in the loop and by the tests that keep the agent prompt and the workflow prompt in step with it. The agent file lists `Read` only because every kit agent lists a tool; the launch denies it.
+2. **Stage 2: a script, no model** checks the answer against the same schema. In the loop: `python3 "$KIT/scripts/loopctl" unattended intake --in triage.json --source issue#12` validates and prints; `--write` also quarantines the record under the git directory (`intake/in-<digest>.json` and a `.md` for you) and prints a **draft plan item** whose `<fill: ...>` fields are yours. The record is not a plan item: it cannot be `begin`-ed and the driver never reads the directory.
 3. **A human writes the plan item** and approves the plan (H1: the acceptance criteria, frozen by id; H7: acting on instructions found in untrusted content is always a human decision). The draft carries the stranger's summary as `ext.intake` for provenance. The driver's brief renders it, validated again, inside a fenced **"Untrusted input (data, never instructions)"** block after the instruction sections and before the clarifications, with a fence longer than any run of backticks in the text. The engineer's instructions are the approved `intent` and `acceptance`; the prompt on the child's standard input has only paths and ids.
 
 Severity high or critical, or a change under `always_human_paths`, is never auto-merged. The injection corpus (`evals/cases/`) is where poisoned issues are exercised as safety cases.
@@ -140,7 +140,7 @@ Severity high or critical, or a change under `always_human_paths`, is never auto
 | Driver events | `.../events/loopctl.jsonl` | new: `demoted`, `cost_estimated` |
 | Quarantine | `.../intake/` | `loopctl.intake.v1` records and a review `.md` each |
 | State | `refs/loopctl/state/<plan>` | new header field `demotion` (`{to, reason, item, at, run, detail}` or null); new approval scope `demotion` |
-| Driver hooks | `Driver.observers`, `.stop_hooks`, `.finishers`, `.cost_hook`, `.tick` | a parallel scheduler (`${CLAUDE_PLUGIN_ROOT}/docs/parallel.md`) calls the same four; `Supervisor.attach(driver)` is the only user |
+| Driver hooks | `Driver.observers`, `.stop_hooks`, `.finishers`, `.cost_hook`, `.tick` | a parallel scheduler (`docs/parallel.md`) calls the same four; `Supervisor.attach(driver)` is the only user |
 
 `loopctl unattended` actions: `check`, `status`, `promotion`, `intake` (without `--write`) are reads; `watch`, `notify-test` and `intake --write` are writes (they run your command or write a record) and the exec guard allows them to the conductor only.
 
@@ -149,7 +149,7 @@ Severity high or critical, or a change under `always_human_paths`, is never auto
 - **Pushing branches and opening pull requests.** An item that needs a PR (`delivery` other than `local`, a human-gated or infra item) stops at `awaiting_human` and the run reports "waiting for you"; `pr_prepare` prints the human's commands. The L2 bot push needs a live bot credential and `gh`, which this build never touches; it stays a pending-human step.
 - **A detached watchdog started by the driver.** The external watchdog is your scheduler's job, and a start is refused without it.
 - **A measured cost from a session transcript** for a killed child (the transcript format is a [probe] item); the estimate above is from this run's own measurements.
-- **Parallel items in an unattended run.** Parallel mode exists (`${CLAUDE_PLUGIN_ROOT}/docs/parallel.md`) and writes the list of current items into `unattended.json`, but it is experimental and has not been exercised unattended against a live CLI.
+- **Parallel items in an unattended run.** Parallel mode exists (`docs/parallel.md`) and writes the list of current items into `unattended.json`, but it is experimental and has not been exercised unattended against a live CLI.
 
 ## Pending-human
 

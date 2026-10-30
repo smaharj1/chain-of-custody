@@ -12,8 +12,11 @@ binary, so it carries the checks that must hold for every launch:
 * THE LAUNCH LINE. Fixed argv, `shell=False`, nothing from the plan or a report on it. The prompt goes in on stdin from a file the
   driver wrote. Settings, roster JSON, allowed tools and permission mode are all explicit because a child inherits nothing (V5).
 * THE PROFILE. The settings are generated from the kit's headless template (Phase 2) and validated before every launch: `Workflow`
-  denied and never allowed (RC-17), `dontAsk`, the sandbox on, the kit hooks present, no blanket Bash allow, no `claude` allow. A
+  denied and never allowed (RC-17), `dontAsk`, the sandbox on, no blanket Bash allow, no `claude` allow, no hooks of its own. A
   profile that fails is refused, not repaired.
+* THE PLUGIN. Every child gets `--plugin-dir <kit root>`: the kit's hooks (`hooks/hooks.json`: the guards, the SessionStart canary,
+  the compact hook) load from the plugin the driver runs from, for that one session, ahead of any installed copy. The settings file
+  carries no hooks, so nothing is wired twice, and the canary proves the plugin's hooks ran.
 * THE ENVIRONMENT. An allowlist (PATH, HOME, locale, toolchain locators, the Claude auth variables, KIT_*). No AWS_*, GH_*,
   GITHUB_*, SSH_AUTH_SOCK or other credential of the shell reaches a child (B3).
 * THE PROCESS. Its own session and process group; stdout and stderr go to files; a poll loop watches liveness (heartbeat.py), HALT
@@ -34,15 +37,15 @@ import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import humanonly
-from kitlib import gitutil, jsonio, levels, runstate, semver
+from kitlib import jsonio, kitpaths, levels, runstate, semver
 
-from . import common
+from . import common, kit
 from .common import LoopctlError, Refused
 
 __all__ = ["ENV_HARNESS", "LaunchRefused", "ChildSpec", "ChildResult", "Timing", "find_binary", "is_fake_binary", "check_nesting",
            "check_version", "child_env", "build_settings", "validate_settings", "allow_rules_from_commands", "parse_frontmatter",
            "agent_definition", "build_argv", "run_child", "parse_result_json", "write_child_record", "remove_child_record",
-           "reap_orphans", "terminate_group", "role_kind", "FORK_ENV", "model_for"]
+           "reap_orphans", "terminate_group", "role_kind", "FORK_ENV", "model_for", "plugin_hook_problems"]
 
 ENV_HARNESS = "KIT_FAKE_CLAUDE_HARNESS"
 FAKE_MARKER = b"kit-fake-claude"
@@ -115,20 +118,24 @@ def check_nesting(env: Mapping[str, str], binary: str) -> None:
                         "may (CS-2). A human starts `loopctl run` from a plain terminal" % marker)
 
 
-def check_version(repo: str, base_sha: Optional[str], rs: Any, env: Mapping[str, str], binary: str, configured_level: int,
-                  run: Callable[..., Any] = subprocess.run) -> Dict[str, Any]:
-    """The session-start range check, applied by the driver to itself (report 14.2). Returns {status, version, how, warning}; raises
-    LaunchRefused when the driver must not launch."""
+def _kit_version_file() -> str:
+    """The kit's KIT_VERSION (the plugin the driver runs from). A function so a test can point it at a fixture, as with `_templates_dir`."""
+    return kitpaths.kit("KIT_VERSION")
+
+
+def check_version(rs: Any, env: Mapping[str, str], binary: str, configured_level: int, run: Callable[..., Any] = subprocess.run,
+                  kit_root: Optional[str] = None) -> Dict[str, Any]:
+    """The session-start range check, applied by the driver to itself (report 14.2), against the range in the kit's own `KIT_VERSION`
+    (the plugin the driver runs from; the project has no copy). Returns {status, version, how, warning}; raises LaunchRefused when
+    the driver must not launch."""
     import session_start
     text, how = session_start.claude_version(dict(env, KIT_CLAUDE_BIN=binary), rs, run=run)
     kv = {"claude_code_min": None, "claude_code_tested_max": None}  # type: Dict[str, Optional[str]]
-    if base_sha:
-        body = gitutil.show_file(base_sha, ".claude/KIT_VERSION", repo, isolated=True)
-        if body is not None:
-            try:
-                kv = semver.parse_kit_version_file(body)
-            except ValueError:
-                pass
+    try:
+        with open(os.path.join(kit_root, "KIT_VERSION") if kit_root else _kit_version_file(), encoding="utf-8") as fh:
+            kv = semver.parse_kit_version_file(fh.read())
+    except (OSError, ValueError):
+        pass
     minimum = kv.get("claude_code_min") or session_start.DEFAULT_MIN
     status = semver.range_status(text, minimum, kv.get("claude_code_tested_max"))
     out = {"status": status, "version": text, "how": how, "warning": None}  # type: Dict[str, Any]
@@ -207,8 +214,10 @@ def build_settings(kind: str, rs: Any, cfg: Any, extra_commands: Sequence[Any] =
                    template_dir: Optional[str] = None) -> Tuple[Dict[str, Any], List[str]]:
     """The settings file a child is started with: the kit's template for its kind (`engineer` -> headless-child, `critic` ->
     critic), plus the project's verify commands as allow rules, the runstate directory write-denied and the held-out tests
-    read-denied (V5, report 10.3), the fork-mode and background-task variables (V18) and the compact hook (10.6). Returns
-    (settings, skipped commands). Validated by the caller with `validate_settings`."""
+    read-denied (V5, report 10.3) and the fork-mode and background-task variables (V18). Any `hooks` in the template are dropped:
+    a child's hooks come only from the plugin (`--plugin-dir`, hooks/hooks.json, which also wires the compact hook, 10.6), so a
+    hook here would run twice or name a path the project does not have. Returns (settings, skipped commands). Validated by the
+    caller with `validate_settings`."""
     name = "critic.settings.json" if kind == "critic" else "headless-child.settings.json"
     path = os.path.join(template_dir or _templates_dir(), name)
     try:
@@ -235,18 +244,32 @@ def build_settings(kind: str, rs: Any, cfg: Any, extra_commands: Sequence[Any] =
         if env and env.get(k):
             senv[k] = env[k]
     s["env"] = senv
-    compact_cmd = 'python3 "$CLAUDE_PROJECT_DIR/.claude/scripts/loopctl/compact_hook.py"'
-    ss = s.setdefault("hooks", {}).setdefault("SessionStart", [])
-    if not any("compact_hook.py" in json.dumps(e) for e in ss):
-        ss.append({"matcher": "compact", "hooks": [{"type": "command", "command": compact_cmd, "timeout": 10}]})
+    s.pop("hooks", None)
     return s, skipped
 
 
 _BLANKET = ("Bash", "Bash(*)", "*", "Edit(*)", "Write(*)")
 
 
-def validate_settings(s: Any) -> List[str]:
-    """Problems that make a child profile unsafe to launch (RC-17, CS-2, V5). Empty = fine."""
+def plugin_hook_problems(root: str = kitpaths.KIT_ROOT) -> List[str]:
+    """Problems with the plugin's hooks/hooks.json, the only place a child's hooks come from: the PreToolUse guards, the SessionStart
+    canary and the compact hook must all be wired. Empty = fine."""
+    try:
+        doc = jsonio.read_json(os.path.join(root, "hooks", "hooks.json"))
+    except (OSError, ValueError) as exc:
+        return ["the plugin's hooks/hooks.json cannot be read: %s" % common.clean_text(exc, 80)]
+    hooks = doc.get("hooks") if isinstance(doc, dict) and isinstance(doc.get("hooks"), dict) else {}
+    bad = []  # type: List[str]
+    if not hooks.get("PreToolUse") or not hooks.get("SessionStart"):
+        bad.append("the plugin's hooks/hooks.json lacks the PreToolUse guards or the SessionStart canary: a child would run unguarded")
+    elif "compact_hook.py" not in json.dumps(hooks.get("SessionStart")):
+        bad.append("the plugin's hooks/hooks.json does not wire the compact hook (SessionStart, matcher compact)")
+    return bad
+
+
+def validate_settings(s: Any, plugin_root: Optional[str] = kitpaths.KIT_ROOT) -> List[str]:
+    """Problems that make a child profile unsafe to launch (RC-17, CS-2, V5), plus the plugin's hooks it relies on (unless
+    `plugin_root` is None). Empty = fine."""
     if not isinstance(s, dict):
         return ["the settings are not an object"]
     bad = []  # type: List[str]
@@ -278,9 +301,10 @@ def validate_settings(s: Any) -> List[str]:
     sb = s.get("sandbox") if isinstance(s.get("sandbox"), dict) else {}
     if sb.get("enabled") is not True or sb.get("allowUnsandboxedCommands") is not False:
         bad.append("the sandbox is not enabled, or unsandboxed commands are allowed (B3)")
-    hooks = s.get("hooks") if isinstance(s.get("hooks"), dict) else {}
-    if not hooks.get("PreToolUse") or not hooks.get("SessionStart"):
-        bad.append("the kit hooks (PreToolUse guards and the SessionStart canary) are missing: a child inherits nothing (V5)")
+    if s.get("hooks"):
+        bad.append("the profile carries hooks of its own: a child's hooks come only from the plugin (--plugin-dir), never twice")
+    if plugin_root is not None:
+        bad.extend(plugin_hook_problems(plugin_root))
     return bad
 
 
@@ -316,16 +340,23 @@ def model_for(profile: str, role: str, round_n: int, env: Mapping[str, str]) -> 
     return got if got else (None, None)
 
 
-def agent_definition(repo: str, base_sha: Optional[str], role: str, model: Optional[str] = None, effort: Optional[str] = None) -> Dict[str, Any]:
-    """The `--agents` entry for one role, from `.claude/agents/<role>.md` AT THE BASE SHA (an item cannot edit its own reviewer's
-    tools). Raises LaunchRefused when the role is not a plain name or the file is not there."""
+def agent_definition(repo: str, base_sha: Optional[str], role: str, model: Optional[str] = None, effort: Optional[str] = None,
+                     source_out: Optional[Dict[str, Any]] = None, kit_root: str = kitpaths.KIT_ROOT) -> Dict[str, Any]:
+    """The `--agents` entry for one role: the project's override `.claude/agents/<role>.md` AT THE BASE SHA (an item cannot edit
+    its own reviewer's tools), else the kit's `agents/<role>.md`, with `${CLAUDE_PLUGIN_ROOT}` filled in (Claude Code does not
+    substitute it inside `--agents`). `source_out`, when given, is filled with where it came from (kit.resolve_agent). Raises
+    LaunchRefused when the role is not a plain name, there is no base sha, or neither file exists."""
     if not _SAFE_ROLE.match(role or ""):
         raise LaunchRefused("%r is not a role name" % common.clean_text(role, 40))
-    text = None
-    if base_sha:
-        text = gitutil.show_file(base_sha, ".claude/agents/%s.md" % role, repo, isolated=True)
+    if not base_sha:
+        raise LaunchRefused("no base sha to read the agent definition for %s at" % role)
+    text, src = kit.resolve_agent(repo, base_sha, role, kit_root)
     if text is None:
-        raise LaunchRefused("no agent definition .claude/agents/%s.md at the base sha" % role)
+        raise LaunchRefused("no agent definition for %s: neither .claude/agents/%s.md at the base sha nor the kit's agents/%s.md"
+                            % (role, role, role))
+    if source_out is not None:
+        source_out.clear()
+        source_out.update(src)
     meta, body = parse_frontmatter(text)
     d = {"description": meta.get("description", role), "prompt": body}  # type: Dict[str, Any]
     if meta.get("tools"):
@@ -348,7 +379,7 @@ class ChildSpec(object):
 
     def __init__(self, role: str, session_id: str, prompt_file: str, cwd: str, settings_path: str, agent: Dict[str, Any],
                  allowed_tools: Sequence[str], budget_usd: float, env: Mapping[str, str], item: str = "", stage: str = "",
-                 extra: Optional[Dict[str, Any]] = None) -> None:
+                 extra: Optional[Dict[str, Any]] = None, plugin_dir: str = kitpaths.KIT_ROOT) -> None:
         self.role = role
         self.session_id = session_id
         self.prompt_file = prompt_file
@@ -361,17 +392,22 @@ class ChildSpec(object):
         self.item = item
         self.stage = stage
         self.extra = dict(extra or {})          # brief / report paths for the compact hook's child record
+        self.plugin_dir = plugin_dir            # the kit: its hooks load for this session through --plugin-dir
 
 
 def build_argv(binary: str, spec: ChildSpec) -> List[str]:
-    """claude -p --agent <role> --agents <json> --settings <file> --allowedTools <rule> <rule> ... --permission-mode dontAsk
-    --max-budget-usd <remaining> --output-format json --session-id <uuid>   (report 11.1; the prompt arrives on stdin)."""
+    """claude -p --plugin-dir <kit> --agent <role> --agents <json> --settings <file> --allowedTools <rule> <rule> ...
+    --permission-mode dontAsk --max-budget-usd <remaining> --output-format json --session-id <uuid>   (report 11.1; the prompt
+    arrives on stdin). `--agent <role>` names the `--agents` entry: the plugin's own copy of an agent is `chain-of-custody:<role>`,
+    a different name, so the definition read at the base sha is the one that runs."""
     if not runstate.valid_id(spec.session_id) or not _SAFE_ROLE.match(spec.role):
         raise LaunchRefused("invalid session id or role for a launch line")
     if not (isinstance(spec.budget_usd, (int, float)) and not isinstance(spec.budget_usd, bool) and 0 < spec.budget_usd < 1e6):
         raise LaunchRefused("the launch budget must be a positive number")
     tools = [t for t in spec.allowed_tools if isinstance(t, str) and t and not t.startswith("-")]      # one argument per rule: a rule may hold spaces
-    return [binary, "-p", "--agent", spec.role, "--agents", json.dumps({spec.role: spec.agent}, sort_keys=True, ensure_ascii=True),
+    if not (isinstance(spec.plugin_dir, str) and os.path.isabs(spec.plugin_dir) and os.path.isdir(spec.plugin_dir)):
+        raise LaunchRefused("the plugin directory for a launch must be the kit's absolute path")
+    return [binary, "-p", "--plugin-dir", spec.plugin_dir, "--agent", spec.role, "--agents", json.dumps({spec.role: spec.agent}, sort_keys=True, ensure_ascii=True),
             "--settings", spec.settings_path, "--allowedTools"] + tools + ["--permission-mode", "dontAsk",
             "--max-budget-usd", "%.4f" % spec.budget_usd, "--output-format", "json", "--session-id", spec.session_id]
 

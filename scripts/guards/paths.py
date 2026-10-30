@@ -22,7 +22,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 __all__ = ["fold", "absolute", "lexical", "physical", "forms", "find_root", "classify", "classify_forms",
            "rel_to_root", "match_rel", "expand_glob", "home_dir", "PROTECTED_DESCRIPTIONS", "ENGINEER_ONLY",
-           "is_report_path", "safe_read", "within", "SANDBOX_DENY_WRITE", "SANDBOX_DENY_WRITE_FILES", "sandbox_edit_rule", "agent_authored", "trusted_bases"]
+           "is_report_path", "safe_read", "within", "SANDBOX_DENY_WRITE", "SANDBOX_DENY_WRITE_FILES", "sandbox_edit_rule", "agent_authored", "trusted_bases",
+           "kit_hit", "kit_ancestor", "kit_code", "trusted_kit_file"]
 
 MAX_READ = 512 * 1024
 
@@ -177,7 +178,7 @@ CLAUDE_ANCHORED = [
 # anchored at the repository root
 ROOT_ANCHORED = [
     ("mcp", [".mcp.json", ".mcp.*.json"]),
-    ("plugin", [".claude-plugin", ".claude-plugin/**", "plugin", "plugin/**"]),
+    ("plugin", [".claude-plugin", ".claude-plugin/**"]),
     ("ci", [".github/**", ".gitlab-ci.yml", ".circleci/**", "jenkinsfile", "azure-pipelines.yml", ".buildkite/**",
             "bitbucket-pipelines.yml", ".travis.yml"]),
     ("codeowners", ["codeowners", "docs/codeowners", ".gitlab/codeowners"]),
@@ -195,23 +196,24 @@ HOME_PROTECTED = [".bashrc", ".bash_profile", ".bash_login", ".profile", ".zshrc
 
 # The sandbox `denyWrite` set (review fixes D1): the whole H6 write set above, plus the session registry, as paths relative to the project directory.
 # One source for `templates/security/sandbox.settings.json`, the generated settings templates and the doctor's `sandbox.deny-paths`;
-# tests/guards/test_sandbox_template.py proves every CLAUDE_ANCHORED and ROOT_ANCHORED pattern is covered. NOT listed on purpose:
+# tests/guards/test_sandbox_template.py proves every CLAUDE_ANCHORED and ROOT_ANCHORED pattern is covered. The kit itself (KIT_ROOT, ~/.claude/plugins)
+# is outside the project directory, where the sandbox allows no write at all, so it needs no entry. NOT listed on purpose:
 # `.claude/context/**` (primers are editable on main, g_file.MAIN_ALLOW), `.claude/pr/`, and the rest of `.git/loopctl/` (run.json, lock, HALT, nonces: the
 # conductor writes them legitimately). The session registry is `<git-common-dir>/loopctl/sessions`; in a linked worktree that directory is outside
 # the project directory and its absolute path must be added too (`wiring.py --sandbox-snippet` prints the line, the doctor row `sandbox.registry-path` checks it).
 SANDBOX_DENY_WRITE = (
     ".git/hooks", ".git/config", ".git/info", ".git/loopctl/sessions",
-    ".claude/settings.json", ".claude/settings.local.json", ".claude/settings.v2.json", ".claude/settings*.json", ".claude/managed-settings.json",
+    ".claude/settings.json", ".claude/settings.local.json", ".claude/settings*.json", ".claude/managed-settings.json",
     ".claude/hooks", ".claude/scripts", ".claude/agents", ".claude/skills", ".claude/commands", ".claude/rules", ".claude/workflows",
-    ".claude/loop.config.md", ".claude/templates",
-    ".claude-plugin", "plugin",
+    ".claude/loop.config.md",
+    ".claude-plugin",
     ".mcp.json", ".mcp.*.json",
     ".github", ".gitlab-ci.yml", ".gitlab", ".circleci", "Jenkinsfile", "azure-pipelines.yml", ".buildkite", "bitbucket-pipelines.yml", ".travis.yml",
     "CODEOWNERS", "docs/CODEOWNERS",
 )
 # the entries that name a file or a glob (`Edit(<entry>)`); every other entry is a directory (`Edit(<entry>/**)`)
 SANDBOX_DENY_WRITE_FILES = frozenset({
-    ".git/config", ".claude/settings.json", ".claude/settings.local.json", ".claude/settings.v2.json", ".claude/settings*.json",
+    ".git/config", ".claude/settings.json", ".claude/settings.local.json", ".claude/settings*.json",
     ".claude/managed-settings.json", ".claude/loop.config.md", ".mcp.json", ".mcp.*.json", ".gitlab-ci.yml", "Jenkinsfile", "azure-pipelines.yml",
     "bitbucket-pipelines.yml", ".travis.yml", "CODEOWNERS", "docs/CODEOWNERS",
 })
@@ -225,7 +227,8 @@ def sandbox_edit_rule(entry: str) -> str:
 PROTECTED_DESCRIPTIONS = {
     "settings": "Claude Code settings (H6)",
     "hooks": "the hooks directory (H6)",
-    "scripts": "kit scripts, which include the guards (H6)",
+    "scripts": "the project's .claude/scripts (H6)",
+    "kit": "the kit's own files: the plugin, whose scripts include the guards (H6)",
     "agents": "agent definitions (H6)",
     "skills": "skill definitions, whose frontmatter can run hooks (H6, RC-18)",
     "commands": "mode definitions (H6)",
@@ -234,7 +237,7 @@ PROTECTED_DESCRIPTIONS = {
     "loop-config": "loop.config.md guard keys (H6)",
     "claude-json": "the user MCP and project config (H6)",
     "mcp": ".mcp.json, the MCP tool plane (H3, §5.6)",
-    "plugin": "plugin definitions (H3, RC-18)",
+    "plugin": "a plugin or marketplace manifest (H3, RC-18)",
     "ci": "CI workflows and pipeline config (H3)",
     "codeowners": "CODEOWNERS (H6)",
     "git": "git internals: hooks, config, info and the loopctl state (§5.9)",
@@ -257,6 +260,89 @@ ENGINEER_ONLY = [
 ]
 
 
+# The kit's own files (H6). KIT_ROOT comes from kitpaths (found from this file, never from the environment). In a user's project the kit is a
+# plugin copy under ~/.claude/plugins and all of it is protected; in a checkout of the kit (a `.git` at KIT_ROOT) only the areas the kit runs
+# from are, so the checkout's tests and docs stay editable.
+KIT_DEV_EXTRA = ("migrate", "adapters", "KIT_VERSION")
+_KIT_ROOTS = None   # type: Optional[Tuple[List[str], bool]]
+
+
+def _kit_roots() -> Tuple[List[str], bool]:
+    """([the lexical and physical KIT_ROOT, folded], whether only the kit areas are protected)."""
+    global _KIT_ROOTS
+    if _KIT_ROOTS is None:
+        from kitlib import kitpaths
+        roots = list(dict.fromkeys(fold(os.path.normpath(r)) for r in (os.path.abspath(kitpaths.KIT_ROOT), os.path.realpath(kitpaths.KIT_ROOT))))
+        _KIT_ROOTS = (roots, os.path.lexists(os.path.join(kitpaths.KIT_ROOT, ".git")))
+    return _KIT_ROOTS
+
+
+def kit_areas() -> Tuple[str, ...]:
+    from kitlib import kitpaths
+    return tuple(kitpaths.KIT_AREAS) + KIT_DEV_EXTRA
+
+
+def plugins_dir(home: Optional[str] = None) -> str:
+    return fold(os.path.normpath(os.path.join(home or home_dir(), ".claude", "plugins")))
+
+
+def kit_hit(abs_path: str, home: Optional[str] = None) -> Optional[Tuple[str, str]]:
+    """("kit", why) when the path is a kit file: under ~/.claude/plugins, or under KIT_ROOT (only its kit areas in a checkout of the kit)."""
+    fp = fold(os.path.normpath(abs_path))
+    plug = plugins_dir(home)
+    if fp == plug or fp.startswith(plug + "/"):
+        return "kit", "~/.claude/plugins" + os.path.normpath(abs_path)[len(plug):]
+    roots, dev = _kit_roots()
+    for k in roots:
+        if fp == k or fp.startswith(k + "/"):
+            sub = fp[len(k) + 1:]
+            if not dev:
+                return "kit", "${CLAUDE_PLUGIN_ROOT}/" + sub
+            first = sub.split("/", 1)[0]
+            if first and first in tuple(fold(a) for a in kit_areas()):
+                return "kit", "${CLAUDE_PLUGIN_ROOT}/" + sub
+    return None
+
+
+def kit_ancestor(abs_dir: str, home: Optional[str] = None) -> bool:
+    """True when the directory holds the kit or the plugin directory (`rm -rf` of it would remove the guards)."""
+    fd = fold(os.path.normpath(abs_dir)).rstrip("/")
+    for k in _kit_roots()[0] + [plugins_dir(home)]:
+        if k.startswith(fd + "/"):
+            return True
+    return False
+
+
+def kit_code(abs_path: str, home: Optional[str] = None) -> bool:
+    """True when copying this path would copy the kit's code: KIT_ROOT itself, anything under its `scripts/` or `hooks/`, or anything
+    under ~/.claude/plugins. A copy runs under another name, where the loopctl and kit-script rules no longer recognise it."""
+    fp = fold(os.path.normpath(abs_path)).rstrip("/")
+    plug = plugins_dir(home)
+    if fp == plug or fp.startswith(plug + "/"):
+        return True
+    for k in _kit_roots()[0]:
+        if fp == k:
+            return True
+        for area in ("scripts", "hooks"):
+            a = k + "/" + area
+            if fp == a or fp.startswith(a + "/"):
+                return True
+    return False
+
+
+def trusted_kit_file(path: str) -> bool:
+    """True for a file of the installed kit itself (its physical path is under the physical KIT_ROOT). A copy anywhere else is not."""
+    from kitlib import kitpaths
+    p = fold(os.path.realpath(path))
+    k = fold(os.path.realpath(kitpaths.KIT_ROOT))
+    if not p.startswith(k + "/"):
+        return False
+    if not _kit_roots()[1]:
+        return True
+    # a checkout of the kit: only the kit areas are the kit; anything else there is the developer's working files
+    return p[len(k) + 1:].split("/", 1)[0] in tuple(fold(a) for a in kit_areas())
+
+
 def classify(abs_path: str, home: Optional[str] = None) -> Optional[Tuple[str, str]]:
     """(category, why) if this absolute path is protected, else None."""
     p = os.path.normpath(abs_path)
@@ -265,6 +351,10 @@ def classify(abs_path: str, home: Optional[str] = None) -> Optional[Tuple[str, s
     # git internals: any `.git` component
     if GIT_COMPONENT in low:
         return "git", "/".join(parts[low.index(GIT_COMPONENT):])
+    # the kit: the plugin root this code runs from, and every installed plugin and marketplace
+    hit = kit_hit(p, home)
+    if hit:
+        return hit
     # `.claude`-anchored: in the user's own ~/.claude, or inside a git working tree. A `.claude` in a scratch directory that is neither
     # (for example /tmp/fixture/.claude/settings.json) configures nothing until someone makes it a project.
     for k, comp in enumerate(low):
@@ -351,7 +441,7 @@ def safe_read(path: str, limit: int = MAX_READ) -> Optional[str]:
         return None
 
 
-BASE_REFS = ("origin/HEAD", "main", "master")
+BASE_REFS = ("refs/remotes/origin/HEAD", "refs/heads/main", "refs/heads/master")   # fully qualified (a branch named origin/HEAD is not the remote)
 
 
 def _git(root: str, *args: str) -> Optional["subprocess.CompletedProcess"]:
@@ -392,6 +482,8 @@ def agent_authored(path: str) -> bool:
     protected branch): a conductor commit on a feat/* branch must not launder what an engineer wrote (GD-6). If no base can be determined the file
     is agent-authored (fail closed)."""
     p = os.path.realpath(path)
+    if trusted_kit_file(p):
+        return False
     root = find_root(p)
     if root is None:
         return True

@@ -1,11 +1,11 @@
 # Running an unknown repository's commands for the first time
 
-On an existing repository the planner and the primer protocol tell the agent to run the execution-critical commands once (the test command, the run command, the ephemeral-database command) to prove them before writing them down. On a repository you have not vetted, those commands are unknown code. `${CLAUDE_PLUGIN_ROOT}/scripts/probe_run.py` is the sandbox for that first run (CO-14, IMP-25).
+On an existing repository the planner and the primer protocol tell the agent to run the execution-critical commands once (the test command, the run command, the ephemeral-database command) to prove them before writing them down. On a repository you have not vetted, those commands are unknown code. `scripts/probe_run.py` is the sandbox for that first run (CO-14, IMP-25).
 
 ## Use
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/probe_run.py --repo . 
+python3 "$KIT/scripts/probe_run.py" --repo . 
 ```
 
 With no `--go` it **only prints**: the command list, where each command came from, and a short digest of the list. Nothing runs. The commands come from `verify_tests`, `verify_run` and `db_ephemeral` in `.claude/loop.config.md`, from fenced command blocks under "Run the App Locally", "Apply Migrations to the Durable Dev DB", "Seed Data" and "Reset the Local DB" in `.claude/context/local-dev.md`, and from any `--cmd` you add.
@@ -13,7 +13,7 @@ With no `--go` it **only prints**: the command list, where each command came fro
 Read the list. If it is safe to run, tell the agent "go". The agent then runs:
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/probe_run.py --repo . --image <an image with your toolchain> --go <digest>
+python3 "$KIT/scripts/probe_run.py" --repo . --image <an image with your toolchain> --go <digest>
 ```
 
 The digest ties your "go" to the list you read: if the list changed, the digest no longer matches and nothing runs. `--image` has no default, because only you know which image has your toolchain.

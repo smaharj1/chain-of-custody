@@ -26,12 +26,13 @@ no terraform binary), and refuses:
                                    (its hooks and generate blocks run commands: not judged here)
   parse.unparsed                   a file the scanner could not read: manual review, never a pass
 
-Run it from the BASE ref's copy of this script, against the PR checkout as data:
+Run it from the kit fetched at the release the workflow pins (never from a checkout), against the PR checkout as data, with the
+BASE ref's policy:
 
-    python3 base/.claude/scripts/infra/source_policy.py --root pr --base base \\
+    python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base \\
         --policy base/.claude/infra-policy.json
     # after `terraform init -backend=false`, before any plan:
-    python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy ... --post-init
+    python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy ... --post-init
 
 `--base` is the checked-out base ref (what `main` already deploys). Without `--base`, new
 providers and backends cannot be judged and the run fails unless you say `--initial` (the first

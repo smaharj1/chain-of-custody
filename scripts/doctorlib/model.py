@@ -2,7 +2,7 @@
 
 Everything the doctor does to the outside world goes through a seam on `Context`, so tests
 replace it: `run` (subprocesses), `reach` (network probes), `ghapi` (GitHub), `now`, `env`,
-`fs_root`. Defaults are the real thing; tests pass fakes. Nothing in this package opens a
+`fs_root`, `kit_root` (the plugin folder). Defaults are the real thing; tests pass fakes. Nothing in this package opens a
 socket or starts a process except through those seams.
 """
 from __future__ import annotations
@@ -124,8 +124,14 @@ class Context(object):
                  ghapi: Optional[Callable[[str], Tuple[int, Any]]] = None,
                  claude_version: Optional[str] = None, config_ref: Optional[str] = None,
                  extra_settings: Optional[List[str]] = None, workflow_exempt: Optional[List[str]] = None,
-                 configured_level: Optional[str] = None, platform: Optional[str] = None, groups: Optional[List[str]] = None) -> None:
+                 configured_level: Optional[str] = None, platform: Optional[str] = None, groups: Optional[List[str]] = None,
+                 kit_root: Optional[str] = None) -> None:
         self.repo = os.path.abspath(repo)
+        # the plugin folder (KIT_VERSION, plugin.json, templates/); the kit's own location, never the project's .claude/
+        if kit_root is None:
+            from kitlib import kitpaths
+            kit_root = kitpaths.KIT_ROOT
+        self.kit_root = os.path.abspath(kit_root)
         self.home = os.path.abspath(home)
         self.env = dict(env)
         self.fs_root = fs_root
@@ -190,6 +196,10 @@ class Context(object):
 
     def repo_path(self, *parts: str) -> str:
         return os.path.join(self.repo, *parts)
+
+    def kit_path(self, *parts: str) -> str:
+        """A file of the kit itself (the plugin folder), e.g. `kit_path("templates", "security")`."""
+        return os.path.join(self.kit_root, *parts)
 
     def getenv(self, name: str, default: str = "") -> str:
         return self.env.get(name, default)

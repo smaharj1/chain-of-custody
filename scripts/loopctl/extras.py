@@ -3,7 +3,7 @@
 Classification (one table, `kitlib/loopctl_table.py`, which `loopctl/cli.py` and `guards/g_exec.py` share):
 
     remote-lock status        READ           the lock on the remote, without its token
-    remote-lock acquire|renew|release|steal   HUMAN ONLY   push to refs/loopctl/lock/<plan> on the remote named by `remote_lock` (no agent pushes, the conductor included)
+    remote-lock acquire|renew|release|steal   HUMAN ONLY   push to refs/loopctl/lock/<plan> on the remote named by `remote_lock` (no agent runs it, the conductor included)
     claim list|show           READ           the claims on the plan's items
     claim take|release        HUMAN ONLY     push to refs/loopctl/claim/<plan>/<item>
     merge-class               READ           would this item be eligible for the L5 low-risk lane? (nothing here merges)

@@ -1,6 +1,6 @@
 ---
 name: intake-triage
-description: Stage 1 of two-stage intake (report 5.3). Reads ONE piece of untrusted text (an issue, a comment, a form) that a stranger wrote and answers with a single JSON object in the fixed intake schema. Read-only and run with every tool denied at launch; its answer is untrusted until a deterministic script has checked it. Not for ad-hoc delegation: the intake workflow or the loop starts it, never an agent.
+description: Stage 1 of two-stage intake (report 5.3). Reads ONE piece of untrusted text (an issue, a comment, a form) that a stranger wrote and answers with a single JSON object in the fixed intake schema. Read-only and run with every tool denied at launch; its answer is untrusted until a deterministic script has checked it. Not for ad-hoc delegation — the intake workflow or the loop starts it, never an agent.
 tools: Read
 disallowedTools: Agent, Skill, Workflow, mcp__*
 model: opus

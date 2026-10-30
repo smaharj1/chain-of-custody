@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from kitlib import kitpaths
+
 from .. import common
 
 
@@ -45,7 +47,7 @@ def rows(ctx: Any) -> List[Dict[str, Any]]:
         res.append({"id": rid, "ok": bool(ok), "message": msg})
 
     if str(ctx.cfg.get("pipeline_host") or "conductor") == "workflow":
-        row("parallel.pipeline-host", False, "pipeline_host: workflow is design-only (.claude/spec/pipeline-host-workflow.md; probes V3, V23): use conductor")
+        row("parallel.pipeline-host", False, "pipeline_host: workflow is design-only (%s; probes V3, V23): use conductor" % kitpaths.kit("spec", "pipeline-host-workflow.md"))
     if not enabled(ctx.cfg):
         row("parallel.mode", True, "parallel_mode is off: one item at a time")
         return res

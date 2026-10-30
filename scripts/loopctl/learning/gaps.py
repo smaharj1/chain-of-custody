@@ -3,14 +3,14 @@
 What it does
     1. `detect(data)` finds what repeats: engineers' brief gaps (L-33), non-empty Primer Deltas, a gate finding that blocks again and again,
        an item-class failure reason that recurs, `env` failures, report form problems, a critic with low precision, a primer going stale.
-    2. `plan_drafts(gaps)` decides what to draft for each: a RULE skeleton (`.claude/rules/<domain>-<kind>.md`, from `.claude/templates/rule.md`)
+    2. `plan_drafts(gaps)` decides what to draft for each: a RULE skeleton (`.claude/rules/<domain>-<kind>.md`, from `${CLAUDE_PLUGIN_ROOT}/templates/rule.md`)
        or a PROPOSAL (a markdown note for a primer, a rubric or the doctor).
     3. `write_drafts(...)` writes them under `<git-common-dir>/loopctl/gaps/<id>/`, never anywhere else, with the git and gh commands in `COMMANDS.txt`.
     4. `commands(...)` returns the commands for a person to run. loopctl never runs them (H6): it does not commit, push, switch branches or open
        a pull request, and this module starts no process at all.
 
 What it must not do, and how that is held
-    * Write outside its draft directory, or a file a guardrail owns (hooks, settings, agents, commands, skills, `.claude/scripts`, `loop.config`,
+    * Write outside its draft directory, or a file a guardrail owns (hooks, settings, agents, commands, skills, the kit's own files, `loop.config`,
       rulesets and workflows, `docs/baseline/evidence.json`). A drafted file's target is checked twice: it has to match the one pattern a rule
       may have (`.claude/rules/<name>.md`), and it must not match the protected list. Every write is exclusive-create, refuses a symlink on the way,
       and checks the real path stays under the draft directory.

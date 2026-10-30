@@ -17,7 +17,6 @@
 /.claude/               @PLACEHOLDER-guardrail-owners
 /.mcp.json              @PLACEHOLDER-guardrail-owners
 /.claude-plugin/        @PLACEHOLDER-guardrail-owners
-/plugin/                @PLACEHOLDER-guardrail-owners
 /skills/                @PLACEHOLDER-guardrail-owners
 /scripts/               @PLACEHOLDER-guardrail-owners
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Optional, Tuple
 
-from kitlib import evidence, levels, runstate
+from kitlib import evidence, kitpaths, levels, runstate
 
 from . import delivery, deploy, extras  # noqa: F401  (delivery registers its check by being imported)
 from .model import Context, Result, check, failed, passed, skipped, ERROR, WARN, PASS, FAIL, UNKNOWN
@@ -87,7 +87,8 @@ def cap_credentials(ctx: Context, rs: R) -> L.Cap:
         return L.Cap("credentials", L.L1, "reachable credential(s): " + _short(errs))
     meta = rs.first("cred.net.metadata")
     if meta is not None and meta.status != PASS:
-        return L.Cap("credentials", L.L1, "metadata endpoints not probed and not denied by the sandbox (run --credentials --live, or deny 169.254.0.0/16)")
+        return L.Cap("credentials", L.L1, "metadata endpoints not probed and not denied by the sandbox (run `%s` from a plain terminal, or deny "
+                                          "169.254.0.0/16)" % kitpaths.script_cmd("doctor.py", "--credentials", "--live"))
     return L.Cap("credentials", L.L5, "no reachable credentials found")
 
 
@@ -217,7 +218,7 @@ def prerequisites(ctx: Context, rs: R) -> Dict[int, List[Tuple[str, bool, str]]]
     if iac:
         l3.append(("IaC apply gate the bot cannot trigger", env_reviewers_available(ctx) or "apply_human_dispatch" in attested(ctx),
                    "IaC found (%s) but neither Environment reviewers nor a human-only dispatch is attested (apply_human_dispatch)" % ", ".join(iac)))
-    loopctl_dir = os.path.join(ctx.repo, ".claude", "scripts", "loopctl")
+    loopctl_dir = ctx.kit_path("scripts", "loopctl")
     l4 = [
         ("loopctl installed", os.path.isdir(loopctl_dir), "loopctl is not installed (Phase 4)"),
         ("spend ceiling set", ctx.config is not None and ctx.config.is_set("run_budget_usd"), "run_budget_usd is not set in loop.config"),
@@ -264,10 +265,10 @@ def next_blocker(eff: L.EffectiveLevel) -> str:
 def check_config_load(ctx: Context) -> List[Result]:
     cfg = ctx.config
     if cfg is None:
-        return [failed("config.load", "loop.config could not be read: %s" % ctx.config_error, "create .claude/loop.config.md from the kit template", severity=WARN)]
+        return [failed("config.load", "loop.config could not be read: %s" % ctx.config_error, "run /chain-of-custody:init (it writes .claude/loop.config.md from the plugin's seed)", severity=WARN)]
     out = []  # type: List[Result]
     for i in cfg.errors:
-        out.append(failed("config.load", str(i), "fix the key (see .claude/scripts/kitlib/schema/*.json)", severity=WARN))
+        out.append(failed("config.load", str(i), "fix the key (see %s)" % ctx.kit_path("scripts", "kitlib", "schema", "*.json"), severity=WARN))
     return out or [passed("config.load", "loop.config parsed with no errors")]
 
 

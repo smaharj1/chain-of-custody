@@ -1,4 +1,4 @@
-# Tests for plan.rego. Run: opa test .claude/templates/infra/policy   (or: conftest verify --policy .claude/templates/infra/policy)
+# Tests for plan.rego. Run: opa test "$KIT/templates/infra/policy"   (or: conftest verify --policy "$KIT/templates/infra/policy")
 # Not run by the kit's offline suite (no opa in it). Written for OPA 0.59 or newer.
 package kit.infra.plan
 

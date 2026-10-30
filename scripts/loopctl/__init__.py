@@ -1,6 +1,6 @@
 """loopctl: the deterministic half of the loop (report section 10, IMP-25).
 
-Run it as `python3 .claude/scripts/loopctl <command>`. Python 3.9, standard library only. Git runs as a
+Run it as `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl <command>`. Python 3.9, standard library only. Git runs as a
 subprocess with a fixed argument list, `shell=False`, global config ignored and hooks pinned off
 (`kitlib.gitutil`); nothing from a plan, a report or an issue is ever placed on a command line unvalidated.
 

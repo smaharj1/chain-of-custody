@@ -63,6 +63,6 @@ Some plugins install SessionStart text that tells the model it MUST use a partic
 
 Never name a kit skill `loop` (the platform has a bundled `/loop`) or `code-review` (the platform has a bundled `/code-review`, and which one wins is unverified). The kit's reviewer is the `code-reviewer` **agent**; the bundled `/code-review` or `/security-review` can be used as an optional second opinion in an interactive session.
 
-## The root `skills/` folder and the Codex adapter
+## The root `skills/` folder is the plugin's
 
-`skills/chain-of-custody/SKILL.md` is the **Codex** discovery file and points at paths under `.claude/`. If the repository root were also used as a Claude Code **plugin** root, that file would load as a Claude skill and point at paths that do not exist there. So: do not use this repository's root as a plugin root. The packaging phase moves the plugin to `plugin/` with the marketplace file at the root, and generates the Codex and Cursor installs into `dist/copy-install/` with their paths rewritten. Until then, install by copying `.claude/` as the README says.
+The repository root is the Claude Code plugin, so `skills/` holds only the kit's modes and loads as plugin skills (`/chain-of-custody:<mode>`). Codex and Cursor get no files at the root: `scripts/adapt.py` writes their guidance copy into the project (`.chain-of-custody/`, `AGENTS.md`, `.cursor/rules/chain-of-custody.mdc`; see `adapters/SETUP.md`). Never add a non-plugin skill under the root `skills/`.

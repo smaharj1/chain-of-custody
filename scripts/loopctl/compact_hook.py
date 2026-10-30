@@ -2,7 +2,7 @@
 """SessionStart `compact` hook: give a session back the thread of the run after `/compact` (report 10.6; CS-24, CS-23, L-17, L-18; CO-35).
 
     "SessionStart": [{"matcher": "compact", "hooks": [{"type": "command",
-        "command": "python3 \\"$CLAUDE_PROJECT_DIR/.claude/scripts/loopctl/compact_hook.py\\"", "timeout": 10}]}]
+        "command": "python3 \\"${CLAUDE_PLUGIN_ROOT}/scripts/loopctl/compact_hook.py\\"", "timeout": 10}]}]      (the plugin's hooks/hooks.json)
 
 What survives a compaction is what loopctl can re-read: the item, its stage and attempt, the last failure, the counters, what is
 waiting on a human, the brief and report paths, and the next action. The hook returns that as `additionalContext` (at most 10,000
@@ -32,14 +32,15 @@ sys.path[:] = [p for p in sys.path if p and os.path.abspath(p) != _HERE]      # 
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
-from kitlib import gitutil, jsonio, runstate  # noqa: E402
+from kitlib import gitutil, jsonio, kitpaths, runstate  # noqa: E402
 
 MAX_CONTEXT = 10000
-PROTOCOL = ".claude/context/engineer-protocol.md"
-SPEC = ".claude/spec/loopctl.md"
+PROTOCOL = kitpaths.kit("context", "engineer-protocol.md")      # kit files by absolute path: a session's Bash has no ${CLAUDE_PLUGIN_ROOT}
+SPEC = kitpaths.kit("spec", "loopctl.md")
+LOOPCTL = kitpaths.script_cmd("loopctl")
 
 _NEXT = {   # conductor: status -> what to do now (the commands are the ones in orchestrate.md's loopctl hand-off table)
-    "pending": "run `python3 .claude/scripts/loopctl begin {item} --session {sid}` if the item is eligible",
+    "pending": "run `loopctl begin {item} --session {sid}` if the item is eligible",
     "designing": "finish the design and briefs, then `loopctl advance {item} design_review --session {sid}`",
     "design_review": "run the design-critic; then `loopctl advance {item} building` (or `stubbing`), or `loopctl fail {item} --class item --reason design_blocked`",
     "stubbing": "the acceptance stubs and tests are written; then `loopctl advance {item} building --session {sid}`",
@@ -112,7 +113,7 @@ def build_context(hook: Any, env: Optional[Mapping[str, str]] = None) -> Dict[st
     plan = run.get("plan") if isinstance(run.get("plan"), str) else None
     st = _state(repo, plan) if plan else None
     L = ["kit loopctl: context restored after /compact (report 10.6). Re-read the state instead of trusting memory: "
-         "`python3 .claude/scripts/loopctl status --json`."]
+         "`%s status --json` (`loopctl` below is that command)." % LOOPCTL]
     nonce = rs.read_nonce(sid)
     if nonce:
         L.append("canary session=%s nonce=%s." % (sid, nonce))
@@ -168,8 +169,8 @@ def main(stdin: Any = None, stdout: Any = None, env: Optional[Mapping[str, str]]
         if not context:
             return 0
     except Exception as exc:  # noqa: BLE001 - never block: say what failed
-        context = "kit loopctl compact hook FAILED (%s: %s). Run `python3 .claude/scripts/loopctl status --json` before you continue." % (
-            type(exc).__name__, _t(exc, 120))
+        context = "kit loopctl compact hook FAILED (%s: %s). Run `%s status --json` before you continue." % (
+            type(exc).__name__, _t(exc, 120), LOOPCTL)
     stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": context}}) + "\n")
     return 0
 

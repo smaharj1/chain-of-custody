@@ -1,4 +1,4 @@
-"""`python3 .claude/scripts/loopctl <command>` entry point."""
+"""`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl <command>` entry point."""
 from __future__ import annotations
 
 import os

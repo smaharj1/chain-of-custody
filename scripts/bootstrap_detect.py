@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """bootstrap_detect: read-only facts about a repository, for /bootstrap (Phase 11a; report 16.1 row 11, Q6, F-15, H5).
 
-    python3 .claude/scripts/bootstrap_detect.py [--repo DIR] [--json]
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap_detect.py [--repo DIR] [--json]
 
 It answers, without changing anything: is this a greenfield or an existing repository, which stack do the manifests show, which
 verify commands would be reasonable (as suggestions: nothing here writes config), which deploy hosts and workflows are present, whether
 release automation (release-please, changesets, semantic-release, goreleaser) is installed, and what state the kit and an earlier
-bootstrap receipt are in. Output schema `bootstrap_detect.v1`.
+bootstrap receipt are in. Output schema `bootstrap_detect.v1`. The kit is the plugin this script runs from: `kit.version` is its
+KIT_VERSION, and `kit.copy_install` says the project still holds a v1 copy of the kit in `.claude/scripts/` (migrate removes it).
 
 Rules it keeps, because a repository can be hostile:
   * it reads files and runs a few read-only git commands (rev-parse, symbolic-ref, config --get-regexp, ls-files) with the user's and
@@ -30,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio  # noqa: E402
 from kitlib import config as config_mod  # noqa: E402
-from kitlib import gitutil, semver  # noqa: E402
+from kitlib import gitutil, kitpaths, semver  # noqa: E402
 
 SCHEMA = "bootstrap_detect.v1"
 MAX_MANIFEST = 1 << 20
@@ -299,8 +300,9 @@ def release_facts(root: str, files: Sequence[str], node: Optional[Dict[str, Any]
 
 
 def kit_facts(root: str) -> Dict[str, Any]:
-    kit = {"installed": os.path.isdir(os.path.join(root, ".claude", "scripts")), "version": None, "claude_md": "missing", "loop_config": "missing"}  # type: Dict[str, Any]
-    text = _read_text(os.path.join(root, ".claude", "KIT_VERSION"), 8192)
+    kit = {"copy_install": os.path.isdir(os.path.join(root, ".claude", "scripts")), "version": None, "claude_md": "missing",
+           "loop_config": "missing"}  # type: Dict[str, Any]
+    text = _read_text(kitpaths.kit("KIT_VERSION"), 8192)
     if text:
         try:
             kit["version"] = semver.parse_kit_version_file(text).get("version")
@@ -354,7 +356,7 @@ def render(d: Dict[str, Any]) -> str:
              "  languages:     %s" % (", ".join("%s %d" % kv for kv in s["languages"].items()) or "none"),
              "  deploy hosts:  %s" % (", ".join(d["deploy_hosts"]) or "none"),
              "  release tool:  %s" % (", ".join(r["tools"]) or "none"),
-             "  kit:           installed=%s version=%s CLAUDE.md=%s loop.config=%s" % (d["kit"]["installed"], d["kit"]["version"], d["kit"]["claude_md"], d["kit"]["loop_config"]),
+             "  kit:           version=%s v1-copy=%s CLAUDE.md=%s loop.config=%s" % (d["kit"]["version"], d["kit"]["copy_install"], d["kit"]["claude_md"], d["kit"]["loop_config"]),
              "  receipt:       %s" % d["receipt"]["state"]]
     for sv in d["suggested_verify"]:
         lines.append("  suggest (%s): %s" % (sv["ecosystem"], ", ".join("%s=%s" % kv for kv in sorted(sv["config"].items())) or "nothing"))

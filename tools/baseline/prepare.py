@@ -31,7 +31,7 @@ from typing import Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KIT_ROOT = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, os.path.join(KIT_ROOT, ".claude", "scripts"))
+sys.path.insert(0, os.path.join(KIT_ROOT, "scripts"))
 
 from kitlib import gitutil, jsonio  # noqa: E402
 
@@ -169,7 +169,7 @@ def plan_lines(a: argparse.Namespace, dest: str, log: str, commit: Optional[str]
 
 
 def prepare(a: argparse.Namespace) -> int:
-    # either Claude Code session marker, even empty (the same rule as .claude/scripts/humanonly.py)
+    # either Claude Code session marker, even empty (the same rule as scripts/humanonly.py)
     marker = next((m for m in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT") if m in os.environ), None)
     if marker:
         raise PrepareError("refusing to run inside a Claude Code session (%s is set); "

@@ -4,7 +4,7 @@
   "sections": [
     {
       "id": "gates",
-      "title": "Gates (report section 9; python3 .claude/scripts/loopctl gate <name> <item>)",
+      "title": "Gates (report section 9; python3 \"$KIT/scripts/loopctl\" gate <name> <item>)",
       "comment": [
         "Per-gate toggles are `gates.<name>: on | report | off` (see the gates family above). These keys configure what the gates run.",
         "All are read from the BASE sha, never from the branch under judgement (CO-11)."
@@ -28,7 +28,7 @@
       "doc": [
         "on | report | off   OPT-IN, EXPERIMENTAL (IMP-1). G4 mutation testing: the changed lines are mutated and the acceptance tests",
         "  must kill at least mutation_min percent. Tool-agnostic: you supply mutation_cmd. Refuses `on` and `report` until the evidence",
-        "  gate has passed (docs/baseline/evidence.json, `python3 .claude/scripts/loopctl evidence --check`). Other gates default to on."
+        "  gate has passed (docs/baseline/evidence.json, `python3 \"$KIT/scripts/loopctl\" evidence --check`). Other gates default to on."
       ],
       "choices": [
         "on",

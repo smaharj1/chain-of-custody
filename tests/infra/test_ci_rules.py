@@ -80,7 +80,7 @@ class ShippedTemplates(unittest.TestCase):
 
 class OtherWorkflowsAreUntouched(unittest.TestCase):
     def test_label_guard_and_the_phase_1_fixtures_get_no_infra_findings(self):
-        paths = [os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows", "label-guard.yml")]
+        paths = [os.path.join(REPO_ROOT, "templates", "github", "workflows", "label-guard.yml")]
         fx = os.path.join(REPO_ROOT, "tests", "doctor", "fixtures", "workflows")
         paths += [os.path.join(fx, f) for f in sorted(os.listdir(fx))]
         for f in ci_lint.lint_paths(paths, None, REPO_ROOT):
@@ -156,9 +156,9 @@ ERROR_ROWS = [
     ("plan: a comment can start it", mutate(PLAN, "on:\n  pull_request_target:\n", "on:\n  issue_comment:\n    types: [created]\n  pull_request_target:\n"), "infra.plan-ungated"),
     ("plan: apply smuggled into the preview", mutate(PLAN, "          terraform -chdir=\"pr/$TF_ROOT\" show -json tfplan > plan.json\n", "          terraform -chdir=\"pr/$TF_ROOT\" show -json tfplan > plan.json\n          terraform -chdir=\"pr/$TF_ROOT\" apply tfplan\n"), "infra.apply-trigger"),
     # --- the source check ---
-    ("check: init before the policy", mutate(CHECK, "      - name: Source policy, before terraform runs\n        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n", ""), "infra.policy-after-init"),
-    ("check: the policy comes from the PR's own tree", mutate(CHECK, "python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n", "python3 pr/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n"), "infra.policy-from-pr"),
-    ("check: the policy from the workspace root where the PR is checked out", mutate(mutate(CHECK, "          path: pr\n", "          path: .\n"), "python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n", "python3 .claude/scripts/infra/source_policy.py --root . --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n"), "infra.policy-from-pr"),
+    ("check: init before the policy", mutate(CHECK, "      - name: Source policy, before terraform runs\n        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n", ""), "infra.policy-after-init"),
+    ("check: the policy comes from the PR's own tree", mutate(CHECK, "python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n", "python3 pr/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n"), "infra.policy-from-pr"),
+    ("check: the policy from the workspace root where the PR is checked out", mutate(mutate(CHECK, "          path: pr\n", "          path: .\n"), "python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n", "python3 .claude/scripts/infra/source_policy.py --root . --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG\n"), "infra.policy-from-pr"),
     ("check: an OIDC token next to PR code", mutate(CHECK, "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n"), "ci.oidc-with-pr-code"),
     ("check: a secret in the pull request job", mutate(CHECK, "      - name: terraform validate\n", "      - name: terraform validate\n        env:\n          TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n"), "ci.secrets-in-pr-job"),
     ("check: a stored cloud credential", mutate(CHECK, "      - name: terraform validate\n", "      - name: terraform validate\n        env:\n          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}\n"), "infra.static-credentials"),

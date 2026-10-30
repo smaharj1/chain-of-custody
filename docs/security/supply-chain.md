@@ -11,7 +11,7 @@ Any added top-level dependency is listed at the checkpoint or in the pull reques
 - its name distance from popular packages (slopsquatting and typosquatting);
 - that its licence is on the allowlist.
 
-The gate is G9 (`loopctl/gates/g9_supply.py`, [../../.claude/spec/loopctl-gates.md](../../spec/loopctl-gates.md)) and runs under `loopctl`. Without loopctl the reviewer does these checks and the pull request body lists new dependencies.
+The gate is G9 (`loopctl/gates/g9_supply.py`, [spec/loopctl-gates.md](../../spec/loopctl-gates.md)) and runs under `loopctl`. Without loopctl the reviewer does these checks and the pull request body lists new dependencies.
 
 G9 also looks at where a dependency comes from, not only whether it is new:
 

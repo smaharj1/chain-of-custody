@@ -4,7 +4,7 @@
   "sections": [
     {
       "id": "extras",
-      "title": "Loopctl extras (report 6.2 L5, 9 G10, 10.3 remote lock, F-25, F-26; python3 .claude/scripts/loopctl remote-lock|claim|manifest|merge-class)",
+      "title": "Loopctl extras (report 6.2 L5, 9 G10, 10.3 remote lock, F-25, F-26; python3 \"$KIT/scripts/loopctl\" remote-lock|claim|manifest|merge-class)",
       "comment": [
         "OPT-IN and evidence-gated: `remote_lock`, `merge_policy: auto-low-risk` and `gates.g10` refuse until docs/baseline/evidence.json passes.",
         "Read from the BASE sha, never from the branch under judgement (CO-11)."

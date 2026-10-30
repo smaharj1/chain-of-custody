@@ -1,6 +1,6 @@
 {
   "schema": "labels.v1",
-  "comment": "The labels the factory intake and ops workflows use (report 19.7, Q4, RC-20). Applied by .claude/scripts/github/apply-labels.sh (dry run by default). approver_only labels are removed by label-guard.yml when anyone outside factory_approvers applies them.",
+  "comment": "The labels the factory intake and ops workflows use (report 19.7, Q4, RC-20). Applied by the kit's scripts/github/apply-labels.sh (dry run by default). approver_only labels are removed by label-guard.yml when anyone outside factory_approvers applies them.",
   "labels": [
     {"name": "factory:feature", "color": "1d76db", "description": "Intake type: a new feature", "approver_only": true},
     {"name": "factory:bug", "color": "d73a4a", "description": "Intake type: a defect (reproduce first)", "approver_only": true},

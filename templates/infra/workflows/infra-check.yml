@@ -4,7 +4,8 @@
 #
 # This job reads pull-request code as DATA. It has contents: read, no secrets, no OIDC token and no cloud
 # credential, so nothing the PR contains can reach one. Order matters:
-#   1. the BASE ref's source_policy.py and infra-policy.json judge the PR's source BEFORE terraform runs,
+#   1. the kit's source_policy.py (fetched at the release this file pins: KIT_REF, checked against KIT_SHA) and the
+#      BASE ref's infra-policy.json judge the PR's source BEFORE terraform runs,
 #      because `init` downloads the modules and providers the PR names;
 #   2. fmt, init without a backend, the policy again on the modules init downloaded, validate, tflint;
 #   3. optionally checkov, pinned by the repository variable INFRA_CHECKOV_VERSION.
@@ -44,14 +45,32 @@ jobs:
         with:
           path: pr
           persist-credentials: false
-      - name: Checkout the base ref (trusted scripts and policy)
+      - name: Checkout the base ref (trusted policy and baseline)
         uses: actions/checkout@v4 # pin to SHA
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
           persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: Source policy, before terraform runs
-        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json $INITIAL_FLAG
       - name: Install terraform
         uses: hashicorp/setup-terraform@v3 # pin to SHA
         with:
@@ -62,7 +81,7 @@ jobs:
       - name: terraform init without a backend
         run: terraform -chdir="pr/$TF_ROOT" init -backend=false -lockfile=readonly
       - name: Source policy on the downloaded modules
-        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init $INITIAL_FLAG
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init $INITIAL_FLAG
       - name: terraform validate
         run: terraform -chdir="pr/$TF_ROOT" validate
       - name: Install tflint

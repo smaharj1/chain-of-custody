@@ -17,11 +17,14 @@
 #               `terraform plan -lock=false` with its output discarded (a plan prints values). A plan EXECUTES provider
 #               and module code from the PR, which is why it sits behind the human gate and the source policy; the
 #               plan-only role is the remaining limit. It writes a summary of resource addresses and actions only, with
-#               the base ref's gate.py. The plan file and the plan JSON never leave this job.
+#               the kit's gate.py. The plan file and the plan JSON never leave this job.
+#
+# Every job that runs a kit script (gate.py, source_policy.py) fetches the kit at the release this file pins (KIT_REF,
+# checked against KIT_SHA); none runs one from a checkout. infra-policy.json and the baseline are the base ref's.
 #   comment     no OIDC, no PR code. Posts that summary on the pull request.
 #
 # Repository variables: FACTORY_APPROVERS (same logins as factory_approvers), FACTORY_BOT_LOGIN (the bot's login),
-# INFRA_PLAN_ROLE_ARN (the plan-only role; see .claude/templates/security/oidc/aws-plan-preview.trust.json),
+# INFRA_PLAN_ROLE_ARN (the plan-only role; see the kit's templates/security/oidc/aws-plan-preview.trust.json),
 # AWS_REGION. Environment `plan-preview` needs no reviewers (the human gate is the label). Set TF_ROOT below.
 name: infra-plan
 
@@ -74,11 +77,24 @@ jobs:
       number: ${{ steps.pr.outputs.number }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
     steps:
-      - name: Checkout main (trusted scripts)
-        uses: actions/checkout@v4 # pin to SHA
-        with:
-          ref: main
-          persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: Require an approver who is not a bot
         env:
           APPROVERS: ${{ vars.FACTORY_APPROVERS }}
@@ -86,10 +102,10 @@ jobs:
           ACTOR: ${{ github.actor }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           SENDER: ${{ github.event.sender.login || github.actor }}
-        run: python3 .claude/scripts/infra/gate.py authorize --actor "$ACTOR" --actor "$TRIGGERING_ACTOR" --actor "$SENDER" --approvers "$APPROVERS" --bot "$BOT_LOGIN"
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor "$ACTOR" --actor "$TRIGGERING_ACTOR" --actor "$SENDER" --approvers "$APPROVERS" --bot "$BOT_LOGIN"
       - name: Require refs/heads/main for a dispatch
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: python3 .claude/scripts/infra/gate.py require-main-ref --ref "$GITHUB_REF"
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py require-main-ref --ref "$GITHUB_REF"
       - name: Resolve the pull request
         id: pr
         env:
@@ -124,12 +140,30 @@ jobs:
     outputs:
       source_sha256: ${{ steps.pack.outputs.sha256 }}
     steps:
-      - name: Checkout main (trusted scripts and policy)
+      - name: Checkout main (trusted policy and baseline)
         uses: actions/checkout@v4 # pin to SHA
         with:
           ref: main
           path: base
           persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: Download the pull request source at the approved sha, as an archive (data only, no checkout)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -141,7 +175,7 @@ jobs:
           gh api "repos/$REPO/tarball/$HEAD_SHA" > pr.tgz
           tar --no-same-owner --no-same-permissions -xzf pr.tgz -C pr --strip-components=1
       - name: Source policy, before terraform runs
-        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json
       - name: Install terraform
         uses: hashicorp/setup-terraform@v3 # pin to SHA
         with:
@@ -150,13 +184,13 @@ jobs:
       - name: terraform init without a backend
         run: terraform -chdir="pr/$TF_ROOT" init -backend=false -lockfile=readonly
       - name: Source policy on the downloaded modules
-        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init
       - name: Pack the source that passed
         id: pack
         run: |
           set -eu
           tar --exclude=.git --exclude=.terraform -czf source.tgz -C pr .
-          echo "sha256=$(python3 base/.claude/scripts/infra/gate.py hash-file source.tgz)" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(python3 $RUNNER_TEMP/kit/scripts/infra/gate.py hash-file source.tgz)" >> "$GITHUB_OUTPUT"
       - name: Keep the pack for the plan job
         uses: actions/upload-artifact@v4 # pin to SHA
         with:
@@ -173,12 +207,30 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Checkout main (trusted scripts and policy)
+      - name: Checkout main (trusted policy and baseline)
         uses: actions/checkout@v4 # pin to SHA
         with:
           ref: main
           path: base
           persist-credentials: false
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
       - name: Fetch the pack
         uses: actions/download-artifact@v4 # pin to SHA
         with:
@@ -186,14 +238,14 @@ jobs:
       - name: Verify the pack is the one that passed policy
         env:
           EXPECTED: ${{ needs.fetch.outputs.source_sha256 }}
-        run: python3 base/.claude/scripts/infra/gate.py verify-hash --file source.tgz --sha256 "$EXPECTED"
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py verify-hash --file source.tgz --sha256 "$EXPECTED"
       - name: Unpack as data
         run: |
           set -eu
           mkdir pr
           tar --no-same-owner --no-same-permissions -xzf source.tgz -C pr
       - name: Source policy again, on what will be planned
-        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json
       - name: Install terraform
         uses: hashicorp/setup-terraform@v3 # pin to SHA
         with:
@@ -202,7 +254,7 @@ jobs:
       - name: terraform init without a backend or credentials
         run: terraform -chdir="pr/$TF_ROOT" init -backend=false -lockfile=readonly
       - name: Source policy on the downloaded modules, before any credential exists
-        run: python3 base/.claude/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/source_policy.py --root pr --base base --policy base/.claude/infra-policy.json --post-init
       - name: Assume the plan-only role
         uses: aws-actions/configure-aws-credentials@v4 # pin to SHA
         with:
@@ -217,8 +269,8 @@ jobs:
           set -eu
           terraform -chdir="pr/$TF_ROOT" plan -lock=false -out=tfplan -no-color > /dev/null
           terraform -chdir="pr/$TF_ROOT" show -json tfplan > plan.json
-      - name: Summarise without values, with the base ref's script
-        run: python3 base/.claude/scripts/infra/gate.py plan-summary --plan-json plan.json --title "Infrastructure plan preview" > summary.md
+      - name: Summarise without values, with the kit's script
+        run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py plan-summary --plan-json plan.json --title "Infrastructure plan preview" > summary.md
       - name: Hand only the values-free summary to the comment job
         uses: actions/upload-artifact@v4 # pin to SHA
         with:

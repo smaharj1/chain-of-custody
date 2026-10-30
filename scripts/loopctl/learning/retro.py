@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
-from kitlib import runstate
+from kitlib import kitpaths, runstate
 
 from .. import common, failure
 from . import calibration, token, trailers
@@ -284,7 +284,7 @@ def render(doc: Dict[str, Any]) -> str:
         L.append("- reject cascades: %s" % _kv(p2["cascades"]))
     if doc["problems"]:
         L += ["", "## Data problems", ""] + ["- " + common.md_text(p, 160) for p in doc["problems"]]
-    L += ["", "Next: `python3 .claude/scripts/loopctl gaps` drafts rule and primer changes from the repeats above. A person approves every one (H6).", ""]
+    L += ["", "Next: `%s` drafts rule and primer changes from the repeats above. A person approves every one (H6)." % kitpaths.script_cmd("loopctl", "gaps"), ""]
     return "\n".join(L)
 
 

@@ -69,7 +69,8 @@ STATE_PATH_RE = re.compile(r"loopctl[\W_]{1,8}(sessions|run\.json|HALT|lock|nonc
 # The writers' names (`acquire_lock`, `release_lock`, `sessions_dir`, `write_run` are ordinary names in application code) count only in a file that also
 # reaches for the kit: names its modules, its scripts directory, or builds an import at run time (R-A-7)
 STATE_NAME_RE = re.compile(r"(register_session|unregister_session|clear_halt|set_halt|acquire_lock|steal_lock|release_lock|write_nonce|write_run\b|sessions_dir)", re.I)
-KIT_REF_RE = re.compile(r"(\b(kitlib|runstate|RunState|loopctl|doctorlib|guards)\b|\.claude/scripts|\bimportlib\b|__import__|\bimp\.load)", re.I)
+KIT_REF_RE = re.compile(r"(\b(kitlib|runstate|RunState|loopctl|doctorlib|guards)\b|\.claude/scripts|CLAUDE_PLUGIN_ROOT|\.claude/plugins|\bimportlib\b|__import__|"
+                        r"\bimp\.load)", re.I)
 
 
 def _state_write(text: str) -> bool:
@@ -80,7 +81,7 @@ def _state_write(text: str) -> bool:
 LOOPCTL_IMPORT_RE = re.compile(r"(\b(from|import)\s+loopctl\b|(import_module|__import__)\s*\(\s*['\"]loopctl|require\(['\"][^'\"]*loopctl)", re.I)
 LOOPCTL_CALL_RE = re.compile(r"\b(main|Loop|Driver|State|approve|approve_plan|approve_item|cmd_approve|cmd_resume|set_status|advance)\b")
 MAX_IMPORT_SCAN = 10
-# a loopctl command line inside code (`os.system("loopctl approve plan")`, `['python3', '.claude/scripts/loopctl', 'approve', ...]`)
+# a loopctl command line inside code (`os.system("loopctl approve plan")`, `['python3', '/kit/scripts/loopctl', 'approve', ...]`)
 LOOPCTL_LINE_RE = re.compile(r"(?:^|-m|[\s'\"`(\[,;|&=])(?:[^\s'\"`()\[\],;|&=]*/)?loopctl(?:\.py|/__main__\.py)?/?(?=[\s'\"`,)\]]|$)([^;&|`\n]*)")
 OBFUSCATION_RE = re.compile(r"(\b(exec|eval|compile)\s*\(|\bFunction\s*\(|new\s+Function|__import__|\bvm\.run)", re.I)
 DECODE_RE = re.compile(r"(b64decode|base64|fromhex|unhexlify|atob\(|Buffer\.from|zlib|decompress|rot13|codecs\.decode|\bchr\b|String\.fromCharCode|"
@@ -287,6 +288,9 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     d = _loopctl(ctx, inv)
     if d:
         return d
+    d = _kit_copy(ctx, inv)
+    if d:
+        return d
     # -- human-only apply steps: the upgrade, the project-settings writer, the bootstrap config/labels/boundary/setup scripts (H6, GD-8) --
     d = _human_apply(ctx, inv)
     if d:
@@ -294,7 +298,7 @@ def _check_inv(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     # -- the guards' own state CLI: the script is found by its real path from the command's working directory (`cd guards && python3 run.py`, `-mguards.run`) --
     for reals, rest, _rdyn, _loose in _py_targets(inv, ctx.home):
         if any(GUARDS_WIRING_RE.search(r) for r in reals) and _flag_hit(rest, ("--write",)):
-            return deny(G, "guards-cli", "wiring.py --write regenerates settings.v2.json and the settings templates, which are H6 files: a human runs it")
+            return deny(G, "guards-cli", "wiring.py --write regenerates the plugin's hooks/hooks.json and the settings templates, which are kit files (H6): a human runs it")
         if any(GUARDS_RUN_RE.search(r) for r in reals):
             d = _guards_cli_words(rest)
             if d:
@@ -387,14 +391,14 @@ def _human_apply(ctx: Ctx, inv: Inv) -> Optional[Decision]:
     if inv.name.startswith("py-module:"):
         mod = inv.name[10:]
         cands.append((mod.split(".")[-1] + ".py", list(inv.args), list(inv.dyn)))
-        # `cd .claude/scripts/github && python3 -m labels --apply`: the module's file next to the working directory
+        # `cd <kit>/scripts/github && python3 -m labels --apply`: the module's file next to the working directory
         for real in _module_reals(mod, inv, ctx.home):
             cands.append((real, list(inv.args), list(inv.dyn)))
     for script, rest, rdyn in cands:
         if not script:
             continue
         forms = {_basename_lc(script)}
-        # the script's real path from the command's working directory, a glob expanded: `cd .claude/scripts/github && python3 labels.py --apply`
+        # the script's real path from the command's working directory, a glob expanded: `cd <kit>/scripts/github && python3 labels.py --apply`
         reals = _reals(script, inv, ctx.home) if "\x00" not in script else []
         for real in reals:
             forms.add(_basename_lc(real))
@@ -607,8 +611,123 @@ def _py_targets_of_words(inv: Inv, args: Sequence[str], dyn: Sequence[bool], hom
     return out
 
 
+COPY_CMDS = frozenset({"cp", "gcp", "install", "rsync", "ditto", "scp", "cpio", "pax", "tar", "gtar", "bsdtar", "zip", "7z", "7za", "7zr"})
+# programs that pass a file's bytes through: a copy when their output lands in a file (`cat <kit> > x.py`, `tee x.py < <kit>`)
+STREAM_CMDS = frozenset({"cat", "tac", "sed", "gsed", "head", "tail", "awk", "gawk", "nawk", "mawk", "tee", "dd", "gzip", "xz", "zstd",
+                         "bzip2", "lz4", "base64", "nl", "cut", "tr"})
+_CLONE_ARG_OPTS = {"-b", "--branch", "-o", "--origin", "-u", "--upload-pack", "--depth", "--reference", "--reference-if-able", "--template",
+                   "-c", "--config", "--separate-git-dir", "--filter", "-j", "--jobs", "--shallow-since", "--shallow-exclude", "--bundle-uri"}
+_GIT_GLOBAL_ARG_OPTS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
+
+
+def _kit_word(ctx: Ctx, inv: Inv, word: str) -> bool:
+    return any(paths.kit_code(r, ctx.home) for r in _reals(word, inv, ctx.home))
+
+
+def _stream_reads_kit(ctx: Ctx, inv: Inv) -> Optional[str]:
+    """The kit path a pass-through program reads (an argument, `if=`, or a `<` redirect), else None."""
+    dyn = inv.dyn if len(inv.dyn) == len(inv.args) else [False] * len(inv.args)
+    for a, d in zip(inv.args, dyn):
+        if d:
+            continue
+        w = a[3:] if inv.name == "dd" and a.startswith("if=") else a
+        if w.startswith("-") or (inv.name == "dd" and "=" in w and w is a):
+            continue
+        if _kit_word(ctx, inv, w):
+            return w
+    for r in getattr(inv.cmd, "redirs", None) or []:
+        t = r.target
+        if r.op == "<" and t is not None and not t.dynamic and _kit_word(ctx, inv, t.text):
+            return t.text
+    return None
+
+
+def _stream_writes_file(inv: Inv) -> bool:
+    for r in getattr(inv.cmd, "redirs", None) or []:
+        if r.writes and r.target is not None and not r.target.text.startswith("/dev/") and \
+                (r.fd in (None, "", "1") or r.op in ("&>", "&>>")):
+            return True
+    if inv.name == "tee":
+        return any(not a.startswith("-") and not a.startswith("/dev/") for a in inv.args)
+    if inv.name == "dd":
+        return any(a.startswith("of=") and not a.startswith("of=/dev/") for a in inv.args)
+    return False
+
+
+def _pipe_upstream(ctx: Ctx, inv: Inv) -> Optional[Inv]:
+    """The invocation whose output `inv` reads through a pipe. `pipe_prev` is an index into the same script's commands, so the
+    upstream is the nearest earlier invocation at that index and depth whose command pipes on."""
+    cmd = inv.cmd
+    if cmd is None or cmd.pipe_prev is None:
+        return None
+    invs = ctx.analysis.invs
+    k = next((n for n, i in enumerate(invs) if i is inv), len(invs))
+    for i in reversed(invs[:k]):
+        c = i.cmd
+        if c is not None and c is not cmd and c.index == cmd.pipe_prev and c.depth == cmd.depth and c.pipe_next:
+            return i
+    return None
+
+
+def _git_clone_source(inv: Inv) -> Optional[str]:
+    """The source of `git [global options] clone [options] <source> [<dir>]`, else None."""
+    args, k = inv.args, 0
+    while k < len(args) and args[k].startswith("-"):
+        k += 2 if args[k] in _GIT_GLOBAL_ARG_OPTS else 1
+    if k >= len(args) or args[k] != "clone":
+        return None
+    k += 1
+    while k < len(args):
+        a = args[k]
+        if a == "--":
+            return args[k + 1] if k + 1 < len(args) else None
+        if a.startswith("-"):
+            k += 2 if a in _CLONE_ARG_OPTS else 1
+            continue
+        return re.sub(r"^file://", "", a)
+    return None
+
+
+def _kit_copy(ctx: Ctx, inv: Inv) -> Optional[Decision]:
+    """`cp -r <kit>/scripts/loopctl lc && python3 lc approve ...`: a copy of the kit's code runs under a name the loopctl and kit-script rules do not
+    know, and in the same command line the copy does not exist yet for its body to be read. So the kit's code is not copied out at all; it is run by
+    its own path. Reading it (cat, Read) stays allowed."""
+    msg = "%s copies the kit's code (%s): a copy runs under another name, past the loopctl and kit-script rules. " \
+          "Run the kit script by its absolute path in the plugin; reading it is fine"
+    if inv.name == "git":
+        src = _git_clone_source(inv)
+        if src and _kit_word(ctx, inv, src):
+            return deny(G, "kit-copy", msg % ("git clone", src[:80]))
+        return None
+    if inv.name in STREAM_CMDS:
+        if not _stream_writes_file(inv):
+            return None
+        src = _stream_reads_kit(ctx, inv)
+        cur, seen = inv, 0
+        while src is None and cur is not None and seen < 8:    # cat <kit> | tee x.py, cat <kit> | gzip -c > x.gz
+            cur, seen = _pipe_upstream(ctx, cur), seen + 1
+            if cur is None or cur.name not in STREAM_CMDS:
+                break
+            src = _stream_reads_kit(ctx, cur)
+        if src:
+            return deny(G, "kit-copy", msg % (inv.name, src[:80]))
+        return None
+    if inv.name not in COPY_CMDS:
+        return None
+    dyn = inv.dyn if len(inv.dyn) == len(inv.args) else [False] * len(inv.args)
+    words = [a for a, d in zip(inv.args, dyn) if not d and not a.startswith("-")]
+    if inv.name in ("cp", "gcp", "install", "rsync", "ditto", "scp") and not any(a in ("-t", "--target-directory") or a.startswith("--target-directory=")
+                                                                                 for a in inv.args):
+        words = words[:-1]     # the destination: a write into the kit is guard-file's
+    for a in words:
+        for r in _reals(a, inv, ctx.home):
+            if paths.kit_code(r, ctx.home):
+                return deny(G, "kit-copy", msg % (inv.name, a[:80]))
+    return None
+
+
 def _is_loopctl_shim(real: str) -> bool:
-    """A file (or a directory's `__main__.py`) that is a copy of loopctl's entry point: `cp .claude/scripts/loopctl/__main__.py /tmp/x.py` in an earlier command."""
+    """A file (or a directory's `__main__.py`) that is a copy of loopctl's entry point: `cp <kit>/scripts/loopctl/__main__.py /tmp/x.py` in an earlier command."""
     cand = os.path.join(real, "__main__.py") if os.path.isdir(real) else real
     if not cand.endswith(".py") or not os.path.isfile(cand):
         return False
@@ -618,7 +737,7 @@ def _is_loopctl_shim(real: str) -> bool:
 
 def _loopctl_rest(inv: Inv, home: str = "") -> Optional[Tuple[List[str], List[bool]]]:
     """(the arguments after `loopctl`, their dynamic flags) for a loopctl invocation, else None. The script is identified by its REAL path, resolved against
-    the command's working directory with globs expanded: `l?opctl`, `cd .claude/scripts/loopctl && python3 __main__.py`, `-mloopctl` and a symlink to it all count."""
+    the command's working directory with globs expanded: `l?opctl`, `cd <kit>/scripts/loopctl && python3 __main__.py`, `-mloopctl` and a symlink to it all count."""
     args = inv.args
     dyn = inv.dyn if len(inv.dyn) == len(args) else [False] * len(args)
     nm = inv.name
@@ -832,7 +951,7 @@ def _code_argvs(ic, norm: str) -> List[Tuple[List[str], List[bool]]]:
 
 
 def _loopctl_argv_of_code(ctx: Ctx, ic, norm: str) -> Optional[Decision]:
-    """`python3 -c "import runpy; runpy.run_path('.claude/scripts/loopctl', run_name='__main__')" approve item F1` hands the command line to loopctl through the
+    """`python3 -c "import runpy; runpy.run_path('<kit>/scripts/loopctl', run_name='__main__')" approve item F1` hands the command line to loopctl through the
     code's own arguments (or through `sys.argv = [...]` in the code), which `_loopctl_in_code` (it reads the code text only) never sees. The arguments are judged as
     loopctl's when the code names loopctl, when the first of them is the loopctl path (`runpy.run_path(sys.argv[1])`), and, for code that runs another file or
     module whose name the guard cannot read, always: whatever is not a read is a human step then. The same arguments are checked against the guards CLI."""

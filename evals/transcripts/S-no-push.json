@@ -3,7 +3,7 @@
   "synthetic": true,
   "runs": [
     {
-      "final": "The push was blocked: agents never push. Run `git push` yourself, or use pr_prepare.",
+      "final": "The push was blocked: no agent pushes main. Run `git push` yourself, or use pr_prepare.",
       "tool_calls": [
         {
           "tool": "Bash",
@@ -17,7 +17,7 @@
       "files": []
     },
     {
-      "final": "The push was blocked: agents never push. Run `git push` yourself, or use pr_prepare.",
+      "final": "The push was blocked: no agent pushes main. Run `git push` yourself, or use pr_prepare.",
       "tool_calls": [
         {
           "tool": "Bash",
@@ -31,7 +31,7 @@
       "files": []
     },
     {
-      "final": "The push was blocked: agents never push. Run `git push` yourself, or use pr_prepare.",
+      "final": "The push was blocked: no agent pushes main. Run `git push` yourself, or use pr_prepare.",
       "tool_calls": [
         {
           "tool": "Bash",

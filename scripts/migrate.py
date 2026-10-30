@@ -1,33 +1,37 @@
 #!/usr/bin/env python3
-"""migrate: upgrade a copy install of the kit to the version in a kit checkout, without hand-merging and without overwriting your changes (Phase 9; IMP-3, CO-33).
+"""migrate: move a project from an old copy install of the kit (v1.x or a v2 copy) to the plugin, keeping every change you made (the /migrate skill; IMP-3, CO-33).
 
-    python3 <kit>/.claude/scripts/migrate.py --repo PROJECT                 dry run: print the plan, change nothing (the default)
-    python3 <kit>/.claude/scripts/migrate.py --repo PROJECT --apply         HUMAN-RUN, from a plain terminal: apply the plan
-    python3 .../migrate.py --repo PROJECT --resolved PATH [PATH ...]        HUMAN-RUN: you merged PATH by hand; stop reporting it as a conflict
-    python3 .../migrate.py --repo PROJECT --take-kit PATH [PATH ...]        HUMAN-RUN: replace PATH by the kit's version (your copy is backed up)
+    python3 <kit>/scripts/migrate.py --repo PROJECT            dry run: print the plan, change nothing (the default)
+    python3 <kit>/scripts/migrate.py --repo PROJECT --apply    HUMAN-RUN, from a plain terminal: apply the plan
 
-`<kit>` is a checkout of the kit (or its `dist/copy-install/`): a tree that holds `.claude/KIT_MANIFEST`. Your install has no kit history, so the
-BASE of a three-way merge comes from an archive shipped in the kit (`.claude/migrate/v1.2.0.tar`, made with `git archive v1.2.0`). Everything
-runs offline.
+`<kit>` is the plugin's folder (doctor.py prints it as `kit:`). Before 2.0 the kit was copied into the project's `.claude/` (and, in v1,
+`AGENTS.md`, `.cursor/rules/`, `skills/`). The kit is a plugin now: its agents, skills, scripts and hooks come from the plugin, and the
+project's `.claude/` keeps only the project's own files. To tell the kit's files from your edits, migrate compares each file with the
+SHA-256 the old version shipped: the v2 copy's `.claude/KIT_MANIFEST`, and for v1.x the v1.2.0 tree the kit ships (`migrate/v1.2.0.tar`).
+Everything runs offline.
 
-Per file, with B = the base version's file, N = the new kit's file, L = yours:
+Per file of the old copy:
 
-    L absent                       kit file you never had -> add; one you deleted -> stays deleted
-    L == N                         up to date
-    L == B (you never touched it)  replace by N
-    N == B (the kit did not change it)   keep yours
-    all three differ               `git merge-file` three-way merge: clean -> written; conflicts -> NOT written, listed for you
-    kit no longer ships it         removed if you never touched it; kept and listed if you did
-    seed files (CLAUDE.md, loop.config.md, primers, rules)   added if absent, replaced only if still byte-identical to the base, else yours
-    frozen files (.claude/settings.json)                     added if absent, never changed (settings are a guardrail, H6)
+    still the kit's file (the hash matches)          removed: the plugin has it now
+    .claude/agents/<role>.md that you edited         kept as a project override: from now on it replaces the kit's <role> agent
+    any other .claude/ kit file that you edited      moved to .claude/kit-backup/<old version>/ and listed, so you can carry the edit over
+    a file in .claude/scripts/ the kit never shipped moved to the backup too (the folder has to go: /init and doctor look for it),
+                                                     unless your settings run it or name it: then it NEEDS YOU (move it, fix the reference)
+    AGENTS.md, .cursor/rules/, skills/ that you edited   left where they are and listed (they are outside .claude/); adapt.py makes new ones
+    .claude/KIT_VERSION, .claude/KIT_MANIFEST        removed last (the plugin's own KIT_VERSION is the version now)
+    CLAUDE.md and the primers, unchanged since the   replaced with the plugin's current starter file (UPDATE)
+    old version
+    CLAUDE.md, loop.config.md, the primers, rules/   otherwise kept as they are: they are the project's. loop.config.md is never replaced
+    .claude/settings.json                            the kit's hook entries are taken out (the plugin's hooks.json supplies them); your
+                                                     own hooks and everything else stay. It is backed up to settings.json.pre-init first.
+    .claude/settings.local.json                      the same, backed up to settings.local.json.pre-migrate first
 
-Nothing you changed is overwritten silently: a file you modified is merged cleanly or left alone with the merge result in
-`.claude/.migrate/conflicts/`. Before `--apply` writes anything it backs up every file it replaces or removes to `.claude/.migrate/backup/<time>/`.
-`KIT_VERSION` and `KIT_MANIFEST` are written last, and only when there is nothing left to resolve, so a half-done migration can simply be run again.
+Then it does what /init does (init_project.py): the starter files that are missing, the deny list and sandbox, the userConfig choices and
+the `.gitignore` lines. The plan prints both parts. `--apply` writes `.claude/.migrate/report.json` as the receipt.
 
-`--apply` refuses inside a Claude Code session (humanonly.py) and the guards deny an agent running it: applying an upgrade to the kit's own
-instructions, hooks and scripts is a human decision (H6). It also refuses a dirty git work tree (commit first so `git checkout` is your undo)
-unless you pass `--allow-dirty`.
+`--apply` refuses inside a Claude Code session (humanonly.py) and the guards deny an agent running it: taking out the kit's instructions,
+hooks and scripts is a human decision (H6). It also refuses while a path NEEDS YOU (a symlink, an unreadable file), and a dirty git work
+tree (commit first, so `git checkout` is your undo) unless you pass `--allow-dirty`. Standard library only, Python 3.9.
 """
 from __future__ import annotations
 
@@ -35,27 +39,40 @@ import argparse
 import datetime
 import json
 import os
-import shutil
+import re
+import shlex
 import stat
 import subprocess
 import sys
 import tempfile
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import humanonly  # noqa: E402
-from kitlib import kitmanifest as km  # noqa: E402
+import init_project  # noqa: E402
+from kitlib import install, kitmanifest as km, kitpaths  # noqa: E402
 
-SCHEMA = "kit.migrate.v1"
+SCHEMA = "kit.migrate.v2"
 WORK_DIR = ".claude/.migrate"
-STATE_REL = WORK_DIR + "/state.json"
+BACKUP_DIR = ".claude/kit-backup"
 MAX_FILE = 8 * 1024 * 1024
+BASE_ARCHIVE = "v1.2.0.tar"
 
-ADD, UPDATE, MERGE, CONFLICT, KEEP, UPTODATE = "add", "update", "merge", "conflict", "keep", "up-to-date"
-REMOVE, KEEP_RETIRED, SKIP_DELETED, TAKE_KIT, RESOLVED = "remove", "keep-retired", "skip-deleted", "take-kit", "resolved"
-CHANGES = (ADD, UPDATE, MERGE, REMOVE, TAKE_KIT)
-STILL_WIRED = "still wired in your settings.json: switch to the v2 guards first, then run migrate again"
+REMOVE, OVERRIDE, BACKUP, LEFT, PROBLEM, UPDATE = "remove", "override", "backup", "left-in-place", "problem", "update"
+ORDER = (PROBLEM, OVERRIDE, BACKUP, LEFT, UPDATE, REMOVE)
+TITLES = {REMOVE: "REMOVE: still the kit's file; the plugin has it now", OVERRIDE: "KEEP AS PROJECT OVERRIDE: you edited it",
+          BACKUP: "MOVE TO %s/<version>/: you edited it, or the kit never shipped it" % BACKUP_DIR,
+          LEFT: "LEFT IN PLACE: outside .claude/, migrate does not touch it",
+          UPDATE: "UPDATE: a starter file you never changed; the plugin's current one replaces it",
+          PROBLEM: "NEEDS YOU: migrate will not touch it"}
+_AGENT = re.compile(r"^\.claude/agents/([A-Za-z0-9_-]+)\.md$")
+# the v1 Codex and Cursor adapters, outside .claude/; adapt.py writes their replacement
+ADAPTERS = ("AGENTS.md", ".cursor/", "skills/")
+LOCAL_SETTINGS = ".claude/settings.local.json"
+LOCAL_BACKUP = LOCAL_SETTINGS + ".pre-migrate"
+# seed files an unchanged copy may be replaced in; loop.config.md is not one (the new seed would raise git_autonomy to the push tier)
+UPDATABLE_SEED = re.compile(r"^\.claude/(?:CLAUDE\.md|context/[A-Za-z0-9_-]+\.md)$")
 
 
 class MigrateError(Exception):
@@ -64,19 +81,18 @@ class MigrateError(Exception):
 
 # ---------------------------------------------------------------------------------------------------------------- inputs
 
-def sha(data: bytes) -> str:
-    return km.sha256_bytes(data)
-
-
 def read_local(root: str, rel: str) -> Tuple[Optional[bytes], Optional[str]]:
-    """(content, problem). A missing file is (None, None); a symlink or a directory is a problem, never followed."""
+    """(content, problem). A missing file is (None, None); a symlink, a directory, or a file under a symlinked folder is a problem,
+    never followed."""
     full = os.path.join(root, rel)
     try:
         st = os.lstat(full)
     except OSError:
         return None, None
     if stat.S_ISLNK(st.st_mode):
-        return None, "is a symlink; migrate never writes through links"
+        return None, "is a symlink; migrate never follows or removes links"
+    if os.path.realpath(os.path.dirname(full)) != os.path.join(os.path.realpath(root), *rel.split("/")[:-1]):
+        return None, "sits under a symlinked folder; migrate never follows links"
     if not stat.S_ISREG(st.st_mode):
         return None, "is not a regular file"
     if st.st_size > MAX_FILE:
@@ -85,211 +101,163 @@ def read_local(root: str, rel: str) -> Tuple[Optional[bytes], Optional[str]]:
         return fh.read(), None
 
 
-def load_source(source: str) -> Tuple[Dict[str, Any], Dict[str, bytes], Dict[str, bool]]:
-    """(manifest, {path: content} of every manifest file, {path: executable}). Verifies each file against the manifest."""
-    mpath = os.path.join(source, km.MANIFEST_REL)
-    if not os.path.isfile(mpath):
-        raise MigrateError("%s has no %s. --source must be a checkout of the kit (or its dist/copy-install/); "
-                           "a plugin directory is not a source for a copy install" % (source, km.MANIFEST_REL))
-    with open(mpath, "r", encoding="utf-8") as fh:
-        try:
-            manifest = km.loads(fh.read())
-        except ValueError as exc:
-            raise MigrateError(str(exc))
-    files = {}   # type: Dict[str, bytes]
-    exe = {}     # type: Dict[str, bool]
-    for rel, ent in manifest["files"].items():
-        full = os.path.join(source, rel)
-        try:
-            with open(full, "rb") as fh:
-                data = fh.read()
-            exe[rel] = bool(os.stat(full).st_mode & 0o111)
-        except OSError:
-            raise MigrateError("the kit source is incomplete: %s is listed in KIT_MANIFEST but missing" % rel)
-        if sha(data) != ent["sha256"]:
-            raise MigrateError("the kit source is not the version its KIT_MANIFEST describes: %s differs. "
-                               "Re-download the kit; do not migrate from a modified checkout" % rel)
-        files[rel] = data
-    return manifest, files, exe
-
-
 def installed_version(root: str) -> Optional[str]:
     data, _ = read_local(root, km.VERSION_REL)
     return km.parse_version(data.decode("utf-8", "replace")) if data else None
 
 
-def choose_base(root: str, source: str, new_manifest: Dict[str, Any], from_version: Optional[str], archive: Optional[str]) -> Tuple[str, Dict[str, Any]]:
-    """(version label, base manifest) for the installed version. The base is the tree inside a shipped archive."""
+def known_hashes(root: str, kit_root: str, from_version: Optional[str],
+                 archive: Optional[str]) -> Tuple[Optional[str], Dict[str, Set[str]], Dict[str, Set[str]], List[str]]:
+    """(old version, {path: hashes the old kit shipped for it}, {seed path: hashes of the old starter file}, notes). Only kit-class
+    files are the kit's: seed and settings files are the project's, and a seed file is only replaced when it is still the old starter
+    text. A v2 copy's KIT_MANIFEST and the shipped v1.2.0 tree are both used, so a v2 copy upgraded from v1 is recognised too."""
+    notes = []   # type: List[str]
+    known = {}   # type: Dict[str, Set[str]]
+    seeds = {}   # type: Dict[str, Set[str]]
     version = from_version or installed_version(root)
-    candidates = []   # type: List[str]
-    if archive:
-        candidates = [archive]
-    elif version:
-        # the archives ship with the kit checkout (.claude/migrate/), next to this script, and are not installed into projects
-        here = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "migrate")
-        for d in (os.path.join(source, ".claude", "migrate"), here):
-            p = os.path.join(d, "v%s.tar" % version)
-            if os.path.isfile(p):
-                candidates = [p]   # a shipped archive wins even for the kit's own version: before a release bump they carry the same label
-                break
-    if not candidates and version is not None and version == new_manifest["version"]:
-        return version, new_manifest        # same version, no archive: the base is the kit itself, so only your own changes differ
-    if not candidates:
-        have = []   # type: List[str]
-        for d in (os.path.join(source, ".claude", "migrate"), os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "migrate")):
-            have += sorted(f for f in os.listdir(d) if f.endswith(".tar")) if os.path.isdir(d) else []
-        raise MigrateError("no base archive for the installed version %s. The kit ships: %s. Pass --from-version if %s is a renamed copy of one of them"
-                           % (version or "(unknown: .claude/KIT_VERSION is missing)", ", ".join(have) or "none", version or "it"))
-    try:
-        tree = km.read_tar_tree(candidates[0])
-    except Exception as exc:   # OSError, ValueError, tarfile.TarError
-        raise MigrateError("cannot read the base archive %s: %s" % (candidates[0], exc))
-    label = os.path.basename(candidates[0])[1:-4] if not archive else (version or "base")
-    base = km.tree_manifest(label, tree)
-    base["_tree"] = tree
-    return label, base
-
-
-# ---------------------------------------------------------------------------------------------------------------- merging
-
-def three_way(local: bytes, base: bytes, kit: bytes, labels: Tuple[str, str, str]) -> Tuple[bool, bytes, str]:
-    """(clean, merged-or-conflict-marked content, reason). Uses `git merge-file`; binary content never merges."""
-    if b"\0" in local or b"\0" in base or b"\0" in kit:
-        return False, b"", "binary file"
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "LC_ALL": "C"})
-    tmp = tempfile.mkdtemp(prefix="kit-merge-")
-    try:
-        paths = []
-        for name, data in (("local", local), ("base", base), ("kit", kit)):
-            p = os.path.join(tmp, name)
-            with open(p, "wb") as fh:
-                fh.write(data)
-            paths.append(p)
+    data, problem = read_local(root, km.MANIFEST_REL)
+    if problem:
+        raise MigrateError("%s %s" % (km.MANIFEST_REL, problem))
+    if data is not None:
         try:
-            r = subprocess.run(["git", "merge-file", "-p", "-L", labels[0], "-L", labels[1], "-L", labels[2]] + paths,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=60)
-        except (OSError, subprocess.SubprocessError) as exc:
-            return False, b"", "git merge-file could not run: %s" % exc
-        if r.returncode < 0 or r.returncode >= 127:
-            return False, b"", "git merge-file failed: %s" % r.stderr.decode("utf-8", "replace")[:80]
-        return r.returncode == 0, r.stdout, ("%d conflicting hunk(s)" % r.returncode) if r.returncode else ""
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+            manifest = km.loads(data.decode("utf-8", "replace"))
+        except ValueError as exc:
+            raise MigrateError("%s; migrate will not guess which files are the kit's. Restore it from git, or delete it to fall back "
+                               "on the v1.2.0 hashes (files that differ are then backed up, not removed)" % exc)
+        version = version or manifest["version"]
+        for rel, ent in manifest["files"].items():
+            if ent["class"] == km.CLASS_KIT:
+                known.setdefault(rel, set()).add(ent["sha256"])
+            elif ent["class"] == km.CLASS_SEED and UPDATABLE_SEED.match(rel):
+                seeds.setdefault(rel, set()).add(ent["sha256"])
+    tar = archive or os.path.join(kit_root, "migrate", BASE_ARCHIVE)
+    try:
+        tree = km.read_tar_tree(tar)
+    except Exception as exc:   # OSError, ValueError, tarfile.TarError
+        raise MigrateError("cannot read the base archive %s: %s" % (tar, exc))
+    for rel, content in tree.items():
+        if km.classify(rel) == km.CLASS_KIT:
+            known.setdefault(rel, set()).add(km.sha256_bytes(content))
+        elif km.classify(rel) == km.CLASS_SEED and UPDATABLE_SEED.match(rel):
+            seeds.setdefault(rel, set()).add(km.sha256_bytes(content))
+    if data is None and version and not version.startswith("1.2."):
+        notes.append("your copy is %s and the kit ships the hashes of v1.2.0 only: a file of yours that differs from v1.2.0 is backed up, "
+                     "not removed, so nothing is lost; delete the backup when you have looked at it" % version)
+    return version, known, seeds, notes
+
+
+def candidates(root: str, known: Dict[str, Set[str]]) -> List[str]:
+    """The paths to decide on: every file the old kit shipped, the bookkeeping, and everything under `.claude/scripts/`."""
+    out = set(p for p in known if os.path.lexists(os.path.join(root, p)))
+    out.update(p for p in km.BOOKKEEPING if os.path.lexists(os.path.join(root, p)))
+    base = os.path.join(root, ".claude", "scripts")
+    if os.path.islink(base):
+        out.add(".claude/scripts")      # a problem entry: never walked through
+        return sorted(out)
+    for dirpath, dirnames, filenames in os.walk(base):
+        for name in list(dirnames) + filenames:
+            full = os.path.join(dirpath, name)
+            if name in filenames or os.path.islink(full):
+                out.add(os.path.relpath(full, root).replace(os.sep, "/"))
+    return sorted(out)
 
 
 # ---------------------------------------------------------------------------------------------------------------- planning
 
 class Entry(object):
-    def __init__(self, path: str, action: str, detail: str = "", content: Optional[bytes] = None, marked: Optional[bytes] = None) -> None:
+    def __init__(self, path: str, action: str, detail: str = "") -> None:
         self.path = path
         self.action = action
         self.detail = detail
-        self.content = content      # what --apply writes for ADD, UPDATE, MERGE, TAKE_KIT
-        self.marked = marked        # the conflict-marked text for CONFLICT
 
     def to_dict(self) -> Dict[str, Any]:
         return {"path": self.path, "action": self.action, "detail": self.detail}
 
 
-def load_state(root: str) -> Dict[str, Any]:
-    data, _ = read_local(root, STATE_REL)
-    if not data:
-        return {"resolved": {}}
-    try:
-        doc = json.loads(data.decode("utf-8"))
-        if isinstance(doc, dict) and isinstance(doc.get("resolved"), dict):
-            return doc
-    except ValueError:
-        pass
-    return {"resolved": {}}
+def is_adapter(rel: str) -> bool:
+    return any(rel == a or (a.endswith("/") and rel.startswith(a)) for a in ADAPTERS)
 
 
-def plan(root: str, new_manifest: Dict[str, Any], new_files: Dict[str, bytes], base_label: str, base: Dict[str, Any],
-         state: Dict[str, Any], take_kit: Sequence[str] = ()) -> List[Entry]:
-    nf = new_manifest["files"]
-    bf = base["files"]
+def plan_files(root: str, known: Dict[str, Set[str]], referenced: str = "") -> List[Entry]:
+    """`referenced` is the text of the settings files with the kit's hooks already taken out: a file it names is still in use."""
     out = []   # type: List[Entry]
-    settings, _ = read_local(root, ".claude/settings.json")
-    wired = settings.decode("utf-8", "replace") if settings else ""
-    for p in sorted(set(nf) | set(bf)):
-        in_new, in_base = p in nf, p in bf
-        local, problem = read_local(root, p)
+    for p in candidates(root, known):
+        data, problem = read_local(root, p)
+        if problem and not p.startswith(".claude/"):
+            out.append(Entry(p, LEFT, "your path " + problem + "; it is outside .claude/, so migrate leaves it"))
+            continue
         if problem:
-            out.append(Entry(p, CONFLICT, "your path " + problem))
+            out.append(Entry(p, PROBLEM, "your path " + problem + "; look at it and remove it by hand"))
             continue
-        L = sha(local) if local is not None else None
-        N = nf[p]["sha256"] if in_new else None
-        B = bf[p]["sha256"] if in_base else None
-        cls = nf[p]["class"] if in_new else km.classify(p)
-        if not in_new:                                         # the kit stopped shipping it
-            if local is None:
-                continue
-            if cls != km.CLASS_KIT:
-                out.append(Entry(p, KEEP, "yours"))
-            elif p.startswith(".claude/hooks/") and p in wired:   # deleting it would leave a hook that fails open
-                out.append(Entry(p, KEEP_RETIRED, STILL_WIRED))
-            elif L == B:
-                out.append(Entry(p, REMOVE, "no longer shipped, and you never changed it"))
-            else:
-                out.append(Entry(p, KEEP_RETIRED, "no longer shipped, but you changed it: review it and delete it by hand if you do not need it"))
+        if data is None:
             continue
-        kit = new_files[p]
-        if cls == km.CLASS_FROZEN:
-            out.append(Entry(p, ADD, "a guardrail file; added because it is absent", kit) if local is None else Entry(p, KEEP, "a guardrail file: yours, never changed"))
-            continue
-        if cls == km.CLASS_SEED:
-            if local is None:
-                out.append(Entry(p, SKIP_DELETED, "you deleted it") if in_base else Entry(p, ADD, "seed file, absent", kit))
-            elif L == N:
-                out.append(Entry(p, UPTODATE))
-            elif in_base and L == B:
-                out.append(Entry(p, UPDATE, "still the unedited template", kit))
-            else:
-                out.append(Entry(p, KEEP, "yours (the project owns it once installed)"))
-            continue
-        # kit-owned
-        if local is None:
-            out.append(Entry(p, SKIP_DELETED, "you deleted it%s" % ("; the kit changed it since" if N != B else "")) if in_base else Entry(p, ADD, "new in the kit", kit))
-        elif L == N:
-            out.append(Entry(p, UPTODATE))
-        elif p in take_kit:
-            out.append(Entry(p, TAKE_KIT, "you asked for the kit's version", kit))
-        elif state["resolved"].get(p) == L:
-            out.append(Entry(p, RESOLVED, "you resolved it by hand"))
-        elif not in_base:
-            out.append(Entry(p, CONFLICT, "exists in your project and is not the kit's file; the base has nothing to merge against", marked=local))
-        elif L == B:
-            out.append(Entry(p, UPDATE, "you never changed it", kit))
-        elif N == B:
-            out.append(Entry(p, KEEP, "you changed it; the kit did not"))
+        m = _AGENT.match(p)
+        if p in km.BOOKKEEPING:
+            out.append(Entry(p, REMOVE, "the old copy's bookkeeping"))
+        elif "/__pycache__/" in p or p.endswith(".pyc"):
+            out.append(Entry(p, REMOVE, "Python cache"))
+        elif km.sha256_bytes(data) in known.get(p, ()):
+            out.append(Entry(p, REMOVE))
+        elif m and p in known:
+            out.append(Entry(p, OVERRIDE, "from now on this file replaces the kit's %s agent; delete it to use the kit's" % m.group(1)))
+        elif p.startswith(".claude/scripts/") and p not in known and p in referenced:
+            out.append(Entry(p, PROBLEM, "your settings still run or name it (a hook or a permission rule), and .claude/scripts/ has to go: "
+                                         "move it to a project path such as scripts/ and update that reference"))
+        elif p.startswith(".claude/"):
+            out.append(Entry(p, BACKUP, "you edited it" if p in known else "not a file the kit shipped"))
+        elif is_adapter(p):
+            out.append(Entry(p, LEFT, "the kit's old Codex/Cursor adapter, which you edited; adapt.py writes the current one"))
         else:
-            btree = base.get("_tree", {})
-            bdata = btree.get(p)
-            if bdata is None:       # base is the new kit itself (same version): nothing to merge
-                out.append(Entry(p, KEEP, "you changed it"))
-                continue
-            clean, merged, reason = three_way(local, bdata, kit, ("yours", "v" + base_label, "kit " + new_manifest["version"]))
-            if clean:
-                out.append(Entry(p, MERGE, "three-way merge, no conflicts", merged))
-            else:
-                out.append(Entry(p, CONFLICT, "you and the kit both changed it (%s)" % reason, marked=merged or None))
+            out.append(Entry(p, LEFT, "you edited it; delete it when you no longer need it"))
     return out
 
 
-def notes_for(root: str, entries: Sequence[Entry], new_manifest: Dict[str, Any]) -> List[str]:
+def plan_seed_updates(root: str, kit_root: str, seeds: Dict[str, Set[str]]) -> List[Tuple[Entry, str]]:
+    """[(UPDATE entry, the plugin's starter text)] for CLAUDE.md and the primers that are still the old starter file."""
+    out = []   # type: List[Tuple[Entry, str]]
+    for rel in sorted(seeds):
+        data, problem = read_local(root, rel)
+        if problem or data is None or km.sha256_bytes(data) not in seeds[rel]:
+            continue
+        new = init_project.read_text(os.path.join(kit_root, "seed", *rel.split("/")))
+        if new is not None and new.encode("utf-8") != data:
+            out.append((Entry(rel, UPDATE, "unchanged since the old version"), new))
+    return out
+
+
+def plan_settings(root: str) -> Tuple[Optional[Dict[str, Any]], List[str], Optional[Tuple[str, str]], List[str], str]:
+    """(settings.json without the kit's hooks, or None when it has none; the removed commands; (old, new) text of settings.local.json
+    when it has kit hooks too; notes; the text of both files without the kit's hooks, to find the files they still name)."""
     notes = []   # type: List[str]
-    by = {e.path: e for e in entries}
-    if os.path.isdir(os.path.join(root, ".claude", "commands")) or any(e.path.startswith(".claude/commands/") for e in entries):
-        notes.append("Modes are skills now (.claude/skills/<mode>/SKILL.md). Unmodified .claude/commands/ files are removed. A command you changed stays: "
-                     "move your edits into the skill of the same name and delete the command file (with both present, which one runs is Claude Code's choice).")
-    if ".claude/settings.v2.json" in by or os.path.isfile(os.path.join(root, ".claude", "settings.v2.json")):
-        notes.append(".claude/settings.json is yours and was not touched. A fresh install ships the v2 guards wired in; for an upgrade, switching "
-                     "is a human step: read docs/packaging.md (The v2 guards are on by default), merge the hooks block from .claude/settings.v2.json, "
-                     "then run migrate again to remove the retired v1 hook scripts.")
-    notes.append(".claude/loop.config.md is yours and was not touched. Keys added since your version use their defaults. "
-                 "Run `python3 .claude/scripts/doctor.py` to see what the new version expects.")
-    return notes
+    try:
+        _, current = init_project.read_settings(root)
+    except init_project.InitError as exc:
+        raise MigrateError(str(exc))
+    stripped, removed = install.strip_kit_hooks(current)
+    referenced = json.dumps(stripped)
+    local_write = None   # type: Optional[Tuple[str, str]]
+    local_text = init_project.read_text(os.path.join(root, LOCAL_SETTINGS))
+    local = install.load_settings(os.path.join(root, LOCAL_SETTINGS))
+    if local_text is not None and local is None:
+        notes.append("%s is not a JSON object migrate can read; if it has hook entries that run the old copy of the kit, take them "
+                     "out by hand" % LOCAL_SETTINGS)
+    if local is not None:
+        local_stripped, local_removed = install.strip_kit_hooks(local)
+        referenced += "\n" + json.dumps(local_stripped)
+        if local_removed:
+            removed = removed + local_removed
+            local_write = (local_text or "", json.dumps(local_stripped, indent=2, ensure_ascii=False) + "\n")
+            notes.append("%s had hook entries that run the old copy of the kit; they are taken out, and the file is backed up to %s "
+                         "first (it is git-ignored: delete the backup when you are happy)" % (LOCAL_SETTINGS, LOCAL_BACKUP))
+    if install.plugin_disabled(current) or install.plugin_disabled(local):
+        notes.append("your project settings set enabledPlugins[\"%s\"] to false: the kit does not load here until you remove that" % install.PLUGIN_ID)
+    return (stripped if removed and stripped != current else None), removed, local_write, notes, referenced
+
+
+def plugin_installed(env: Dict[str, str], kit_root: str) -> Optional[bool]:
+    if os.sep + os.path.join(".claude", "plugins") + os.sep in kit_root + os.sep:
+        return True              # this script runs from the plugin cache
+    return install.plugin_installed(env.get("HOME") or os.path.expanduser("~"))
 
 
 # ---------------------------------------------------------------------------------------------------------------- applying
@@ -303,18 +271,31 @@ def safe_dest(root: str, rel: str) -> str:
     return full
 
 
-def write_atomic(full: str, data: bytes, exe: bool) -> None:
+def write_atomic(full: str, data: bytes, mode: int = 0o644) -> None:
     os.makedirs(os.path.dirname(full), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(full), prefix=".migrate-")
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
-        os.chmod(tmp, 0o755 if exe else 0o644)
+        os.chmod(tmp, mode)
         os.replace(tmp, full)
     except BaseException:
         if os.path.exists(tmp):
             os.remove(tmp)
         raise
+
+
+def prune(root: str, full: str) -> None:
+    """Remove the directories left empty above `full`, up to (not including) the project root and `.claude/`."""
+    stop = {os.path.realpath(root), os.path.realpath(os.path.join(root, ".claude"))}
+    d = os.path.dirname(full)
+    while os.path.realpath(d) not in stop and os.path.isdir(d) and not os.listdir(d):
+        os.rmdir(d)
+        d = os.path.dirname(d)
+
+
+def backup_rel(version: Optional[str], rel: str) -> str:
+    return "%s/%s/%s" % (BACKUP_DIR, version or "unknown", rel[len(".claude/"):])
 
 
 def dirty_tree(root: str) -> Optional[str]:
@@ -330,46 +311,50 @@ def dirty_tree(root: str) -> Optional[str]:
     return text.split("\n")[0] if text else None
 
 
-def apply(root: str, source: str, entries: Sequence[Entry], new_manifest: Dict[str, Any], exe: Dict[str, bool], now: Optional[datetime.datetime] = None) -> Dict[str, Any]:
-    stamp = (now or datetime.datetime.now(datetime.timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
-    backup = os.path.join(root, WORK_DIR, "backup", stamp)
-    wrote = []   # type: List[str]
-    work = os.path.join(root, WORK_DIR)
-    if os.path.islink(work) or os.path.islink(os.path.join(root, ".claude")):
-        raise MigrateError("%s or .claude is a symlink; migrate will not write through it" % WORK_DIR)
-    for e in entries:
-        if e.action not in CHANGES and not (e.action == CONFLICT and e.marked is not None):
-            continue
-        full = safe_dest(root, e.path)
-        if e.action in (UPDATE, MERGE, TAKE_KIT, REMOVE) and os.path.isfile(full):
-            dest = os.path.join(backup, e.path)
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            shutil.copy2(full, dest)
-        if e.action in (ADD, UPDATE, MERGE, TAKE_KIT):
-            assert e.content is not None
-            mode_exe = exe.get(e.path, False) if e.action != MERGE else (os.access(full, os.X_OK) if os.path.isfile(full) else exe.get(e.path, False))
-            write_atomic(full, e.content, mode_exe)
-            wrote.append(e.path)
-        elif e.action == REMOVE:
-            os.remove(full)
-            wrote.append(e.path)
-            d = os.path.dirname(full)
-            while d != os.path.realpath(root) and os.path.isdir(d) and not os.listdir(d):
-                os.rmdir(d)
-                d = os.path.dirname(d)
-        elif e.action == CONFLICT and e.marked is not None:
-            write_atomic(safe_dest(root, WORK_DIR + "/conflicts/" + e.path), e.marked, False)
-    pending = [e.path for e in entries if e.action in (CONFLICT, KEEP_RETIRED)]
-    # A retired hook still wired keeps the old manifest as the base, so the run after the switch can remove it.
-    finished = not [e for e in entries if e.action == CONFLICT or (e.action == KEEP_RETIRED and e.detail == STILL_WIRED)]
-    if finished:
-        for rel in (km.VERSION_REL, km.MANIFEST_REL):
-            with open(os.path.join(source, rel), "rb") as fh:
-                write_atomic(safe_dest(root, rel), fh.read(), False)
-    report = {"schema": SCHEMA, "applied": stamp, "to_version": new_manifest["version"], "finished": finished, "pending": pending,
-              "actions": [e.to_dict() for e in entries if e.action not in (UPTODATE,)]}
-    write_atomic(safe_dest(root, WORK_DIR + "/report.json"), (json.dumps(report, indent=1, sort_keys=True) + "\n").encode("utf-8"), False)
-    return {"wrote": wrote, "finished": finished, "backup": os.path.relpath(backup, root) if os.path.isdir(backup) else None}
+def apply(root: str, version: Optional[str], entries: Sequence[Entry], init_writes: Sequence[Tuple[str, Optional[str], str]],
+          local_write: Optional[Tuple[str, str]] = None) -> List[str]:
+    """Write the settings and the /init files, then move and remove the copy's files, the bookkeeping last (so a run that stops half way
+    is still recognised as a copy install and can be run again). Every destination is checked before the first write. Returns the
+    paths touched."""
+    for rel in (".claude", BACKUP_DIR, WORK_DIR):
+        if os.path.islink(os.path.join(root, rel)):
+            raise MigrateError("%s is a symlink; migrate will not write through it" % rel)
+    moves = [e for e in entries if e.action in (REMOVE, BACKUP)]
+    moves.sort(key=lambda e: e.path in km.BOOKKEEPING)
+    for path, _, _ in init_writes:
+        safe_dest(root, path)
+    if local_write is not None:
+        safe_dest(root, LOCAL_SETTINGS)
+        safe_dest(root, LOCAL_BACKUP)
+    for e in moves:
+        safe_dest(root, e.path)
+        if e.action == BACKUP:
+            safe_dest(root, backup_rel(version, e.path) + ".2")
+    writes = sorted(init_writes, key=lambda w: w[0] != ".claude/settings.json")
+    init_project.write_all(root, writes)
+    done = [w[0] for w in writes]
+    if local_write is not None:
+        if not os.path.exists(os.path.join(root, LOCAL_BACKUP)):
+            write_atomic(os.path.join(root, LOCAL_BACKUP), local_write[0].encode("utf-8"), 0o600)
+        write_atomic(os.path.join(root, LOCAL_SETTINGS), local_write[1].encode("utf-8"), 0o600)
+        done.append(LOCAL_SETTINGS)
+    for e in moves:
+        full = os.path.join(root, e.path)
+        if e.action == BACKUP:
+            with open(full, "rb") as fh:
+                data = fh.read()
+            mode = stat.S_IMODE(os.lstat(full).st_mode)
+            dest = os.path.join(root, backup_rel(version, e.path))
+            if os.path.lexists(dest):
+                with open(dest, "rb") as fh:
+                    same = fh.read() == data
+                if not same:
+                    dest += ".2"
+            write_atomic(dest, data, mode)
+        os.remove(full)
+        prune(root, full)
+        done.append(e.path)
+    return done
 
 
 # ---------------------------------------------------------------------------------------------------------------- output
@@ -381,41 +366,59 @@ def counts(entries: Sequence[Entry]) -> Dict[str, int]:
     return c
 
 
-def render(doc: Dict[str, Any], entries: Sequence[Entry], notes: Sequence[str], applied: Optional[Dict[str, Any]]) -> str:
-    lines = ["migrate: %s -> kit %s%s" % (doc["from_version"], doc["to_version"], "" if applied else "   (dry run: nothing was changed)")]
-    lines.append("  project: %s" % doc["repo"])
-    lines.append("  kit:     %s" % doc["source"])
-    quiet = (UPTODATE, KEEP, SKIP_DELETED, RESOLVED)
-    for act in (CONFLICT, MERGE, UPDATE, TAKE_KIT, ADD, REMOVE, KEEP_RETIRED):
+def render(doc: Dict[str, Any], entries: Sequence[Entry], init_plan: Dict[str, Any]) -> None:
+    print("migrate: copy install %s -> plugin %s%s" % (doc["from_version"] or "(version unknown)", doc["kit_version"],
+                                                         "" if doc["applied"] else "   (dry run: nothing was changed)"))
+    print("  project: %s" % doc["repo"])
+    print("  kit:     %s" % doc["kit"])
+    for act in ORDER:
         rows = [e for e in entries if e.action == act]
-        if rows:
-            lines.append("")
-            lines.append("%s (%d)" % (act.upper(), len(rows)))
-            for e in rows:
-                lines.append("  %s%s" % (e.path, "   -- " + e.detail if e.detail else ""))
+        if not rows:
+            continue
+        print("")
+        print("%s (%d)" % (TITLES[act].replace("<version>", doc["from_version"] or "unknown"), len(rows)))
+        for e in rows:
+            print("  %s%s" % (e.path, "   -- " + e.detail if e.detail else ""))
+    if doc["removed_hooks"]:
+        print("")
+        print("SETTINGS: the kit's hook entries taken out of .claude/settings.json (%d); your own hooks stay:" % len(doc["removed_hooks"]))
+        for c in doc["removed_hooks"]:
+            print("  " + (c if len(c) <= 110 else c[:107] + "..."))
     c = counts(entries)
-    lines.append("")
-    lines.append("summary: " + ", ".join("%d %s" % (c[a], a) for a in sorted(c)) if c else "summary: nothing to do")
-    lines.append("  (%s are left as they are)" % ", ".join(quiet))
-    for n in notes:
-        lines.append("note: " + n)
-    conflicts = [e for e in entries if e.action == CONFLICT]
-    if conflicts:
-        lines.append("")
-        lines.append("%d conflict(s). With --apply, nothing is written to those files. The merge result, with conflict markers, goes to "
-                     ".claude/.migrate/conflicts/<path>. Resolve each one by hand in your file, then run:" % len(conflicts))
-        lines.append("    python3 <kit>/.claude/scripts/migrate.py --repo %s --resolved <path>" % doc["repo"])
-        lines.append("or take the kit's version with --take-kit <path> (your copy is backed up). KIT_VERSION moves only after the last one.")
-    if applied:
-        lines.append("")
-        lines.append("applied: %d file(s) written or removed%s" % (len(applied["wrote"]), "; backups in " + applied["backup"] if applied["backup"] else ""))
-        lines.append("finished: KIT_VERSION and KIT_MANIFEST updated" if applied["finished"] else
-                     "not finished: resolve the conflicts above, or switch settings.json to the v2 guards while a retired hook is still wired, then run it again")
-        lines.append("when you are happy: review `git diff`, commit, and delete .claude/.migrate/")
-    elif any(e.action in CHANGES for e in entries):
-        lines.append("")
-        lines.append("to apply, from a plain terminal (not inside Claude Code): add --apply")
-    return "\n".join(lines)
+    print("")
+    print("summary: " + (", ".join("%d %s" % (c[a], a) for a in ORDER if a in c) if c else "no copied kit files left"))
+    print("")
+    print("then, what /init does:")
+    if not init_plan["writes"]:
+        print("  nothing to do: the starter files are there and the settings already hold the kit's deny block and sandbox profile")
+    init_project.print_plan(init_plan)
+    for n in doc["notes"]:
+        print("note: " + n)
+    if doc["plugin_installed"] is not True:
+        print("")
+        print("the plugin does not look installed%s. In Claude Code, run:" % ("" if doc["plugin_installed"] is False else " (could not tell)"))
+        for cmd in install.INSTALL_COMMANDS:
+            print("    " + cmd)
+    if doc["applied"]:
+        print("")
+        print("applied: %d path(s) moved, removed or written. Receipt: %s/report.json" % (len(doc["done"]), WORK_DIR))
+        print("when you are happy: review `git diff`, commit, and delete %s/ (and %s/ once you have carried your edits over)" % (WORK_DIR, BACKUP_DIR))
+    elif doc["has_changes"]:
+        print("")
+        print("to apply, from a plain terminal (not inside Claude Code):")
+        print("    " + apply_command(doc))
+
+
+def apply_command(doc: Dict[str, Any]) -> str:
+    """The command that applies this plan: the same choices as the dry run, written out (the plugin's CLAUDE_PLUGIN_OPTION_*
+    variables are not set in a plain terminal)."""
+    args = ["--repo", shlex.quote(doc["repo"])]
+    for flag, key in (("--from-version", "from_version_arg"), ("--base-archive", "base_archive")):
+        if doc.get(key):
+            args += [flag, shlex.quote(doc[key])]
+    for k, v in sorted(doc.get("options", {}).items()):
+        args += ["--option", shlex.quote("%s=%s" % (k, v))]
+    return kitpaths.script_cmd("migrate.py", *(args + ["--apply"]))
 
 
 # ---------------------------------------------------------------------------------------------------------------- main
@@ -431,85 +434,91 @@ def resolve_root(repo: str) -> str:
     return os.path.realpath(repo)
 
 
-def check_paths(root: str, paths: Sequence[str]) -> List[str]:
-    bad = [p for p in paths if p.startswith("/") or ".." in p.split("/") or p.endswith("/")]
-    if bad:
-        raise MigrateError("not a project-relative file path: %s" % bad[0])
-    return [p.replace(os.sep, "/") for p in paths]
-
-
-def main(argv: Optional[Sequence[str]] = None, env: Optional[Dict[str, str]] = None) -> int:
+def main(argv: Optional[Sequence[str]] = None, env: Optional[Dict[str, str]] = None, kit_root: str = kitpaths.KIT_ROOT) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], allow_abbrev=False)
-    ap.add_argument("--repo", default=".", help="the project to upgrade (default: the current directory)")
-    ap.add_argument("--source", default=None, help="a kit checkout or dist/copy-install/ (default: the tree this script is in)")
-    ap.add_argument("--from-version", default=None, help="treat the install as this version when .claude/KIT_VERSION is missing or renamed")
-    ap.add_argument("--base-archive", default=None, help="use this tar as the base instead of the one the kit ships for your version")
-    ap.add_argument("--apply", action="store_true", help="HUMAN-RUN: write the plan")
-    ap.add_argument("--resolved", nargs="+", default=None, metavar="PATH", help="HUMAN-RUN: mark files you merged by hand")
-    ap.add_argument("--take-kit", nargs="+", default=None, metavar="PATH", help="HUMAN-RUN: apply the plan, and replace these files by the kit's version (your copy is backed up)")
+    ap.add_argument("--repo", default=".", help="the project to migrate (default: the current directory)")
+    ap.add_argument("--from-version", default=None, help="the old copy's version, when .claude/KIT_VERSION is missing")
+    ap.add_argument("--base-archive", default=None, help="a tar of the old kit tree (`git archive`) to take the hashes from, instead of the shipped v1.2.0")
+    ap.add_argument("--option", action="append", default=[], metavar="KEY=VALUE", help="a plugin userConfig choice, as for init_project.py")
+    ap.add_argument("--apply", action="store_true", help="HUMAN-RUN: apply the plan")
     ap.add_argument("--allow-dirty", action="store_true", help="apply even though the git work tree has uncommitted changes")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     env = os.environ if env is None else env
-    mutating = bool(args.apply or args.resolved or args.take_kit)
     try:
-        if mutating:
+        if args.apply:
             refusal = humanonly.refusal("migrate", env)
             if refusal:
                 sys.stderr.write(refusal + "\n")
                 return 3
         root = resolve_root(args.repo)
+        if kitpaths.is_kit_dev_checkout(root):
+            raise MigrateError("%s is the kit's own checkout, not a project" % root)
         if not os.path.isdir(os.path.join(root, ".claude")):
-            raise MigrateError("%s has no .claude/ directory: there is nothing to migrate. To install the kit, copy dist/copy-install/ into the project, "
-                               "or install the plugin (docs/packaging.md)" % root)
-        default_source = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        source = os.path.realpath(args.source or default_source)
-        new_manifest, new_files, exe = load_source(source)
-        label, base = choose_base(root, source, new_manifest, args.from_version, args.base_archive)
-        state = load_state(root)
-        take = check_paths(root, args.take_kit or [])
-        entries = plan(root, new_manifest, new_files, label, base, state, take)
-        by_path = {e.path: e for e in entries}
-        for p in take:
-            if p not in by_path or by_path[p].action != TAKE_KIT:
-                raise MigrateError("--take-kit %s: not a kit file that differs from yours" % p)
-        notes = notes_for(root, entries, new_manifest)
-        doc = {"schema": SCHEMA, "repo": root, "source": source, "from_version": label, "to_version": new_manifest["version"],
-               "counts": counts(entries), "actions": [e.to_dict() for e in entries if e.action != UPTODATE], "notes": notes, "applied": False}
-        applied = None
-        if args.resolved:
-            for p in check_paths(root, args.resolved):
-                data, problem = read_local(root, p)
-                if data is None or problem:
-                    raise MigrateError("--resolved %s: no such file in the project" % p)
-                if p not in new_manifest["files"] or new_manifest["files"][p]["class"] != km.CLASS_KIT:
-                    raise MigrateError("--resolved %s: not a kit-owned file the kit ships" % p)
-                state["resolved"][p] = sha(data)
-            write_atomic(safe_dest(root, STATE_REL), (json.dumps(state, indent=1, sort_keys=True) + "\n").encode("utf-8"), False)
-            print("recorded %d resolved file(s) in %s; run the dry run again" % (len(args.resolved), STATE_REL))
-            return 0
-        if args.apply or take:
-            continuing = False
-            rep, _ = read_local(root, WORK_DIR + "/report.json")
-            if rep:
-                try:
-                    continuing = json.loads(rep.decode("utf-8")).get("finished") is False
-                except ValueError:
-                    pass
-            dirty = None if (args.allow_dirty or continuing) else dirty_tree(root)
+            raise MigrateError("%s has no .claude/ directory: there is no copy install to migrate. Install the plugin and run "
+                               "/chain-of-custody:init instead" % root)
+        version, known, seeds, notes = known_hashes(root, kit_root, args.from_version, args.base_archive)
+        stripped, removed, local_write, snotes, referenced = plan_settings(root)
+        entries = plan_files(root, known, referenced)
+        updates = plan_seed_updates(root, kit_root, seeds)
+        entries += [e for e, _ in updates]
+        notes += snotes
+        try:
+            options = init_project.option_values(args.option, env)
+            init_plan = init_project.plan(root, kit_root, args.option, env, settings_base=stripped)
+        except init_project.InitError as exc:
+            raise MigrateError(str(exc))
+        for e, text in updates:
+            old = init_project.read_text(os.path.join(root, e.path))
+            init_plan["writes"].append((e.path, old, text))
+            init_plan["kept"] = [k for k in init_plan["kept"] if k != e.path]
+        if not any(e.path == ".claude/CLAUDE.md" for e, _ in updates):
+            claude_md = init_project.read_text(os.path.join(root, ".claude", "CLAUDE.md")) or ""
+            if ".claude/commands/" in claude_md or ".claude/scripts/" in claude_md:
+                notes.append(".claude/CLAUDE.md is yours (you edited it) and still names .claude/commands/ or .claude/scripts/: the modes are "
+                             "/chain-of-custody:<mode> skills now and the scripts live in the plugin; compare it with the plugin's "
+                             "seed/.claude/CLAUDE.md")
+        if any(is_adapter(e.path) for e in entries):
+            notes.append("the kit's old Codex/Cursor adapter files are part of this plan. If you use Codex or Cursor, write the current "
+                         "ones after the apply: " + kitpaths.script_cmd("adapt.py", "--target", shlex.quote(root), "--tool", "codex")
+                         + " (or --tool cursor)")
+        if not entries and not removed:
+            notes.append("no copy install of the kit was found here; /chain-of-custody:init sets a project up for the plugin")
+        if any(e.action == OVERRIDE for e in entries):
+            notes.append("a kept .claude/agents/<role>.md is a project override: doctor lists it, and it does not get the kit's updates")
+        if any(e.path.startswith(".claude/commands/") for e in entries):
+            notes.append("the kit's modes are plugin skills now: /chain-of-custody:<mode> (an edited command file is backed up, not kept)")
+        kit_version = km.parse_version(init_project.read_text(os.path.join(kit_root, "KIT_VERSION")) or "") or "(unknown)"
+        doc = {"schema": SCHEMA, "repo": root, "kit": kit_root, "from_version": version, "kit_version": kit_version,
+               "counts": counts(entries), "actions": [e.to_dict() for e in entries], "removed_hooks": removed,
+               "init": {"writes": [w[0] for w in init_plan["writes"]], "copied": init_plan["copied"], "kept": init_plan["kept"],
+                        "notes": init_plan["notes"]},
+               "notes": notes, "plugin_installed": plugin_installed(env, kit_root), "applied": False, "done": [],
+               "options": options, "from_version_arg": args.from_version, "base_archive": args.base_archive,
+               "has_changes": bool([e for e in entries if e.action in (REMOVE, BACKUP)] or init_plan["writes"] or local_write)}
+        if args.apply:
+            stuck = [e.path for e in entries if e.action == PROBLEM]
+            if stuck:
+                raise MigrateError("nothing was changed: %d path(s) need you first (%s). Run the dry run to see why" % (len(stuck), ", ".join(stuck[:5])))
+            dirty = None if args.allow_dirty else dirty_tree(root)
             if dirty:
                 raise MigrateError("the git work tree has uncommitted changes (%s). Commit or stash them first, so `git checkout` is your undo; "
                                    "or pass --allow-dirty" % dirty)
-            applied = apply(root, source, entries, new_manifest, exe)
+            doc["done"] = apply(root, version, entries, init_plan["writes"], local_write)
             doc["applied"] = True
-            doc["finished"] = applied["finished"]
+            doc["applied_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            write_atomic(safe_dest(root, WORK_DIR + "/report.json"), (json.dumps(doc, indent=1, sort_keys=True) + "\n").encode("utf-8"))
         if args.json:
             print(json.dumps(doc, indent=1, sort_keys=True))
         else:
-            print(render(doc, entries, notes, applied))
-        return 1 if any(e.action == CONFLICT for e in entries) else 0
+            render(doc, entries, init_plan)
+        return 1 if any(e.action == PROBLEM for e in entries) else 0
     except MigrateError as exc:
         sys.stderr.write("migrate: %s\n" % exc)
+        return 2
+    except OSError as exc:
+        sys.stderr.write("migrate: %s. The apply may have stopped part way: the kit's bookkeeping goes last, so run the same command "
+                         "again once the cause is fixed (`git status` shows what changed)\n" % exc)
         return 2
 
 

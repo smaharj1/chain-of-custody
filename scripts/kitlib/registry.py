@@ -32,7 +32,7 @@ PLACEHOLDER = "<command>"
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*(?:\.(?:[a-z][a-z0-9_]*|\*))*\Z")
 _SECTION_ID_RE = re.compile(r"^[a-z][a-z0-9_]*\Z")
 _KEY_FIELDS = {"name", "type", "default", "owner_phase", "h6_protected", "evidence_gated", "doc",
-               "deprecated_by", "choices", "section", "example", "after_doc"}
+               "deprecated_by", "choices", "section", "example", "after_doc", "seed"}
 _REQUIRED = ("name", "type", "default", "owner_phase", "h6_protected", "evidence_gated", "doc", "deprecated_by")
 
 
@@ -96,6 +96,12 @@ class Key(object):
         problem = self.check_value(self.default)
         if problem:
             raise RegistryError("%s: default of %s is invalid: %s" % (source, self.name, problem))
+        # `seed`: the value the starter config (seed/.claude/loop.config.md) sets, when a new project should start somewhere other than the default
+        self.has_seed = "seed" in raw
+        self.seed = raw.get("seed", self.default)
+        problem = self.check_value(self.seed)
+        if problem:
+            raise RegistryError("%s: seed of %s is invalid: %s" % (source, self.name, problem))
         ex = raw.get("example")
         if ex is None or ex is False:
             self.example = None  # type: Optional[Dict[str, Any]]

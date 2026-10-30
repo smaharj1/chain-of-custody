@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""SessionStart hook: version check and the hook-liveness canary (Phase 1; report §5.8, §14.2; IMP-21).
+"""SessionStart hook: where the kit is, the version check and the hook-liveness canary (Phase 1; report §5.8, §14.2; IMP-21).
 
-Reads the SessionStart hook input from stdin and does two things, both advisory:
+Reads the SessionStart hook input from stdin and does three things, all advisory:
 
-  1. Version check. Compares `claude --version` with the range in `.claude/KIT_VERSION`
+  0. Kit line. One short line with the kit's absolute folder and version (`kit: /abs/plugin/root (2.0.0).`), so the session can name
+     kit files and print commands with full paths (`${CLAUDE_PLUGIN_ROOT}` is not set in the Bash tool). Until the project has
+     `.claude/loop.config.md` it adds a reminder to run /chain-of-custody:init (or /chain-of-custody:migrate when an old copy install
+     is still there). In the kit's own checkout it says neither.
+  1. Version check. Compares `claude --version` with the range in the kit's `KIT_VERSION`
      (`claude_code_min`, `claude_code_tested_max`). Below the minimum, above the tested maximum,
      untested (`tested_max: none`) or unreadable: a loud banner at L0-L2; at configured L3 and
      above, a REFUSAL, which means no nonce is written.
@@ -17,10 +21,10 @@ It never blocks: every path exits 0. A failure is reported in the returned conte
 nonce is what the conductor notices. The returned `additionalContext` stays under 1 KiB (report §19.7,
 SessionStart pattern), and the hook does no network I/O and caches the version lookup.
 
-Wiring (a human or the release stage adds it; this phase does not edit settings.json):
+Wiring: the plugin's `hooks/hooks.json` runs it on every SessionStart source:
 
-    "SessionStart": [{"hooks": [{"type": "command", "timeout": 10,
-        "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/session_start.py\""}]}]
+    "SessionStart": [{"matcher": "startup|resume|clear|compact", "hooks": [{"type": "command", "timeout": 10,
+        "command": "... exec python3 -B \"${CLAUDE_PLUGIN_ROOT}/scripts/session_start.py\" ..."}]}]
 """
 from __future__ import annotations
 
@@ -34,15 +38,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from doctorlib import safeio  # noqa: E402
 from kitlib import config as config_mod  # noqa: E402
-from kitlib import jsonio, levels, runstate, semver  # noqa: E402
+from kitlib import install, jsonio, kitpaths, levels, runstate, semver  # noqa: E402
 
 MAX_CONTEXT = 1000
 DEFAULT_MIN = "2.1.302"
 
 
-def _read_version_file(repo: str) -> Dict[str, Optional[str]]:
+def _read_version_file(kit_root: str) -> Dict[str, Optional[str]]:
     empty = {"version": None, "date": None, "claude_code_min": None, "claude_code_tested_max": None}  # type: Dict[str, Optional[str]]
-    text = safeio.read_text(os.path.join(repo, ".claude", "KIT_VERSION"), 8192)
+    text = safeio.read_text(os.path.join(kit_root, "KIT_VERSION"), 8192)
     if text is None:
         return empty
     try:
@@ -107,7 +111,19 @@ def configured_level(repo: str) -> Tuple[int, str]:
         return levels.L1, "loop.config unreadable (%s)" % str(exc).split("\n")[0][:60]
 
 
-def run(hook_input: Any, env: Mapping[str, str]) -> Dict[str, Any]:
+def kit_line(repo: str, kit_root: str, version: Optional[str]) -> List[str]:
+    """The kit-root line and the /init (or /migrate) reminder. Nothing in the kit's own checkout."""
+    if kitpaths.is_kit_dev_checkout(repo):
+        return []
+    out = ["kit: %s (%s)." % (kit_root, version or "version unreadable")]
+    if install.copy_install_markers(repo):
+        out.append("This project still has an old copy install of the kit: ask the user to run /chain-of-custody:migrate.")
+    elif not os.path.isfile(os.path.join(repo, config_mod.CONFIG_PATH)):
+        out.append("This project is not set up for the kit yet (no %s): suggest /chain-of-custody:init." % config_mod.CONFIG_PATH)
+    return out
+
+
+def run(hook_input: Any, env: Mapping[str, str], kit_root: str = kitpaths.KIT_ROOT) -> Dict[str, Any]:
     """Pure-ish core: returns {context, nonce_written, refused, level, status}."""
     hi = hook_input if isinstance(hook_input, dict) else {}
     sid = hi.get("session_id")
@@ -117,10 +133,12 @@ def run(hook_input: Any, env: Mapping[str, str]) -> Dict[str, Any]:
     state = runstate.RunState.for_path(cwd)
     from kitlib import gitutil
     repo = (gitutil.toplevel(cwd) if state is not None else None) or cwd
+    kv = _read_version_file(kit_root)
+    kl = kit_line(repo, kit_root, kv.get("version"))
+    notes += kl
     level, lnote = configured_level(repo)
-    if lnote:
+    if lnote and len(kl) < 2:          # the /init reminder already says the config is missing
         notes.append(lnote)
-    kv = _read_version_file(repo)
     minimum = kv.get("claude_code_min") or DEFAULT_MIN
     tested = kv.get("claude_code_tested_max")
     text, how = claude_version(env, state)

@@ -8,10 +8,10 @@ import hashlib
 from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO, Tuple
 
 import humanonly
-from kitlib import jsonio, runstate
+from kitlib import jsonio, kitpaths, runstate
 
 from . import engine, g_taint, selftest, telemetry
-from .lib import Ctx, Decision
+from .lib import UNSET, Ctx, Decision
 
 BLOCKING = engine.BLOCKING_EVENTS
 
@@ -84,6 +84,8 @@ def _dispatch(event: str, hook: Dict[str, Any], entry_id: Optional[str], stdout:
     ctx = Ctx(hook, env=env)
     names = [g for e in entries for g in e.get("guards", [])]
     notes = []   # type: List[str]
+    if event == "SubagentStart":
+        notes.append(subagent_kit_note())
     if "injection" in names:
         res = g_taint.check(ctx)
         if res["hits"]:
@@ -94,7 +96,13 @@ def _dispatch(event: str, hook: Dict[str, Any], entry_id: Optional[str], stdout:
         if res["context"]:
             notes.append(res["context"])
     if "telemetry" in names:
-        telemetry.handle(ctx)
+        if event == "SubagentStart":
+            try:            # the kit line must reach the subagent even when the diagnostic record cannot be written
+                telemetry.handle(ctx)
+            except Exception as exc:
+                stderr.write("kit guards: telemetry skipped in SubagentStart (%s: %s)\n" % (type(exc).__name__, str(exc)[:100]))
+        else:
+            telemetry.handle(ctx)
     if "selftest" in names:
         text = _session_selftest(ctx)
         if text:
@@ -102,6 +110,13 @@ def _dispatch(event: str, hook: Dict[str, Any], entry_id: Optional[str], stdout:
     if notes:
         _out(stdout, {"hookSpecificOutput": {"hookEventName": event, "additionalContext": " ".join(notes)[:1000]}})
     return 0
+
+
+def subagent_kit_note(root: str = kitpaths.KIT_ROOT) -> str:
+    """The SubagentStart context. Only the main session sees the SessionStart `kit:` line, and nothing expands
+    `${CLAUDE_PLUGIN_ROOT}` in the kit files a subagent reads with the Read tool (whether it is expanded in the agent file
+    itself is probe V13), so the subagent is told the folder here."""
+    return ("kit: %s. In kit files, read %s as that folder." % (root, kitpaths.PLUGIN_ROOT_VAR))
 
 
 def manifest_sha() -> str:
@@ -163,8 +178,10 @@ class _StubState(object):
 
 def evaluate_for_caller(tool: str, tool_input: Mapping[str, Any], caller: str = "unknown", cwd: Optional[str] = None,
                         env: Optional[Mapping[str, str]] = None, config: Any = None) -> Tuple[Ctx, Optional[Decision]]:
-    """Run the guards for a synthetic call, with no repository and an in-memory session registry. `caller` is one of
-    engineer, critic, unknown, conductor (the registered conductor session). Used by `explain` and by tools/evals/run_local.py."""
+    """Run the guards for a synthetic call, with an in-memory session registry. `caller` is one of engineer, critic, unknown,
+    conductor (the registered conductor session). `config=None` runs with the defaults; `config=lib.UNSET` reads the loop config of
+    the repository that holds `cwd`, and the one committed at its base sha, as the real hook does. Used by `explain` and by
+    tools/evals/run_local.py."""
     hook = {"session_id": "explain-session", "cwd": cwd or os.getcwd(), "hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": dict(tool_input)}
     records = {}   # type: Dict[str, Any]
     if caller in ("engineer", "critic", "infra-engineer", "security-reviewer", "design-critic"):
@@ -192,8 +209,16 @@ def _explain(args: List[str], stdout: TextIO, stderr: TextIO, env: Optional[Mapp
             rest.append(args[i])
             i += 1
     text = " ".join(rest)
-    ctx, dec = evaluate_for_caller(tool, {"command": text} if tool == "Bash" else {"file_path": text, "content": ""}, caller, env=env)
+    # the repository's loop.config.md, read the way the hook reads it (the working tree's, and the one at the base sha for H6 keys)
+    ctx, dec = evaluate_for_caller(tool, {"command": text} if tool == "Bash" else {"file_path": text, "content": ""}, caller, env=env, config=UNSET)
     stdout.write("caller: %s (%s)\n" % (ctx.caller.kind, ctx.caller.reason))
+    from kitlib import config as config_mod
+    if ctx.config is not None:
+        stdout.write("config: %s (git_autonomy %s, delivery %s; a push also needs the same at the base sha)\n"
+                     % (os.path.join(ctx.root or ctx.cwd, config_mod.CONFIG_PATH), ctx.cfg("git_autonomy", "none"), ctx.cfg("delivery", "local")))
+    else:
+        stdout.write("config: none found at %s; using the defaults (git_autonomy none)\n"
+                     % os.path.join(ctx.root or ctx.cwd, config_mod.CONFIG_PATH))
     if dec is None:
         stdout.write("decision: allow\n")
         return 0

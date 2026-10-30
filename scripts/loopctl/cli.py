@@ -1,4 +1,4 @@
-"""The loopctl command line (report section 10.2). Run: `python3 .claude/scripts/loopctl <command> [options]`.
+"""The loopctl command line (report section 10.2). Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl <command> [options]`.
 
 Command classification: ONE table, `kitlib/loopctl_table.py` (the guards, `guards/g_exec.py` and `guards/g_halt.py`, import it; a test
 compares it with the argparse choices). `classify(argv)` returns one of:

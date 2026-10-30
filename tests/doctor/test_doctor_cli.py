@@ -29,7 +29,8 @@ class Cli(BoundaryCase):
         rc, out, err = self.run_cli(repo, "--json")
         doc = json.loads(out)
         self.assertEqual(doc["schema"], "doctor.v1")
-        self.assertEqual(set(doc), {"schema", "repo", "level", "next", "checks", "attestations"})
+        self.assertEqual(set(doc), {"schema", "repo", "kit", "level", "next", "checks", "attestations"})
+        self.assertEqual(doc["kit"], REPO_ROOT)
         self.assertEqual(set(doc["level"]), {"configured", "effective", "caps"})
         self.assertRegex(doc["level"]["configured"], r"^L[0-5]$")
         self.assertRegex(doc["level"]["effective"], r"^L[0-5]$")
@@ -109,6 +110,20 @@ class Cli(BoundaryCase):
         self.assertIn("prerequisites", out)
         self.assertIn("next:", out)
         self.assertNotIn("Credentials reachable", out)
+
+    def test_level_names_the_failing_check_ids_next_to_the_counts(self):
+        repo = self.kit_repo()
+        rc, out, err = self.run_cli(repo, "--level", "L3")
+        _, js, _ = self.run_cli(repo, "--level", "L3", "--json")
+        checks = json.loads(js)["checks"]
+        errors = list(dict.fromkeys(c["id"] for c in checks if c["status"] == "fail" and c["severity"] == "error"))
+        count = [l for l in out.splitlines() if " error(s)" in l][-1]
+        self.assertTrue(errors, "the fixture repo should have at least one error")
+        self.assertRegex(count, r"^\d+ error\(s\) \(")
+        named = count.split(" error(s) (", 1)[1].split("), ", 1)[0].split(", ")
+        self.assertTrue(named)
+        self.assertLessEqual(set(named), set(errors), count)
+        self.assertIn("warning(s) (", count)
 
     def test_bad_level_is_a_usage_error(self):
         rc, out, err = self.run_cli(self.kit_repo(), "--level", "L9")
@@ -201,7 +216,8 @@ class SafetyAroundClaudeAndLive(BoundaryCase):
         env = self.fake_home.env({"PATH": d + os.pathsep + "/usr/bin:/bin"})
         rc, out, err = run_doctor(["--json", "--repo", repo.path, "--home", self.fake_home.path], env)
         v = [c for c in json.loads(out)["checks"] if c["id"] == "version.claude"][0]
-        self.assertEqual(v["status"], "pass", v["message"])
+        self.assertEqual(v["detail"]["version"], "2.1.305 (Claude Code)", v["message"])   # read; pass or untested depends on the kit's KIT_VERSION
+        self.assertNotEqual(v["detail"]["status"], "unknown", v["message"])
 
     def test_kit_claude_bin_is_how_tests_inject_the_fake(self):
         d = self.tmpdir()
@@ -223,20 +239,26 @@ class SafetyAroundClaudeAndLive(BoundaryCase):
 
 
 class Portable(BaseTestCase):
-    def test_runs_as_python3_from_a_copy_of_the_kit_in_any_repo(self):
-        """`python3 .claude/scripts/doctor.py` from a project the kit was copied into (single-step `cp -r .claude .` install)."""
+    def test_runs_as_python3_from_the_plugin_folder_in_any_project(self):
+        """`python3 "$KIT/scripts/doctor.py"` with the project as the current directory: the kit stays in the plugin folder."""
         r = self.repo()
-        shutil.copytree(SCRIPTS_DIR, os.path.join(r.path, ".claude", "scripts"), ignore=shutil.ignore_patterns("__pycache__"))
-        shutil.copy(os.path.join(REPO_ROOT, ".claude", "KIT_VERSION"), os.path.join(r.path, ".claude", "KIT_VERSION"))
-        shutil.copy(os.path.join(REPO_ROOT, ".claude", "loop.config.md"), os.path.join(r.path, ".claude", "loop.config.md"))
+        r.write(".claude/loop.config.md", "# Loop Config\n")
         h = self.home()
-        env = h.env()
-        p = subprocess.run(["python3", ".claude/scripts/doctor.py", "--json", "--claude-version", "2.1.305", "--home", h.path], cwd=r.path, env=env,
+        p = subprocess.run(["python3", DOCTOR, "--json", "--claude-version", "2.1.305", "--home", h.path], cwd=r.path, env=h.env(),
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
         self.assertIn(p.returncode, (0, 1), p.stderr.decode())
         doc = json.loads(p.stdout.decode())
         self.assertEqual(doc["schema"], "doctor.v1")
         self.assertEqual(os.path.realpath(doc["repo"]), os.path.realpath(r.path))
+        self.assertEqual(doc["kit"], REPO_ROOT)
+        self.assertFalse(os.path.exists(os.path.join(r.path, ".claude", "scripts")))
+
+    def test_text_output_starts_with_the_kit_line(self):
+        r = self.repo()
+        h = self.home()
+        for extra in ([], ["--level"]):
+            rc, out, err = run_doctor(["--repo", r.path, "--claude-version", "2.1.305", "--home", h.path] + extra, h.env())
+            self.assertEqual(out.split("\n")[0], "kit: %s" % REPO_ROOT, extra)
 
     def test_runs_from_a_subdirectory_and_finds_the_repo(self):
         r = self.repo()

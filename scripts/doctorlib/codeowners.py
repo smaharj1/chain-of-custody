@@ -19,8 +19,8 @@ CODEOWNERS_LOCATIONS = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
 
 # Paths whose change is a guardrail change (H3/H6). Samples, not globs: each must be owned.
 SENSITIVE_SAMPLES = [
-    ".claude/settings.json", ".claude/loop.config.md", ".claude/agents/engineer.md", ".claude/hooks/guard.sh", ".claude/scripts/doctor.py",
-    ".mcp.json", ".claude-plugin/plugin.json", "plugin/hooks/hooks.json", "scripts/deploy.sh", ".github/workflows/ci.yml", ".github/CODEOWNERS",
+    ".claude/settings.json", ".claude/loop.config.md", ".claude/agents/engineer.md", ".claude/hooks/guard.sh", ".claude/context/architect.md",
+    ".mcp.json", ".claude-plugin/plugin.json", "scripts/deploy.sh", ".github/workflows/ci.yml", ".github/CODEOWNERS",
 ]
 
 
@@ -108,7 +108,7 @@ def check_file(ctx: Context) -> Result:
     co = ctx.fact("codeowners")
     if co["path"] is None:
         return failed("codeowners.file", "no CODEOWNERS file: nobody is required to review changes to .claude/, CI or IaC",
-                      "copy .claude/templates/security/CODEOWNERS.template to .github/CODEOWNERS and fill in the owners", severity=WARN)
+                      "copy %s to .github/CODEOWNERS and fill in the owners" % ctx.kit_path("templates", "security", "CODEOWNERS.template"), severity=WARN)
     return passed("codeowners.file", "%s has %d rule(s)" % (co["path"], len(co["rules"])))
 
 
@@ -128,7 +128,7 @@ def check_coverage(ctx: Context) -> List[Result]:
             catchall.append(path)
     if unowned:
         out.append(failed("codeowners.coverage", "no owner for: %s" % ", ".join(unowned[:8]) + (" ..." if len(unowned) > 8 else ""),
-                          "add path rules for .claude/, plugin/, .claude-plugin/, .mcp.json, scripts/, .github/ and IaC (CODEOWNERS.template has them)"))
+                          "add path rules for .claude/, .claude-plugin/, .mcp.json, scripts/, .github/ and IaC (the kit's templates/security/CODEOWNERS.template has them)"))
     if catchall and not unowned:
         out.append(failed("codeowners.coverage", "guardrail paths are covered only by the catch-all rule (%d path(s), e.g. %s): any reviewer approves a guardrail change"
                           % (len(catchall), catchall[0]), "add explicit rules so guardrail paths name a smaller set of owners", severity=WARN))

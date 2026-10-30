@@ -3,7 +3,7 @@
 `parse("2.0.0-rc.1")` handles prerelease tags; `compare` follows SemVer 2.0.0
 precedence (build metadata ignored). `range_status` is what the doctor and
 SessionStart use to compare `claude --version` with the range declared in
-`.claude/KIT_VERSION`.
+the kit's `KIT_VERSION` (at the plugin root).
 """
 from __future__ import annotations
 
@@ -159,7 +159,7 @@ def range_status(version: Optional[str], minimum: Optional[str], tested_max: Opt
 
 
 def parse_kit_version_file(text: str) -> Dict[str, Optional[str]]:
-    """Parse `.claude/KIT_VERSION`.
+    """Parse a `KIT_VERSION` file (the kit's, at the plugin root; a v1 or v2 copy install had one at `.claude/KIT_VERSION`).
 
     v1 is a single line `1.2.0 (2026-07-30)`. v2 adds `claude_code_min: 2.1.302` and
     `claude_code_tested_max: none` lines (IMP-8). Returns

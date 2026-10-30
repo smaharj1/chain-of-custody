@@ -1,9 +1,10 @@
 """guard-main-edit v2 and self-modification protection (report §6.1 H6, §7.1, §5.9, CS-14, CO-11).
 
 Edit, Write, MultiEdit and NotebookEdit
-  1. H6 paths: no agent writes `.claude/settings*.json`, `.claude/hooks/**`, `.claude/scripts/**` (the guards,
-     doctor and loopctl), `.claude/agents/**`, `.claude/skills/**`, `.claude/commands/**`, `.claude/rules/**`,
-     `.claude/workflows/**`, `.mcp.json`, `.claude-plugin/**`, `plugin/**`, `.github/**` (CI), CODEOWNERS, `.git/**`,
+  1. H6 paths: no agent writes the kit itself (the plugin root KIT_ROOT, which holds the guards, doctor and loopctl,
+     and everything under `~/.claude/plugins`), `.claude/settings*.json`, `.claude/hooks/**`, `.claude/scripts/**`,
+     `.claude/agents/**` (a project override of a kit agent), `.claude/skills/**`, `.claude/commands/**`, `.claude/rules/**`,
+     `.claude/workflows/**`, `.mcp.json`, `.claude-plugin/**`, `.github/**` (CI), CODEOWNERS, `.git/**`,
      and the shell-startup and credential files in the home directory. `.claude/loop.config.md` may be edited only
      if no H6-protected key changes value.
   2. engineers (and unknown subagents) also cannot edit `.gitattributes`, `.husky/**`, `.envrc`, test/lint/CI
@@ -42,7 +43,7 @@ MAIN_ALLOW = ["docs/**", "plan/**", "build-plan.json", "BUILD_PLAN.md", "CHANGEL
               ".gitignore", "CLAUDE.md", ".claude/CLAUDE.md", ".claude/context/**"]
 PKG_KEYS = ("scripts", "husky", "lint-staged", "jest", "vitest", "eslintConfig", "prettier", "nyc", "c8", "ava", "mocha", "workspaces",
             "simple-git-hooks", "pre-commit")
-DIR_PROBES = {".claude": "settings", ".git": "git", ".github": "ci", ".mcp.json": "mcp", "plugin": "plugin", ".claude-plugin": "plugin"}
+DIR_PROBES = {".claude": "settings", ".git": "git", ".github": "ci", ".mcp.json": "mcp", ".claude-plugin": "plugin"}
 WRITER_CMDS = {"rm", "mv", "cp", "chmod", "chown", "chgrp", "tee", "sed", "perl", "truncate", "shred", "install", "ln", "dd", "touch", "unlink", "rmdir",
                "sponge", "rsync", "mkdir", "patch", "gsed", "ruby", "python", "python3", "sh", "bash", "zsh"}
 CHILD_PROBES = ["settings.json", "hooks/x", "scripts/guards/x", "agents/x", "skills/x", "commands/x", "rules/x", "workflows/x",
@@ -121,6 +122,9 @@ def _judge_one(ctx: Ctx, text: str, cwd: str, via: str, tree: Any, aliases: Dict
         if hit:
             return _h6(hit[0], hit[1], via)
         if tree and os.path.isdir(f):
+            if paths.kit_ancestor(f, ctx.home):
+                return deny(G, "kit", "%s %s acts on a directory that holds the kit (%s); agents do not remove, move or re-permission "
+                            "guardrail paths (H6)" % (via, os.path.basename(f.rstrip("/")) or "/", _desc("kit")))
             for child, cat in (DIR_PROBES.items() if tree is True else ()):
                 if os.path.lexists(os.path.join(f, child)):
                     return deny(G, cat, "%s %s acts on a directory that contains %s (%s); agents do not remove, move or re-permission "

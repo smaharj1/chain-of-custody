@@ -4,10 +4,11 @@
   "sections": [
     {
       "id": "delivery",
-      "title": "Delivery (interactive PR lane; see .claude/context/delivery.md)",
+      "title": "Delivery (interactive PR lane; see $KIT/context/delivery.md)",
       "comment": [
-        "Agents never push and never create a PR. `python3 .claude/scripts/pr_prepare.py` validates the",
-        "work and prints the exact commands; the human runs them (IMP-25)."
+        "`python3 \"$KIT/scripts/pr_prepare.py\" prepare` validates the work and prints the exact commands.",
+        "Below git_autonomy: branch+commit+push the human runs them; at that tier the main session may push its",
+        "feature branch itself (never a protected branch; subagents never push). Merging stays the human's (IMP-25)."
       ],
       "example_title": "Delivery"
     }
@@ -29,17 +30,21 @@
       "section": "delivery",
       "doc": [
         "local | push-branch | draft-pr   (report R5, DEC-1). How finished work leaves the machine.",
-        "  local       = the human merges the feature branch into the local main; nothing is pushed (default)",
-        "  push-branch = pr_prepare prints the push command for the feature branch",
-        "  draft-pr    = pr_prepare prints the push command and `gh pr create --draft --body-file ...`",
-        "Pushing is always the human's act. The doctor suggests draft-pr once the ruleset checks pass."
+        "  local       = the human merges the feature branch into the local main; nothing is pushed",
+        "                (the default when the key is absent)",
+        "  push-branch = the feature branch is pushed (by the main session at git_autonomy: branch+commit+push, else by you)",
+        "  draft-pr    = push-branch plus `gh pr create --draft --body-file ...` (the same rule for who runs it)",
+        "The starter config /chain-of-custody:init writes sets push-branch (with git_autonomy: branch+commit+push):",
+        "the main session pushes its own feature branch and you open the PR.",
+        "Merging is always the human's act. The doctor suggests draft-pr once the ruleset checks pass."
       ],
       "example": {
         "value": "draft-pr",
         "doc": [
           "branch, verify, then pr_prepare prints the push and draft-PR commands for me to run"
         ]
-      }
+      },
+      "seed": "push-branch"
     },
     {
       "name": "git_autonomy",
@@ -47,7 +52,8 @@
       "choices": [
         "none",
         "branch",
-        "branch+commit"
+        "branch+commit",
+        "branch+commit+push"
       ],
       "default": "none",
       "owner_phase": "3-pr-delivery",
@@ -56,18 +62,23 @@
       "deprecated_by": null,
       "section": "delivery",
       "doc": [
-        "none | branch | branch+commit   (DEC-22). What the interactive conductor may do with git itself.",
-        "  none          = it asks you to create the branch and to commit (v1 behaviour, default)",
+        "none | branch | branch+commit | branch+commit+push   (DEC-22). What the main session may do with git itself.",
+        "  none          = it asks you to create the branch and to commit (v1 behaviour; the default when the key is absent)",
         "  branch        = it creates and switches to `feat/<slug>` itself",
         "  branch+commit = it also makes one WIP commit per engineer so reviewers see `prev..sha`",
-        "Never push, merge, rebase or reset: those stay yours at every setting. Recommended with delivery: draft-pr."
+        "  branch+commit+push = it also pushes its feature branch (`git push <remote> feat/<slug>`, no force, never a",
+        "                  protected branch) and, with delivery: draft-pr, opens the draft PR. Needs delivery push-branch or",
+        "                  draft-pr, and counts only once this value is committed on the base branch. The starter config",
+        "                  /chain-of-custody:init writes sets this tier: the main session pushes its own feature branch",
+        "Subagents never push. Merge, rebase, force-push and `gh pr merge` stay yours at every setting."
       ],
       "example": {
         "value": "branch+commit",
         "doc": [
           "the conductor branches and makes the WIP commits; I push"
         ]
-      }
+      },
+      "seed": "branch+commit+push"
     },
     {
       "name": "max_ci_fix_attempts",
@@ -126,7 +137,7 @@
       "deprecated_by": null,
       "section": "verify",
       "doc": [
-        "Optional G6 stages, run by `python3 .claude/scripts/verify.py` before the tests, in this order:",
+        "Optional G6 stages, run by `python3 \"$KIT/scripts/verify.py\"` before the tests, in this order:",
         "verify_build, verify_lint, verify_typecheck. Empty = the stage does not run (see verify_require)."
       ],
       "example": {

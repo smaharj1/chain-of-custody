@@ -69,6 +69,21 @@ class TelemetryTests(BaseTestCase):
         self.fire("SubagentStart", agent_id="a2", agent_type="code-reviewer")
         self.assertEqual(self.st.read_events("a-a2")[0]["parent_kind"], "conductor")
 
+    def test_subagent_start_tells_the_subagent_where_the_kit_is(self) -> None:
+        from kitlib import kitpaths
+        out = json.loads(self.fire("SubagentStart", agent_id="a1", agent_type="chain-of-custody:backend-engineer"))
+        hso = out["hookSpecificOutput"]
+        self.assertEqual(hso["hookEventName"], "SubagentStart")
+        self.assertIn("kit: %s." % kitpaths.KIT_ROOT, hso["additionalContext"])
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}", hso["additionalContext"])
+        self.assertTrue(os.path.isabs(kitpaths.KIT_ROOT))
+        self.assertEqual(self.st.read_events("a-a1")[0]["event"], "subagent_start", "the telemetry record is still written")
+        # outside a git repository there is no telemetry, but the kit line still comes out
+        hook = {"session_id": "sess-1", "cwd": self.tmpdir(), "hook_event_name": "SubagentStart", "agent_id": "a9", "agent_type": "Explore"}
+        o = io.StringIO()
+        self.assertEqual(cli.main(["SubagentStart", "--id", "subagent-start"], stdin=io.StringIO(json.dumps(hook)), stdout=o, stderr=io.StringIO()), 0)
+        self.assertIn("kit: %s." % kitpaths.KIT_ROOT, json.loads(o.getvalue())["hookSpecificOutput"]["additionalContext"])
+
     def test_subagent_stop_records_the_hash_and_the_report_path(self) -> None:
         msg = "Done.\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}"
         self.fire("SubagentStop", agent_id="a1", agent_type="backend-engineer", last_assistant_message=msg)

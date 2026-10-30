@@ -1,6 +1,6 @@
 """Parallel items (Phase 8; report 11.2, 11.5, 16.1 row 8; IMP-1): `parallel_mode` and `pipeline_host`.
 
-  * `pipeline_host: workflow` is DESIGN-ONLY (`.claude/spec/pipeline-host-workflow.md`; probes V3 and V23). It is an ERROR whether or not the
+  * `pipeline_host: workflow` is DESIGN-ONLY (the kit's `spec/pipeline-host-workflow.md`; probes V3 and V23). It is an ERROR whether or not the
     evidence gate has passed: there is nothing behind the value to enable.
   * `parallel_mode: worktree` is the driver's scheduler. The evidence gate itself is `config.evidence-gate`; these rows add what only parallel mode
     needs: the driver as runner, a sane `max_parallel`, and a worktrees directory that really is a directory inside the repository.
@@ -18,7 +18,7 @@ def check_pipeline_host(ctx: Context) -> Result:
     v = str(ctx.cfg("pipeline_host", "conductor") or "conductor")
     if v == "workflow":
         return failed("parallel.pipeline-host", "pipeline_host: workflow is design-only and cannot run (a saved Workflow cannot be launched from the headless profile or from a "
-                      "subagent: probes V3 and V23 are unverified)", "set pipeline_host: conductor (the default); see .claude/spec/pipeline-host-workflow.md", severity=ERROR)
+                      "subagent: probes V3 and V23 are unverified)", "set pipeline_host: conductor (the default); see the kit's spec/pipeline-host-workflow.md", severity=ERROR)
     return passed("parallel.pipeline-host", "pipeline_host is %s" % v)
 
 

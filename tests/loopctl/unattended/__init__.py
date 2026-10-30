@@ -3,7 +3,7 @@
 Everything runs against a temp repo, a temp HOME, the fake `claude` and a fake `notify_command` (a script that records what it was given). No test
 sends anything, starts the real binary, touches the network or waits for real: the driver's waits are shortened through KIT_DRIVER_TEST_TIMING.
 
-`UnattendedRepo` is the 4c `DriverRepo` with `autonomy: unattended` / `autonomy_level: L4`, a committed evidence file and kit version, spend ceilings
+`UnattendedRepo` is the 4c `DriverRepo` with `autonomy: unattended` / `autonomy_level: L4`, a committed evidence file, a tested kit version range (`kit_version`), spend ceilings
 and a fake notifier outside the repository.
 """
 from __future__ import annotations
@@ -91,10 +91,9 @@ class UnattendedRepo(DriverRepo):
             full["notify_command"] = self.notifier.path
         full.update(cfg or {})
         super(UnattendedRepo, self).__init__(items=items if items is not None else [item_doc("A", estimate=ENG)], cfg=full, scenario=scenario, **kw)
-        self.repo.write(".claude/KIT_VERSION", KIT_VERSION)
         if evidence:
             self.repo.write("docs/baseline/evidence.json", json.dumps(EVIDENCE))
-        self.commit_all("kit version and evidence")
+            self.commit_all("evidence")
         self.base = self.repo.head()
         self.checkin()
 
@@ -115,6 +114,7 @@ class UnattendedRepo(DriverRepo):
 
 class UnattendedTestCase(DriverTestCase):
     def un(self, **kw: Any) -> UnattendedRepo:
+        self.kit_version(KIT_VERSION)                    # L4 needs a tested range; the kit's own KIT_VERSION is the one checked
         r = UnattendedRepo(**kw)
         self.addCleanup(r.cleanup)
         r.stubs.install()

@@ -81,7 +81,7 @@ class Ctx(object):
     """Everything a guard may look at, resolved lazily. Tests pass `state=`, `config=` and `env=` directly."""
 
     def __init__(self, hook: Mapping[str, Any], env: Optional[Mapping[str, str]] = None, state: Any = UNSET,
-                 config: Any = UNSET, home: Optional[str] = None) -> None:
+                 config: Any = UNSET, home: Optional[str] = None, base_config: Any = UNSET) -> None:
         self.hook = hook if isinstance(hook, Mapping) else {}
         self.env = dict(os.environ if env is None else env)
         self.home = home or paths.home_dir(self.env)
@@ -96,6 +96,9 @@ class Ctx(object):
         self.cwd = os.path.abspath(cwd) if cwd else os.getcwd()
         self._state = state
         self._config = config
+        # the config committed at the base sha; a test that injects `config=` alone gets the same config as the base
+        self._base_config = config if (base_config is UNSET and config is not UNSET) else base_config
+        self._base_cache = {}  # type: Dict[str, Any]
         self._caller = None   # type: Any
         self._root = UNSET    # type: Any
         self._analysis = None  # type: Any
@@ -155,6 +158,26 @@ class Ctx(object):
 
     def cfg(self, name: str, default: Any = None) -> Any:
         c = self.config
+        if c is None:
+            return default
+        try:
+            return c.get(name, default)
+        except Exception:
+            return default
+
+    def base_config_at(self, directory: str) -> Any:
+        """The loop config committed at the merge-base of HEAD with the default branch, in the repository that holds `directory`
+        (origin/HEAD, origin/main, origin/master, main, master: the candidates `verify.py` uses). None when there is no base or
+        no config there. A change on the branch to an H6 key such as `git_autonomy` or `delivery` does not count until it is merged."""
+        if self._base_config is not UNSET:
+            return self._base_config
+        key = os.path.normpath(directory)
+        if key not in self._base_cache:
+            self._base_cache[key] = _load_base_config(directory)
+        return self._base_cache[key]
+
+    def base_cfg(self, name: str, directory: str, default: Any = None) -> Any:
+        c = self.base_config_at(directory)
         if c is None:
             return default
         try:
@@ -242,7 +265,7 @@ class Ctx(object):
     @property
     def git_autonomy(self) -> str:
         v = str(self.cfg("git_autonomy", "none") or "none").strip().lower()
-        return v if v in ("none", "branch", "branch+commit") else "none"
+        return v if v in GIT_AUTONOMY else "none"
 
     # -- bash --------------------------------------------------------------------------------------------------
     @property
@@ -257,6 +280,28 @@ class Ctx(object):
             env.pop("OLDPWD", None)
             self._analysis = invoke.analyze(self.command, self.cwd, env, self.home)
         return self._analysis
+
+
+GIT_AUTONOMY = ("none", "branch", "branch+commit", "branch+commit+push")
+# fully qualified: a local branch named origin/HEAD or origin/main must not stand in for the remote-tracking ref
+BASE_CANDIDATES = ("refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master", "refs/heads/main", "refs/heads/master")
+
+
+def _load_base_config(directory: str) -> Any:
+    try:
+        if not os.path.isdir(directory):
+            return None
+        for cand in BASE_CANDIDATES:
+            tip = gitutil.rev_parse(cand + "^{commit}", directory)
+            if not tip:
+                continue
+            proc = gitutil.run_git(["merge-base", "HEAD", tip], cwd=directory, timeout=5)
+            out = proc.stdout.strip()
+            if proc.returncode == 0 and out:
+                return config_mod.load_at_sha(directory, out.splitlines()[0])
+        return None
+    except Exception:
+        return None
 
 
 # -------------------------------------------------------------------------------------------------------------------

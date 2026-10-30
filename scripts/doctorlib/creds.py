@@ -17,7 +17,7 @@ import re
 import stat
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from kitlib import redact
+from kitlib import kitpaths, redact
 
 from . import safeio
 from .model import (Context, Result, check, failed, gatherer, passed, skipped, unknown, ERROR, WARN)
@@ -473,7 +473,8 @@ def check_git_config(ctx: Context) -> List[Result]:
     for h in hits:
         rid = {"git-helper": "cred.git.credential-helper", "git-header": "cred.git.extraheader", "git-url": "cred.git.url-credential",
                "ssh-key": "cred.git.ssh-command"}[h["category"]]
-        rem = {"git-helper": "remove the helper for the agent's OS user (it may hand out your token), or run `doctor --live` to prove it returns only the bot (RC-5)",
+        rem = {"git-helper": "remove the helper for the agent's OS user (it may hand out your token), or run `%s` from a plain terminal to prove it returns only "
+                             "the bot (RC-5)" % kitpaths.script_cmd("doctor.py", "--credentials", "--live"),
                "git-header": "run `git config --unset-all <key>`; pass persist-credentials: false to actions/checkout",
                "git-url": "remove the rewrite and rotate the token it names",
                "ssh-key": "remove it; the agent must not hold a key GitHub accepts"}[h["category"]]
@@ -938,7 +939,8 @@ def check_metadata(ctx: Context) -> List[Result]:
     if settings_mod.sandbox_denies_metadata(ctx.fact("settings")):
         return [passed("cred.net.metadata", "not probed; the sandbox network settings deny 169.254.0.0/16")]
     return [unknown("cred.net.metadata", "metadata endpoints were not probed and the sandbox does not deny 169.254.0.0/16",
-                    "run `doctor.py --credentials --live` from a plain terminal (it probes them), or add the deny to the sandbox network settings", severity=WARN)]
+                    "run `%s` from a plain terminal (it probes them), or add the deny to the sandbox network settings"
+                    % kitpaths.script_cmd("doctor.py", "--credentials", "--live"), severity=WARN)]
 
 
 # --- credentials that hide in startup files, history and indirection ---------------------------------------------------

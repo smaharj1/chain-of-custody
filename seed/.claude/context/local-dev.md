@@ -18,7 +18,7 @@
 
 ## Local Database
 
-<!-- The local store MUST be the production engine (dialect parity, DEC-8; rules in .claude/context/local-dev-rules.md). -->
+<!-- The local store MUST be the production engine (dialect parity, DEC-8; rules in ${CLAUDE_PLUGIN_ROOT}/context/local-dev-rules.md). -->
 <!-- In-process build of the production dialect first, then a container. SQLite only if production is SQLite or libSQL. Example for a Postgres prod: -->
 <!-- - Postgres 16 in-process (PGlite or embedded-postgres), data in ./.data/pgdata, no Docker needed -->
 <!-- - Connection via DATABASE_URL in .env.local (dev-only value, never a production URL) -->
@@ -57,7 +57,7 @@
 ## Verify-Run Harness
 
 <!-- How `verify_run` produces an EXIT CODE from a dev command that never exits on its own. -->
-<!-- The canonical pattern (L-27, .claude/context/local-dev-rules.md): check the dedicated verify ports are free → boot in its OWN -->
+<!-- The canonical pattern (L-27, ${CLAUDE_PLUGIN_ROOT}/context/local-dev-rules.md): check the dedicated verify ports are free → boot in its OWN -->
 <!-- process group → wait for the demo route with a deadline (no sleep loops) → assert with curl → capture the exit code as -->
 <!-- runExit → kill the whole group. A bare `pnpm dev & ... kill $pid` leaks the child servers and their ports. Example: -->
 <!-- ```bash -->
@@ -70,7 +70,7 @@
 <!-- exit $rc -->
 <!-- ``` -->
 <!-- Replace <demo-target-route> per item (its falsifiable acceptance assertion's route/endpoint). -->
-`python3 .claude/scripts/verify.py` runs this harness (`verify_run`) or boots the dev server itself (`verify_dev`) in its own process group and checks `verify_ports` before and after.
+`python3 "$KIT/scripts/verify.py"` (`$KIT` is the kit's folder, the session's `kit:` line) runs this harness (`verify_run`) or boots the dev server itself (`verify_dev`) in its own process group and checks `verify_ports` before and after.
 
 ## Auto-Demo Navigation
 
@@ -86,5 +86,5 @@
 <!-- - Auth: dev mode with a seeded test user (no real provider needed to log in) -->
 <!-- - Payments: Stripe test mode keys -->
 <!-- - Email: logged to console instead of sent -->
-<!-- Secrets: test keys and dev values only, in .env.local / .env.test (gitignored); never committed, never in briefs or reports. -->
+<!-- Local env files hold test keys and dev values only, in .env.local / .env.test (gitignored); never committed, never in briefs or reports. -->
 <!-- Production secrets are never on this machine. Policy: docs/security/secrets-policy.md -->

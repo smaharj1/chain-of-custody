@@ -6,7 +6,8 @@ import json
 import os
 import unittest
 
-from loopctl import manifest as mf
+from kitlib import kitpaths
+from loopctl import kit, manifest as mf
 from loopctl.common import Refused, UsageError
 
 from .. import LoopTestCase, item_doc
@@ -21,7 +22,7 @@ class Manifest(LoopTestCase):
     def build_repo(cls, tc):
         lr = tc.lr(items=[item_doc("A")], extra_cfg=CFG)
         for p, text in (("package-lock.json", LOCK), (".nvmrc", "20.11.0\n"), (".tool-versions", "python 3.12.1\n"), ("docs/baseline/evidence.json", json.dumps(EVIDENCE)),
-                        (".claude/KIT_VERSION", "2.0.0-rc.1 (2026-10-26)\nclaude_code_min: 2.1.302\n"),
+                        (".claude/KIT_VERSION", "2.0.0-rc.1 (2026-10-26)\nclaude_code_min: 2.1.302\n"),     # an old copy install's: never read
                         ("package.json", json.dumps({"name": "x", "engines": {"node": ">=20"}})), ("pyproject.toml", '[project]\nrequires-python = ">=3.9"\n')):
             lr.repo.write(p, text)
         lr.commit_all("pins and lockfile")
@@ -46,7 +47,10 @@ class Manifest(LoopTestCase):
         self.assertEqual(doc["toolchain"]["package.json#engines"], {"node": ">=20"})
         self.assertEqual(doc["toolchain"]["pyproject.toml#requires-python"], ">=3.9")
         self.assertEqual(list(doc["lockfiles"]), ["package-lock.json"])
-        self.assertEqual(doc["kit"]["version"], "2.0.0-rc.1 (2026-10-26)")
+        with open(kitpaths.kit("KIT_VERSION"), encoding="utf-8") as fh:                      # the running plugin's, not the project's
+            self.assertEqual(doc["kit"]["version"], fh.read().split("\n", 1)[0].strip())
+        self.assertNotEqual(doc["kit"]["version"], "2.0.0-rc.1 (2026-10-26)")
+        self.assertEqual({k: doc["kit"][k] for k in ("plugin", "fingerprint")}, {"plugin": kit.version(), "fingerprint": kit.fingerprint()})
         self.assertEqual(doc["config"]["gates"], {"g6": "report"})
         self.assertIn("verify_tests", doc["verify"])
         self.assertIsNotNone(doc["evidence"]["blob"])

@@ -8,9 +8,12 @@ It runs without a repository, a registry or a config file, in a temporary direct
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import tempfile
 from typing import Any, Dict, List, Tuple
+
+from kitlib import kitpaths
 
 from . import engine
 from .lib import Ctx
@@ -39,7 +42,9 @@ def _cases(d: str) -> List[Tuple[str, Dict[str, Any], str]]:
         ("a path trick to settings.json is denied", edit(os.path.join(d, "src", "..", ".claude", ".", "settings.json")), "deny"),
         ("a redirect into a hook is denied", bash("echo x > .claude/hooks/guard.sh"), "deny"),
         ("a critic cannot write source", edit(os.path.join(d, "src", "a.py"), crit), "deny"),
-        ("an engineer cannot replay loopctl", bash("python3 .claude/scripts/loopctl advance item-1 building", eng), "deny"),
+        ("an engineer cannot replay loopctl", bash("python3 %s advance item-1 building" % shlex.quote(kitpaths.script("loopctl")), eng), "deny"),
+        ("a write into the kit is denied", edit(kitpaths.kit("scripts", "guards", "lib.py")), "deny"),
+        ("a write into the plugin directory is denied", edit(os.path.join(d, ".claude", "plugins", "installed_plugins.json")), "deny"),
         ("an engineer's inline interpreter is denied", bash("python3 -c 'import os; os.system(\"id\")'", eng), "deny"),
         ("git status is allowed", bash("git status --short"), "allow"),
         ("a normal test run is allowed", bash("npm run test -- --watch=false"), "allow"),

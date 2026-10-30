@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Generate `.claude/loop.config.md` and `examples/loop.config.md` from the key registry (IMP-11).
+"""Generate `seed/.claude/loop.config.md` (the starter copy /init writes into a project) and `examples/loop.config.md` from the key registry (IMP-11).
 
     python3 tools/gen-config.py --check    exit 1 if a committed file differs from the generated one
     python3 tools/gen-config.py --write    regenerate both files in place
     python3 tools/gen-config.py --stdout [--example]   print one generated file
 
-Source of truth: `.claude/scripts/kitlib/schema/*.json` plus the hand-written templates in
-`.claude/scripts/kitlib/schema/templates/`. Never edit the generated files by hand.
+Source of truth: `scripts/kitlib/schema/*.json` plus the hand-written templates in
+`scripts/kitlib/schema/templates/`. Never edit the generated files by hand.
 """
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ import os
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO, ".claude", "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 from kitlib import configgen, jsonio, registry  # noqa: E402
 
 TARGETS = (
-    (os.path.join(".claude", "loop.config.md"), False),
+    (os.path.join("seed", ".claude", "loop.config.md"), False),
     (os.path.join("examples", "loop.config.md"), True),
 )
 

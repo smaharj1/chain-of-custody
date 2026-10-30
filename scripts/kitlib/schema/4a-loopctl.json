@@ -4,7 +4,7 @@
   "sections": [
     {
       "id": "loopctl",
-      "title": "loopctl (report section 10; python3 .claude/scripts/loopctl <command>)",
+      "title": "loopctl (report section 10; python3 \"$KIT/scripts/loopctl\" <command>)",
       "comment": [
         "loopctl owns the deterministic decisions of the loop: state, counters, caps, the lock, spend, abort.",
         "Read from the BASE sha by loopctl, never from the branch it is judging (CO-11)."
