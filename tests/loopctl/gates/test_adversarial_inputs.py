@@ -89,10 +89,11 @@ class Secrets(GateCase):
         self.commit({"src/conf.py": 'password = "Zx81kQm2Lp9r"  # example only, honest\n'}, "conf")
         self.assertFails(self.run_gate("g11"), "g11.secret-assignment")
 
-    def test_a_file_too_big_to_scan_is_said_out_loud(self):
+    def test_a_file_over_six_mebibytes_is_read_in_slices_not_skipped(self):
+        # R-GATES-6: it used to be skipped with a warning; now it is scanned in full (and a file past 48 MiB blocks: see test_review_fixes_b2.LargeFiles)
         self.commit({"data/blob.txt": ("x" * 1000 + "\n") * 7000}, "big")
         res = self.run_gate("g11")
-        self.assertIn("g11.skipped-large", self.ids(res))
+        self.assertNotIn("g11.skipped-large", self.ids(res))
         self.assertEqual(res["status"], "pass")
 
 

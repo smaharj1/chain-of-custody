@@ -56,7 +56,7 @@ class SourceRules(unittest.TestCase):
                 self.fail("%s mentions launching claude: %r" % (rel, m.group(0)))
 
     def test_python39_syntax_and_no_third_party_imports(self):
-        stdlib = {"__future__", "argparse", "ast", "calendar", "collections", "contextlib", "copy", "decimal", "fcntl", "functools", "glob", "hashlib", "hmac", "importlib", "json", "math",
+        stdlib = {"__future__", "argparse", "ast", "bisect", "calendar", "collections", "contextlib", "copy", "decimal", "fcntl", "functools", "glob", "hashlib", "hmac", "importlib", "json", "math",
                   "os", "pkgutil", "re", "secrets", "shlex", "shutil", "signal", "socket", "stat", "subprocess", "sys", "tempfile", "threading", "time", "traceback", "types",
                   "typing", "uuid", "xml"}
         for rel, src in sources():
