@@ -18,7 +18,7 @@ The OS sandbox is what makes the agent's shell unable to do the things the crede
 
 The snippet also repeats the file rules as `Read(...)` / `Edit(...)` deny rules in `permissions.deny`, because Claude Code derives sandbox filesystem limits from permission rules. The report names `denyRead` and `denyWrite` lists, and the exact key names for the network and filesystem blocks are **unverified (V19)** against the Claude Code version you run. The doctor accepts either form (`sandbox.filesystem.denyRead`, `sandbox.denyRead`, or the permission rules). Check the snippet against `claude`'s settings reference before relying on it.
 
-**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a human edits the kit's own `.claude/scripts/**` (kit development) does not use it, because it would deny exactly those edits.
+**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a human edits the kit's own `.claude/scripts/**` (kit development) does not use it, because it would deny exactly those edits; how such a session runs is in [guards.md](guards.md#developing-the-kit-with-agents).
 
 **Not denied on purpose.** `.claude/context/**` (primers are editable on main), `.claude/pr/`, and `.git/loopctl/run.json`, `lock`, `HALT` and `nonces/`: the conductor legitimately writes the run record and the lock heartbeat and may need `loopctl halt`. Treat those four as writable by the agent; they are not protected by the sandbox, and the guards and the evidence checks do not rely on them for authority.
 
@@ -29,6 +29,10 @@ For a linked git worktree the common git directory is outside the worktree path 
 ```
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/wiring.py --sandbox-snippet
 ```
+
+In a linked worktree the snippet also names the `.git` pointer file itself (`<worktree>/.git`, a file inside the project directory that reads `gitdir: <common>/worktrees/x`). Without that entry a sandboxed command can rewrite it, and every hook then computes a different git directory, with a session registry the agent wrote. It cannot be in the static template: in a plain checkout `.git` is a directory, and denying the directory would break git. The doctor row `sandbox.git-pointer` warns when `.git` is a file that is not denied (a warning, not a level cap) and is skipped in a plain checkout.
+
+**Left writable on purpose, and why.** `<git-common-dir>/loopctl/heldout/` is written by the `acceptance-author` (it is `denyRead` for engineers, so they cannot see the held-out tests, but a sandboxed engineer could overwrite them; the CI half of G3 restores the store from a private branch and is the check that holds), and `locked_paths.json` is written by `loopctl` in the conductor's own sandboxed Bash, so denying either would break the loop. Both are covered by the gates that pin and compare (`g3.pinned-edited`, the CI held-out job), not by the sandbox.
 
 The `Edit(//abs/path)` spelling of an absolute path in a permission rule is a probe item (V19), like the rest of the key names.
 

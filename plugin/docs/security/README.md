@@ -16,6 +16,8 @@ It is built from five things the agent cannot change from inside its session:
 | B4 | **Server-side policy.** Rulesets where the bot never bypasses, CODEOWNERS, required checks, Environments, OIDC subjects, split CI | Everything the agent pushes being trusted before review; CI as a code-execution path | [rulesets.md](rulesets.md), [split-ci.md](split-ci.md) |
 | B5 | **Deployment surface.** Every path by which a commit becomes a deploy is inventoried and gated | A bot push, a docs merge, a revert or a tag becoming a production deploy with no human | [deploy-surface.md](deploy-surface.md) |
 
+The gates, scanners and lints in this kit (the guards, `ci_lint.py`, the doctor's deploy-surface scan, the secret and supply-chain readers) are heuristic readers of text. They catch honest mistakes and cheap evasions and fail closed where they can: a file or script they cannot read is reported as unreadable, not as clean. They are not complete, and a clean result is not evidence of safety. The five elements above are what hold when a reader is walked around.
+
 Infrastructure apply, deploy and destroy are never automated at any level (H4). The agent writes infrastructure code; CI plans it after a policy check; a human approves the apply. See [infra-human-gate.md](infra-human-gate.md).
 
 ## Supporting policy

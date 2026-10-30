@@ -283,6 +283,13 @@ def _emit(ctx: _Ctx, sc: Script, cmd: Cmd, cwd: str, depth: int, origin: str, ou
         opts = [a for a in args if not (a.startswith("-") and a != "-")]
         if low == "popd" or (opts and opts[0] == "-") or any(dyn):
             ctx.cwd_unknown = True
+        elif opts and any(c in opts[0] for c in "*?["):
+            # `cd .claude/scripts/gith*`: the shell expands the glob; only a single directory match is a known place to be
+            dirs = [d for d in paths.expand_glob(opts[0], cwd, ctx.home) if os.path.isdir(d)]
+            if len(dirs) == 1:
+                cwd2 = paths.lexical(dirs[0], cwd, ctx.home)
+            else:
+                ctx.cwd_unknown = True
         elif opts:
             cwd2 = paths.lexical(opts[0], cwd, ctx.home)
         elif low == "cd":
@@ -829,7 +836,6 @@ def _shell(ctx: _Ctx, sc: Script, inv: Inv, script) -> None:
         ctx.ana.problem("pipe-to-shell", "%s reads a script from a pipe whose content is computed at run time" % inv.name)
 
 
-_PY_ARG = {"-W", "-X", "-Q", "--check-hash-based-pycs"}
 
 
 def _interpreter(ctx: _Ctx, sc: Script, inv: Inv, script) -> None:
@@ -860,15 +866,23 @@ def _interpreter(ctx: _Ctx, sc: Script, inv: Inv, script) -> None:
             if a.startswith("--"):
                 i += 1
                 continue
-            if "m" in letters and letters.index("m") == len(letters) - 1 and i + 1 < n:
-                module = args[i + 1]
-                i += 2
+            # getopt order: the letters are read left to right; `m`, `c` and `W`/`X`/`Q` take the rest of the word as their value, or the next word
+            # when nothing follows them (`-mloopctl` is `-m loopctl`, `-cprint(1)` is `-c 'print(1)'`, `-Bm x` is `-B -m x`)
+            step, hit = 1, None
+            for pos, ch in enumerate(letters):
+                if ch in "cmWXQ":
+                    tail = letters[pos + 1:]
+                    hit = (ch, tail if tail else (args[i + 1] if i + 1 < n else None), dyn[i] if tail else (dyn[i + 1] if i + 1 < n else False))
+                    step = 1 if tail else 2
+                    break
+            if hit is not None and hit[0] in "cm" and hit[1] is not None:
+                if hit[0] == "m":
+                    module = hit[1]
+                else:
+                    codes.append((hit[1], hit[2]))
+                i += step
                 break
-            if "c" in letters and i + 1 < n and letters.index("c") == len(letters) - 1:
-                codes.append((args[i + 1], dyn[i + 1]))
-                i += 2
-                break
-            i += 1 + (1 if a in _PY_ARG else 0)
+            i += step
             continue
         if a in ("-e", "--eval", "-E", "-p", "--print", "-r") and lang in ("node", "ruby", "perl", "php", "bun", "lua", "osascript", "r", "tclsh"):
             if a in ("-r", "--require") and lang == "node":
@@ -910,11 +924,12 @@ def _interpreter(ctx: _Ctx, sc: Script, inv: Inv, script) -> None:
             ana.invs.append(Inv("pip", module, rest, dyn[i:], dict(inv.env), inv.cwd, inv.cmd, inv.origin, inv.depth,
                                 inv.wrappers + [inv.name]))
         elif module in ("unittest", "pytest", "json.tool", "http.server", "venv", "compileall", "py_compile", "ensurepip",
-                        "pyflakes", "black", "ruff", "mypy", "flake8", "isort", "coverage", "tox", "nox", "build"):
+                        "pyflakes", "black", "ruff", "mypy", "flake8", "isort", "tox", "nox", "build"):
             pass
         else:
-            ana.invs.append(Inv("py-module:" + module, module, rest, dyn[i:], dict(inv.env), inv.cwd, inv.cmd,
-                                inv.origin, inv.depth, inv.wrappers + [inv.name]))
+            mod_inv = Inv("py-module:" + module, module, rest, dyn[i:], dict(inv.env), inv.cwd, inv.cmd, inv.origin, inv.depth, inv.wrappers + [inv.name])
+            mod_inv.cwd_unknown = inv.cwd_unknown
+            ana.invs.append(mod_inv)
         return
     rest, rdyn = args[i:], dyn[i:]
     if rest and rest[0] != "-":

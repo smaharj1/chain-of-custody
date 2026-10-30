@@ -69,7 +69,7 @@ Your own files (a custom agent, a skill, a rule) are not in the manifest and are
 
 **Conflicts.** For each one your file is left alone and the merge result with markers is written to `.claude/.migrate/conflicts/<path>`. Resolve it in your file, then `migrate.py --repo . --resolved <path>`; or take the kit's version with `--take-kit <path>` (your copy is backed up). A resolution is remembered only while the file stays as you left it. When you are done, commit and delete `.claude/.migrate/`.
 
-**What changes in v2 for an existing install.** The five v1 commands became skills: an unmodified `.claude/commands/*.md` is removed, a modified one stays (move your edits into the skill of the same name, then delete it). The v1 shell hooks (`guard-git.sh` and `guard-main-edit.sh`, in `.claude/hooks/`) were removed in 2.0.0; an unmodified copy is removed, a modified one stays and is listed. Your `settings.json` and `loop.config.md` are untouched; keys added since use their defaults, and `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` shows what the new version expects. **Your `settings.json` still points at the removed hooks until you wire the guards** (next section), and a hook whose script is missing guards nothing, so do that step straight after applying the migration.
+**What changes in v2 for an existing install.** The five v1 commands became skills: an unmodified `.claude/commands/*.md` is removed, a modified one stays (move your edits into the skill of the same name, then delete it). The v1 shell hooks (`guard-git.sh` and `guard-main-edit.sh`, in `.claude/hooks/`) were removed in 2.0.0. While your `settings.json` still names one, the migration keeps it (KEEP-RETIRED, "still wired in your settings.json"), because a hook whose script is missing guards nothing; once you have wired the v2 guards (next section), run the migration again and it removes the unmodified copies. A modified copy always stays and is listed. Your `settings.json` and `loop.config.md` are untouched; keys added since use their defaults, and `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` shows what the new version expects. Wire the guards straight after applying the migration.
 
 ## The v2 guards are on by default
 
@@ -82,6 +82,7 @@ The guard suite (one Python hook entry point, a manifest, a self-test; `${CLAUDE
 1. Read `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/guards/wiring.py --print`. It is the hooks block generated from `${CLAUDE_PLUGIN_ROOT}/scripts/guards/hooks.manifest.json`.
 2. In `.claude/settings.json`, replace the `hooks` block with that one. Keep your `permissions`. (Any entry that still names `guard-git.sh` or `guard-main-edit.sh` goes.)
 3. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py`, start a new session, and check that the `kit session_start: canary` line appears. No canary line means the hooks are not firing.
+4. Run the migration again (dry run, then `--apply` from a plain terminal): with the old hooks no longer named in `settings.json`, it removes the v1 hook scripts you never changed.
 
 ## What a mode is now
 

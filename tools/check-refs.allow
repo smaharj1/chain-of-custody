@@ -19,6 +19,12 @@ docs/features/*
 # Historical CHANGELOG entries naming files that were moved or renamed since.
 docs/design/loop-engineering.md
 
+# The v1 shell hooks, retired in 2.0.0: the migration docs name them as they sit in a v1 install.
+.claude/hooks
+.claude/hooks/
+.claude/hooks/guard-git.sh
+.claude/hooks/guard-main-edit.sh
+
 # Human-committed evidence gate (IMP-1) and the baseline result files the human fills: absent in the kit repo by design.
 docs/baseline/evidence.json
 docs/baseline/results/run-N.json

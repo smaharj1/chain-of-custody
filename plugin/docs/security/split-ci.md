@@ -39,6 +39,7 @@ The kit ships these workflows in `${CLAUDE_PLUGIN_ROOT}/templates/github/workflo
 | `ci.credentials-on-bot-push` | error | a job with cloud credentials (OIDC, a credential action, a stored key) or secrets that a push to any branch but `main`, or a tag, starts, with no `environment:`. The bot can make such a push |
 | `ci.remote-workflow-secrets` | error / warn | a reusable workflow from another repository that receives `secrets:` or an OIDC token. An error when a pull request, the bot or a privileged trigger can start it, or when its ref is not a commit SHA |
 | `ci.pr-target-checkout-expression`, `ci.pr-code-fetch`, `ci.artifact-from-pr-run` | error | a `pull_request_target` or `workflow_run` job that holds secrets or an OIDC token and checks out a computed ref, downloads an archive and unpacks it, or downloads artifacts another run built |
+| `ci.unreadable` | error | a workflow the lint cannot read (an exception, a recursion or memory error, or more than 100,000 delimiters in one script); its callees are judged as if a pull request called them |
 | `ci.floating-action-tag` | warn | `uses: org/action@v4` instead of a commit SHA |
 | `ci.missing-permissions` | warn | no `permissions:` anywhere |
 | `ci.write-permissions-pr-job` | warn | a write token alongside PR code |

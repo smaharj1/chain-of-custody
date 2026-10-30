@@ -112,14 +112,6 @@
    "class": "seed",
    "sha256": "02097209099d0a459a6acb637ee9749708c32566e22a2168a6f6e47a26331755"
   },
-  ".claude/hooks/guard-git.sh": {
-   "class": "kit",
-   "sha256": "9600eae92bd317fb1a8749e5a7f5a440b59942553af0dc8f3f05e08f7aab9e75"
-  },
-  ".claude/hooks/guard-main-edit.sh": {
-   "class": "kit",
-   "sha256": "53ffb842360d31f4edd1d59bc39129212039a0056d3f3500843858295c276f24"
-  },
   ".claude/loop.config.md": {
    "class": "seed",
    "sha256": "310f1c64d6d1494b87b96d9a2c4b8fd9eb927a91062094f7f92bfa840073b816"
@@ -138,7 +130,7 @@
   },
   ".claude/scripts/ci_lint.py": {
    "class": "kit",
-   "sha256": "7938562b98aab282c4c21159db868421e58bc8c483e42c4becb42c967870df5c"
+   "sha256": "d83b5c9c1d16f8a1ce237d8424b811303e3392d04c76208306d18682719af79c"
   },
   ".claude/scripts/dependency_report.py": {
    "class": "kit",
@@ -170,7 +162,7 @@
   },
   ".claude/scripts/doctorlib/deploy.py": {
    "class": "kit",
-   "sha256": "02e2bdf8ec0d2cdf1fb8bad9a297d3b7e63b3995a9f7976c81575e082ffa6b25"
+   "sha256": "88edfd55c5543a835540091325ac39380818da2bd587ad729e30fde2b4b369c9"
   },
   ".claude/scripts/doctorlib/extras.py": {
    "class": "kit",
@@ -206,7 +198,7 @@
   },
   ".claude/scripts/doctorlib/settings.py": {
    "class": "kit",
-   "sha256": "abbf0a7eda712d7c3a8d13151e76bf479447134b0dfcd03c41a67a79ed4e6135"
+   "sha256": "02c64a3cfd06a34f8e631f923f5b875a5e85d14fc54ce34122b143f0de4521e3"
   },
   ".claude/scripts/doctorlib/versions.py": {
    "class": "kit",
@@ -214,7 +206,7 @@
   },
   ".claude/scripts/doctorlib/workflows.py": {
    "class": "kit",
-   "sha256": "5965fd7893ac2de3966b2da699288639c2e393b7910ab3063afbeab6ece2112d"
+   "sha256": "8e2c8fb445d21ae02397e88d27631b80e0c05846251aa30d93970fa9c2f135c6"
   },
   ".claude/scripts/github/apply-boundary.sh": {
    "class": "kit",
@@ -262,7 +254,7 @@
   },
   ".claude/scripts/guards/g_exec.py": {
    "class": "kit",
-   "sha256": "1dca6f995b921359c0cb0d81c82ad37a4ece0722b4e91fab1c4a88a1f29ea357"
+   "sha256": "997ae471777b87616734a3b9f01d368e6dbd775ccdbdb5fc041e44bcff648dc9"
   },
   ".claude/scripts/guards/g_file.py": {
    "class": "kit",
@@ -270,7 +262,7 @@
   },
   ".claude/scripts/guards/g_git.py": {
    "class": "kit",
-   "sha256": "cafb046dd511b7f71b8d3cdfda6f48302a5931655439859f5e20d60c6081632a"
+   "sha256": "b27bba75343d6e0b6ce7e207d6a1341ae9e4c8ad2b66a126bfc6866b7aeb06c2"
   },
   ".claude/scripts/guards/g_halt.py": {
    "class": "kit",
@@ -278,7 +270,7 @@
   },
   ".claude/scripts/guards/g_infra.py": {
    "class": "kit",
-   "sha256": "5656c05815b7e7c658455646962250990f3c7a1e4850dedc565d1e4479ad9ccc"
+   "sha256": "ac9c5994df7e356686a2b7d165ebc31d022da29853893e66510cd696ca47ac9c"
   },
   ".claude/scripts/guards/g_taint.py": {
    "class": "kit",
@@ -290,7 +282,7 @@
   },
   ".claude/scripts/guards/invoke.py": {
    "class": "kit",
-   "sha256": "3278d1189ee15cbe1b5ab335c80d3a3cfb084b34068e53e3d7e340ad5f56d027"
+   "sha256": "1b3968c8471917feda777969a3c30626e4b0dcbf78377ce71cd455a1c0ca10d6"
   },
   ".claude/scripts/guards/lib.py": {
    "class": "kit",
@@ -298,7 +290,7 @@
   },
   ".claude/scripts/guards/paths.py": {
    "class": "kit",
-   "sha256": "f2c233d791c42f1b2b5e1722dc72a8057cc21dbb9d0a8767f440e99c4caad435"
+   "sha256": "be2cf62f40cb5ad81bbc80eb5f64b8c73af5590d4e9917b7ef651f545006dfa0"
   },
   ".claude/scripts/guards/run.py": {
    "class": "kit",
@@ -318,7 +310,7 @@
   },
   ".claude/scripts/guards/wiring.py": {
    "class": "kit",
-   "sha256": "08e6468856cfad3c2b6408a63c789d2920ff903dc933f7450321a1beba6889f0"
+   "sha256": "ae8195b97513f77a3309350cf99c1c8308e9f8810b0d8a3ce58706d06a72972d"
   },
   ".claude/scripts/humanonly.py": {
    "class": "kit",
@@ -330,7 +322,7 @@
   },
   ".claude/scripts/infra/ci_rules.py": {
    "class": "kit",
-   "sha256": "0559206079df21dff4f59c21a1974726c922fd8a4fcf2f1621af5d05990b3b2e"
+   "sha256": "0833fa6cfea25922f79ba7dbdd2c6b997d5e45c3f0d2a4e809f8ffc32a40d6be"
   },
   ".claude/scripts/infra/gate.py": {
    "class": "kit",
@@ -390,7 +382,7 @@
   },
   ".claude/scripts/kitlib/loopctl_table.py": {
    "class": "kit",
-   "sha256": "0054eef75e7c490dda56b881575b05c68fc184954753780cadf7afaa63a65c88"
+   "sha256": "416fc41f8b00020adaa18add8f86a4f58530382a98c3a779d9b04498ccd79af8"
   },
   ".claude/scripts/kitlib/miniyaml.py": {
    "class": "kit",
@@ -398,7 +390,7 @@
   },
   ".claude/scripts/kitlib/redact.py": {
    "class": "kit",
-   "sha256": "29049822d9786062344e2478d0b1447743669fc173e0befb1717cdf4361d5b1d"
+   "sha256": "7f38e90a81e1d1684c3f3471228aa5d345adaf2b4462f515154ce46399205872"
   },
   ".claude/scripts/kitlib/registry.py": {
    "class": "kit",
@@ -490,7 +482,7 @@
   },
   ".claude/scripts/loopctl/abort.py": {
    "class": "kit",
-   "sha256": "7571cef6a2780e73cfc7abb776c289bfabed3a65630c4f7767db469cb22e5baf"
+   "sha256": "08a331423346e615d2032d08a12dbf84063054d1907964a60026bf1683fe0073"
   },
   ".claude/scripts/loopctl/audit.py": {
    "class": "kit",
@@ -506,7 +498,7 @@
   },
   ".claude/scripts/loopctl/cli.py": {
    "class": "kit",
-   "sha256": "a9e8913941f77fcfae31a3ae55c476989a0c45aa00fe73e5191200451b0651a2"
+   "sha256": "eb40fe71cebd47415b39eaa05495768be6a7bd6a7b27207fe8bc672e4f465b1e"
   },
   ".claude/scripts/loopctl/common.py": {
    "class": "kit",
@@ -522,7 +514,7 @@
   },
   ".claude/scripts/loopctl/driver.py": {
    "class": "kit",
-   "sha256": "c9c7ad2a8db9759cf34c71e5ed781247c25cacbc3e2c3673347f71d80fa926ea"
+   "sha256": "1ec25495e3ce349bdcd51c7a1dcbe38eae5be8e1e4398627bd4398ed6c6f4ecb"
   },
   ".claude/scripts/loopctl/extras.py": {
    "class": "kit",
@@ -578,7 +570,7 @@
   },
   ".claude/scripts/loopctl/gates/g11_secrets.py": {
    "class": "kit",
-   "sha256": "5bd85435940b2d8bce15ac303c2371bb763b1a716a7dd3d3fe1bc38b36162b20"
+   "sha256": "a7f2a00c7ec49035c5f92b3fd9f1b15caf9f1fd08e969b73f2936a5c134cb3a1"
   },
   ".claude/scripts/loopctl/gates/g1_acids.py": {
    "class": "kit",
@@ -594,11 +586,11 @@
   },
   ".claude/scripts/loopctl/gates/g4_mutation.py": {
    "class": "kit",
-   "sha256": "08e764169184c869a64c5d03fd431b38e62913f351f68b756dce79046d541c84"
+   "sha256": "289991c9d09e6703d5614b89cbdd882574397b464a1d2898525c6c5022b72826"
   },
   ".claude/scripts/loopctl/gates/g5_integrity.py": {
    "class": "kit",
-   "sha256": "1cfdd37af91c9506e5a7cd9d7a2876dffeec8f9fc8083abea87d748841c3de68"
+   "sha256": "e060c93aa2cf2e9c1e0fdd0699477e3f764d3e7fa72f6a2fa963eb7774cecfac"
   },
   ".claude/scripts/loopctl/gates/g6_verify.py": {
    "class": "kit",
@@ -610,7 +602,7 @@
   },
   ".claude/scripts/loopctl/gates/g9_supply.py": {
    "class": "kit",
-   "sha256": "03019dea6bd0bf6970ab2cf8b96f6bc9ff119526af057a69c2ba97c0e643d25a"
+   "sha256": "7c1c0b16f13e39389f65ea14ebc2ae95cb8ae4e624b42e90e8a07d7b546bc0d0"
   },
   ".claude/scripts/loopctl/gitio.py": {
    "class": "kit",
@@ -626,7 +618,7 @@
   },
   ".claude/scripts/loopctl/launch.py": {
    "class": "kit",
-   "sha256": "6d13e972c836913aba7d0f254840967c081ac76f9aa0560f4c2e786f9ef72fac"
+   "sha256": "0fca6c6cd2c41903a97009e06e857d620e67ed1615519d3907c1c22a4b9d468a"
   },
   ".claude/scripts/loopctl/learning/__init__.py": {
    "class": "kit",
@@ -734,7 +726,7 @@
   },
   ".claude/scripts/loopctl/reconcile.py": {
    "class": "kit",
-   "sha256": "8d9fff75ace3b663642d86c0e61d426f3149356342065a63df06728d0f65c134"
+   "sha256": "e700f762e0549762a0a4f136b2b87ec28d1cc445773609b55cb1306427a6c728"
   },
   ".claude/scripts/loopctl/remote_lock.py": {
    "class": "kit",
@@ -750,27 +742,27 @@
   },
   ".claude/scripts/loopctl/startrun.py": {
    "class": "kit",
-   "sha256": "7278eadff9c7669b76ce4cc7687665bbf178d333dd09a9b6dcca35a1cba6962f"
+   "sha256": "c773b1080e6c5923d52467413929d908384c9a2233c0fc53ae2c4e77adee9d2c"
   },
   ".claude/scripts/loopctl/state.py": {
    "class": "kit",
-   "sha256": "f84e2fff75e6582b9f61a1a9a85db6cff8a0d33cbc10d792892bffee19270ba7"
+   "sha256": "1224b04f8f01242b42df27463d286973f5968b13e3b3b93d5b3d3d16ccbfcfc8"
   },
   ".claude/scripts/loopctl/status.py": {
    "class": "kit",
-   "sha256": "83293d2ace25941fefb8d20fda963c77212a2ceb2b3bbddfd7ae408f34268d72"
+   "sha256": "26fc71da2b06aa6ddeb67f22021d149b3d73f99f4ff61b3899523e44ce7835c8"
   },
   ".claude/scripts/loopctl/unattended.py": {
    "class": "kit",
-   "sha256": "6b7142090d1bf223f9c0e9cca8d3bce58527131d7a1cf991cd8df8a3a3dca146"
+   "sha256": "7350bce7cea3fd1fea2e3eb5ed4a44410d7a7854de894cb62f6443eed8155047"
   },
   ".claude/scripts/migrate.py": {
    "class": "kit",
-   "sha256": "a966959031563ffa06ec8fb1604bd25924ff5376642eeb2845c646a534a42858"
+   "sha256": "b37ad8d3eba7b17577142655bed522db867a11fcff19591f6611f05fe71450ae"
   },
   ".claude/scripts/notify.py": {
    "class": "kit",
-   "sha256": "17fdf1ac3060878e66e40dc7e3a5d7c41cd15ea0b452a237095ad5ffa0f6dde6"
+   "sha256": "bffe979a5540e16fa6cdbc998154bd17d2dd74a622183abb26234babfda9a949"
   },
   ".claude/scripts/pr_prepare.py": {
    "class": "kit",
@@ -794,7 +786,7 @@
   },
   ".claude/settings.json": {
    "class": "frozen",
-   "sha256": "48664439efdbda36f8a7742efca26f9de029091ef4d4777541f72c2e93b43792"
+   "sha256": "08fdb738a9bd4e136b722643069e16b065fc4480bf63213a92e0ef6247320cfe"
   },
   ".claude/settings.v2.json": {
    "class": "kit",
@@ -814,15 +806,15 @@
   },
   ".claude/skills/migrate/SKILL.md": {
    "class": "kit",
-   "sha256": "6f93cd8848fa9f0e2f8d1799171bd36249c8d64abc939975dd14a2b05e774b84"
+   "sha256": "cc033a1a4d052d04cc8af9742eb8180bfdcc14dd9b835fbc6a1e5dd931481ca1"
   },
   ".claude/skills/orchestrate/SKILL.md": {
    "class": "kit",
-   "sha256": "96bc27fb08f9c7d0e0394c01d76e9d1db53dcf1cf873a2cd6644c1d3e00d885d"
+   "sha256": "416896150e484501168a0f531d14c8ea901093c668e229fa6568694b03d101ff"
   },
   ".claude/skills/orchestrate/loop.md": {
    "class": "kit",
-   "sha256": "6328a1373e5ea0b9a54b2f44a14e4602893297e7688531788e06223f37f9678f"
+   "sha256": "427007b9c86173c4b2429759340bcfbce8e7f786d62ddb3ce43648bd995cae59"
   },
   ".claude/skills/orchestrate/preamble.md": {
    "class": "kit",
@@ -862,7 +854,7 @@
   },
   ".claude/spec/loopctl-driver.md": {
    "class": "kit",
-   "sha256": "c94d256809326e1270904c5763b14dd40aa37b60cd4b32a4436cd8ae013bf980"
+   "sha256": "12ed1504ce20180ad5b33cf7e5e97021a3dab1192b878959b3cd47474539c3bf"
   },
   ".claude/spec/loopctl-extras.md": {
    "class": "kit",
@@ -882,7 +874,7 @@
   },
   ".claude/spec/loopctl.md": {
    "class": "kit",
-   "sha256": "fbc6aa29defd12feb3280f6008bfdd69ac248301aeec2df728edf45cf0866311"
+   "sha256": "ee5b77e09342d476e3af141bcc7026eae4e3befc6d3824d9c55cea81e4593429"
   },
   ".claude/spec/pipeline-host-workflow.md": {
    "class": "kit",
@@ -910,7 +902,7 @@
   },
   ".claude/templates/github/workflows/claude-review.yml": {
    "class": "kit",
-   "sha256": "3c5bb0836c9897fdf244b0d533653de36fbd3822e1f79f0ce08e28c7a40d536f"
+   "sha256": "4dc371fe52c4dd16ba6a584c0bd841f4d759c4f1926c55b92de61f5a31255c21"
   },
   ".claude/templates/github/workflows/dependency-check.yml": {
    "class": "kit",
@@ -1042,7 +1034,7 @@
   },
   ".claude/templates/security/iam/plan-readonly.policy.json": {
    "class": "kit",
-   "sha256": "ea930f432cf2bcfc49a673dbc79f450271ced8b94a1d4ffcebb2d2cb8f6b3545"
+   "sha256": "acf0c4b9b9a3154a6deb38342f2861ec6a4c08e6971857cf99feaa0fe2a5f246"
   },
   ".claude/templates/security/managed-settings.example.json": {
    "class": "kit",
@@ -1154,15 +1146,15 @@
   },
   "docs/migrating-to-v2.md": {
    "class": "kit",
-   "sha256": "faf12ef1d51ccadb0d24226228a47f7551a30adde5e5464c764ca842b3a0ec0c"
+   "sha256": "12f2e8a35bcff7ae2e2689dba134b58a90cba81cc3d2a0503327bdb233628457"
   },
   "docs/ops.md": {
    "class": "kit",
-   "sha256": "aae0512bc4f0c99a1101178a7a5521762383c57985711ce070afb4cce91f60f9"
+   "sha256": "9c1ee7e626ea0552dc9cdffb5e256786d4b77cc85a05fa1b2bf43eb0699e7095"
   },
   "docs/packaging.md": {
    "class": "kit",
-   "sha256": "26256511f07e9e7b823261c8854efd3f7141aabe303244e0e893eb6ffc82d067"
+   "sha256": "2f3f9ba27b1d1e9ee46031c8ef99ac1ade4da58c3113825b6f259c48aa01d86a"
   },
   "docs/parallel.md": {
    "class": "kit",
@@ -1174,7 +1166,7 @@
   },
   "docs/security/README.md": {
    "class": "kit",
-   "sha256": "4db05ef4d0d9029af61d1c573586d9c9ef8a576fe1eb83d7ffa3f496bcb84e75"
+   "sha256": "e64ffb1fc4d0d3b65ab313797eccff0cc4deb2b0d62eb00cfe51b964c5ed5c42"
   },
   "docs/security/bot-identity.md": {
    "class": "kit",
@@ -1186,7 +1178,7 @@
   },
   "docs/security/deploy-surface.md": {
    "class": "kit",
-   "sha256": "41c9c01ac69e66b3264a50a67394409f5b4c447fd8473d130c0adb302c932aee"
+   "sha256": "65ad29188121d96df006f9546d100a3342eb7c24aeaa578884283daeb4ed24d5"
   },
   "docs/security/first-run-probe.md": {
    "class": "kit",
@@ -1198,15 +1190,15 @@
   },
   "docs/security/guards.md": {
    "class": "kit",
-   "sha256": "829e62f7d209179174b2905fd5989cb4b267d021ef2b2fdab6e713107b94f627"
+   "sha256": "46a4f19666494581b791b7f9ce03a92310aa7a52fcaf505caf255ca79d5e9b7f"
   },
   "docs/security/infra-ci.md": {
    "class": "kit",
-   "sha256": "813d00b078032f318a61f451d271cc97a120e624f894a4e5a8232cdc55a6fb5f"
+   "sha256": "6564ee8319cccce25ce7fa0662b581b770683cd72a1018071facf64ccd879344"
   },
   "docs/security/infra-human-gate.md": {
    "class": "kit",
-   "sha256": "3d56ad4d7207ac3a324d09e7679dec244b51188861b17597e13de417315cd698"
+   "sha256": "6884f4298c4373db3076f905c03049fc820c4d10b55bad290e030c72e4fe48dd"
   },
   "docs/security/mcp.md": {
    "class": "kit",
@@ -1218,19 +1210,19 @@
   },
   "docs/security/sandbox.md": {
    "class": "kit",
-   "sha256": "9ff5e4c899383d52f1ce5e002002fafa64339e76c503aceb50e84b439806b376"
+   "sha256": "e4312058098163b33dbee255fd2315133bb19cc05fa53916f05843e366422e60"
   },
   "docs/security/secrets-policy.md": {
    "class": "kit",
-   "sha256": "8f1d8ff2ecbd4a37d268b54ed8d0d8f4f6fb702c457117209ea4dcf7cecc0cc9"
+   "sha256": "34e201f01e4a9d8b523b51c48df22e387df0fa569e3488425adb993d6257db93"
   },
   "docs/security/split-ci.md": {
    "class": "kit",
-   "sha256": "606ce9541fc5c7d4bc16abf4d59615115c079249d853ef70e7254bfaeb6a7815"
+   "sha256": "b8f3866f8d88cfb657eb2787ae04c36b46bbd043b99c74989274d33d2c522f99"
   },
   "docs/security/supply-chain.md": {
    "class": "kit",
-   "sha256": "d31adf12e3f3cea903680a91c5dcea0d19427f87a07b9c1606c2f7577f2cf2eb"
+   "sha256": "7de56c3ed965ed84e73444910f36736ebf2647a8571c0accee9546e3dfde7aec"
   },
   "docs/security/untrusted-content.md": {
    "class": "kit",
@@ -1246,7 +1238,7 @@
   },
   "docs/v2-pending-human.md": {
    "class": "kit",
-   "sha256": "e2c9b909b6f429c9767c164ad9aa6fb038907803adea8a697f187bd4972f5676"
+   "sha256": "e8bf2ffd5a1f563dc0a0fa2e8d2f54750e05a2b8d2e924e8df9d7d8c4bdc018d"
   },
   "skills/chain-of-custody/SKILL.md": {
    "class": "kit",

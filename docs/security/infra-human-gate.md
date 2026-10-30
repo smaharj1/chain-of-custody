@@ -27,7 +27,7 @@ Never `repo:ORG/REPO:*` and never a `ref:` subject: both let a pull request, or 
 
 The `job_workflow_ref` form needs the claim in the subject. Customize the repository's OIDC `sub` claim to include it (GitHub's `actions/oidc/customization/sub` API with `use_default: false` and `include_claim_keys: ["repo", "job_workflow_ref"]`); otherwise use IAM condition keys for additional claims if your account supports them. Whether your account does is untested here: confirm with a test assume-role before trusting it.
 
-`.claude/templates/security/iam/plan-readonly.policy.json` is an example plan-only permissions policy: metadata reads, state read, and an explicit deny on secret values. It is an example, not an exhaustive policy.
+`.claude/templates/security/iam/plan-readonly.policy.json` is an example plan-only permissions policy: metadata reads, state read, and an explicit deny on secret values. It is an example, not an exhaustive policy. It also denies reading API Gateway API key values, and it cannot hide the environment variables `lambda:GetFunction` returns: see [infra-ci.md](infra-ci.md#what-the-plan-role-can-read).
 
 ## CI job split
 

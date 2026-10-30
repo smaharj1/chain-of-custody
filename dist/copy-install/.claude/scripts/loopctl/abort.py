@@ -271,6 +271,7 @@ def execute(loop: Any, ap: AbortPlan, by: str, reason: str, session_id: Optional
                 state_mod._force_status(st, iid, "blocked", by, "abort: " + common.clean_text(reason, 80), "aborted")
         st.header["abort"] = record
         st.header["runStatus"] = "aborted"
+        state_mod.void_checkpoint_approvals(st.d, "abort")
         st.header["parked"] = {"item": None, "reason": "aborted", "at": common.iso()}
 
     loop.store.update(mutate, "abort by %s" % by)

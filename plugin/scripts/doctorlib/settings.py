@@ -421,7 +421,7 @@ def _has_entry(want: str, have: "set") -> bool:
     return any("/".join(parts[:k]) in have for k in range(1, len(parts) + 1))
 
 
-@check("sandbox.deny-paths", "sandbox", emits=("sandbox.registry-path",))
+@check("sandbox.deny-paths", "sandbox", emits=("sandbox.registry-path", "sandbox.git-pointer"))
 def check_sandbox_paths(ctx: Context) -> List[Result]:
     st = ctx.fact("settings")
     rd, wr = sandbox_denies(st, "denyRead"), sandbox_denies(st, "denyWrite")
@@ -444,7 +444,25 @@ def check_sandbox_paths(ctx: Context) -> List[Result]:
     else:
         out = [passed("sandbox.deny-paths", "sandbox denyRead/denyWrite cover the credential directories and the whole H6 write set (hooks, scripts, agents, skills, settings, CI, ...)")]
     out.extend(_registry_row(ctx, wr))
+    out.extend(_git_pointer_row(ctx, wr))
     return out
+
+
+def _git_pointer_row(ctx: Context, wr: List[str]) -> List[Result]:
+    """`sandbox.git-pointer` (review 13, R-A-4): in a linked worktree `.git` is a FILE inside the project directory (`gitdir: <common>/worktrees/x`). A sandboxed command
+    that rewrites it points every hook at a different git directory, with a registry the agent wrote. It cannot be in the static template (`.git` is a directory in
+    a plain checkout, and denying the directory would break git), so it is checked here and printed by `wiring.py --sandbox-snippet`."""
+    dotgit = os.path.join(ctx.repo, ".git")
+    if not os.path.isfile(dotgit):
+        return [skipped("sandbox.git-pointer", "`.git` is a directory here (a plain checkout): there is no pointer file to protect")]
+    have = {_norm_deny(x, ctx.repo, ctx.home) for x in wr}
+    have |= {os.path.realpath(x) for x in have if os.path.isabs(x)}
+    if _has_entry(".git", have) or _has_entry(os.path.realpath(dotgit), have) or _has_entry(dotgit, have):
+        return [passed("sandbox.git-pointer", "the sandbox denies writes to the worktree's `.git` pointer file")]
+    return [failed("sandbox.git-pointer",
+                   "`.git` is a pointer file in this linked worktree and the sandbox does not deny writes to it: a sandboxed command could rewrite it to point the hooks at a git directory of its own (and its own session registry)",
+                   "add \"%s\" to sandbox.filesystem.denyWrite in .claude/settings.local.json (`python3 .claude/scripts/guards/wiring.py --sandbox-snippet` prints it)" % dotgit,
+                   severity=WARN)]
 
 
 def _registry_row(ctx: Context, wr: List[str]) -> List[Result]:

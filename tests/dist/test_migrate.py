@@ -380,10 +380,20 @@ class V120Install(unittest.TestCase):
             acts.setdefault(a["action"], []).append(a["path"])
         self.assertEqual(sorted(acts.get("remove", [])), sorted(".claude/commands/%s.md" % m for m in ("pm", "architect", "tech-lead", "planner", "orchestrate")))
         self.assertNotIn("conflict", acts)
-        self.assertNotIn("keep-retired", acts)
+        hooks = [".claude/hooks/guard-git.sh", ".claude/hooks/guard-main-edit.sh"]
+        self.assertEqual(sorted(acts.get("keep-retired", [])), hooks, "the v1 hooks stay while settings.json names them")
         rc, doc, err = self.migrate(p, "--apply")
         self.assertEqual(rc, 0, err)
+        self.assertFalse(doc["finished"], "not finished while a retired hook is still wired")
+        for rel in hooks:
+            self.assertTrue(os.path.exists(os.path.join(p, rel)), rel)
+        shutil.copyfile(os.path.join(self.source, ".claude", "settings.json"), os.path.join(p, ".claude", "settings.json"))   # the human switch
+        rc, doc, err = self.migrate(p, "--apply")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(sorted(a["path"] for a in doc["actions"] if a["action"] == "remove"), hooks)
         self.assertTrue(doc["finished"])
+        for rel in hooks:
+            self.assertFalse(os.path.exists(os.path.join(p, rel)), rel)
         with open(os.path.join(self.source, km.MANIFEST_REL)) as fh:
             m = km.loads(fh.read())
         for rel, ent in m["files"].items():
@@ -399,7 +409,7 @@ class V120Install(unittest.TestCase):
         forks = {
             ".claude/agents/backend-engineer.md": lambda t: t + "\n## Local rule\nAlways use our ORM wrapper.\n",             # appended: merges cleanly
             ".claude/agents/app-engineer.md": lambda t: t.replace("name: app-engineer", "name: web-engineer", 1),             # same line the kit changed? no: kit adds lines elsewhere
-            ".claude/hooks/guard-main-edit.sh": lambda t: t + "\n# our block list\n",     # the kit did not change this hook: stays as it is
+            ".claude/hooks/guard-main-edit.sh": lambda t: t + "\n# our block list\n",     # retired in 2.0 and still wired: stays
             ".claude/loop.config.md": lambda t: t.replace("autonomy:", "autonomy:", 1) + "\n# ours\n",
             ".claude/CLAUDE.md": lambda t: t + "\nOur stack: Rails.\n",
             ".claude/commands/pm.md": lambda t: t + "\nOur PM tweak.\n",
@@ -409,7 +419,7 @@ class V120Install(unittest.TestCase):
         rc, doc, err = self.migrate(p, "--apply")
         by = {a["path"]: a["action"] for a in doc["actions"]}
         self.assertEqual(by[".claude/agents/backend-engineer.md"], "merge")
-        self.assertEqual(by[".claude/hooks/guard-main-edit.sh"], "keep")
+        self.assertEqual(by[".claude/hooks/guard-main-edit.sh"], "keep-retired")
         self.assertEqual(by[".claude/CLAUDE.md"], "keep")
         self.assertEqual(by[".claude/commands/pm.md"], "keep-retired")
         self.assertNotIn(".claude/agents/ours-extra.md", by)

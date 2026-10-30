@@ -20,6 +20,7 @@ Any hit is a finding for a separate review verdict plus a human flag. Owner metr
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -41,7 +42,10 @@ _STDLIB_FALLBACK = {"json", "os", "sys", "re", "io", "abc", "time", "types", "ty
 _STDLIB = set(getattr(sys, "stdlib_module_names", ())) | _STDLIB_FALLBACK
 _SHADOW_DIRS = ("", "src", "lib", "tests", "test")
 _PKG_KEYS = ("scripts", "jest", "vitest", "mocha", "ava", "nyc", "c8", "husky", "simple-git-hooks", "lint-staged", "eslintConfig", "babel", "pytest")
-_TOOLS = ("pytest", "coverage", "ruff", "mypy", "pylint", "flake8", "black", "isort", "tox", "nox")
+_TOOLS = ("pytest", "coverage", "ruff", "mypy", "pylint", "flake8", "black", "isort", "tox", "nox", "poe", "poethepoet", "taskipy", "pdm", "hatch")
+# tools that hold the verify command itself (`[tool.hatch.envs.test.scripts]`, `[tool.pdm.scripts]`, `[tool.poe.tasks]`): only these parts of them count, so a
+# `[tool.hatch.version]` or `[tool.pdm.build]` edit is not an integrity change
+_TOOL_PARTS = {"hatch": ("envs",), "pdm": ("scripts", "dev-dependencies")}
 
 
 def _pkg_changed(base: Optional[str], head: Optional[str]) -> List[str]:
@@ -94,10 +98,22 @@ def _toml_scan(line: str, ml: Optional[str], depth: int) -> Optional[Tuple[Optio
     i, n = 0, len(line)
     while i < n:
         if ml:
-            j = line.find(ml, i)
-            if j < 0:
+            # a basic multi-line string honours backslash escapes (`\"""` does not end it, `\\"""` does); a literal one has none. The closing
+            # delimiter may be followed by up to two more quote characters that belong to the string. Without this a `\"""` in a description
+            # desynchronised the reader and hid the next table from it (R-GATES-1).
+            j = i
+            while j < n:
+                if ml == '"""' and line[j] == "\\":
+                    j += 2
+                    continue
+                if line.startswith(ml, j):
+                    break
+                j += 1
+            if j >= n:
                 return ml, depth
             i, ml = j + 3, None
+            while i < n and line[i] == line[j] and i < j + 5:
+                i += 1
             continue
         ch = line[i]
         if ch == "#":
@@ -146,6 +162,8 @@ def _toml_tables(text: Optional[str]) -> Optional[Dict[str, str]]:
                     return None
                 name = ".".join(parts)
                 relevant = parts[0] == "tool" and (len(parts) == 1 or parts[1] in _TOOLS)
+                if relevant and len(parts) > 2 and parts[1] in _TOOL_PARTS and parts[2] not in _TOOL_PARTS[parts[1]]:
+                    relevant = False
                 cur = ("[[%s]]" % name if array else name) if relevant else None
                 if cur is not None:
                     out.setdefault(cur, [])
@@ -272,6 +290,182 @@ def _glob_check(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], count
 _DOC_EXT = (".md", ".rst", ".txt", ".adoc")
 _RESULTS_RE = re.compile(r"""["']results["']""")
 _ACID_RE = re.compile(r"""AC-[A-Za-z0-9]+-\d+|["']AC-["']""")
+# text a test runner prints (R-GATES-2): unittest -v `test_x (mod.Class.test_x) ... ok`, pytest -v `mod.py::test_x PASSED`, the `Ran N tests` summary
+# and the `OK` under it, TAP `ok 1 - name`. Production code has no reason to print any of it.
+_RUNNER_LINE_RE = re.compile(r"""\.\.\. ?(?:ok|OK|PASSED|passed)\b|::[\w\[\]-]+ +PASSED\b|(?:^|["'\s])ok \d+\b|\bRan (?:\d+|%d|\{\w*\}) tests?\b""")
+_TEST_NAME_RE = re.compile(r"""\btest_\w+|\bAC-[A-Za-z0-9]+-\d+|\bac_[a-z0-9]+_\d+""", re.I)
+# `def test_connection(` names a function, it does not print a test's name; the rest of that line is still read (`def f(): print("test_x ... ok")`)
+_DEF_HEAD_RE = re.compile(r"(?m)^[ \t]*(?:async[ \t]+)?def[ \t]+\w+")
+_EXIT_NAMES = {"os._exit", "_exit", "sys.exit", "exit", "quit", "os.abort", "os.kill", "SystemExit", "builtins.exit", "builtins.quit", "builtins.SystemExit",
+               "os.execl", "os.execle", "os.execlp", "os.execlpe", "os.execv", "os.execve", "os.execvp", "os.execvpe"}        # an exec replaces the process: no runner is left to report
+
+
+def _plain_name(node: Any) -> str:
+    """`a.b.c` for a Name or an Attribute chain over a Name, empty for anything else (no call, no subscript). Iterative."""
+    parts = []  # type: List[str]
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return ""
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _call_name(node: Any) -> str:
+    """The dotted name a callee or raised object is spelled with: `a.b.c`, `getattr(a, "b")` as `a.b`, `__import__("a")` and `importlib.import_module("a")` as
+    `a`. Empty when it is none of those. A loop, not a recursion: a call chain thousands deep (`f()()()…`) must not raise RecursionError and be read as clean."""
+    parts = []  # type: List[str]
+    for _ in range(100000):
+        if isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        elif isinstance(node, ast.Call):
+            fn, args = _plain_name(node.func), node.args
+            if fn == "getattr" and len(args) >= 2 and isinstance(args[1], ast.Constant) and isinstance(args[1].value, str):
+                parts.append(args[1].value)
+                node = args[0]
+            elif fn in ("__import__", "importlib.import_module") and args and isinstance(args[0], ast.Constant) and isinstance(args[0].value, str):
+                parts.append(args[0].value)
+                break
+            else:
+                return ""
+        elif isinstance(node, ast.Name):
+            parts.append(node.id)
+            break
+        else:
+            return ""
+    else:
+        return ""
+    return ".".join(reversed(parts))
+
+
+def _import_aliases(tree: Any) -> Dict[str, str]:
+    """{local name: what it names} for every import in the file, at any depth: `import os as o` is o -> os, `from os import _exit as e` is e -> os._exit."""
+    out = {}  # type: Dict[str, str]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.asname:
+                    out[a.asname] = a.name
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            for a in node.names:
+                if a.name != "*":
+                    out[a.asname or a.name] = node.module + "." + a.name
+    return out
+
+
+def _exit_name(name: str, aliases: Dict[str, str]) -> bool:
+    """Whether a dotted name ends the process, as spelled and with its first part replaced by what an import alias names."""
+    if name in _EXIT_NAMES:
+        return True
+    head, _, rest = name.partition(".")
+    return head in aliases and (aliases[head] + ("." + rest if rest else "")) in _EXIT_NAMES
+
+
+def _ends_process(node: Any, aliases: Dict[str, str]) -> bool:
+    """A call that ends the process, or a `raise SystemExit`."""
+    if isinstance(node, ast.Call):
+        return _exit_name(_call_name(node.func), aliases)
+    if isinstance(node, ast.Raise) and node.exc is not None:
+        return _call_name(node.exc.func if isinstance(node.exc, ast.Call) else node.exc) in ("SystemExit", "builtins.SystemExit")
+    return False
+
+
+def _module_functions(tree: Any) -> List[Any]:
+    """The functions defined at the top level of a module (also inside its `if`, `try`, `with` and loops, not inside classes or other functions). Not `async def`:
+    calling one only makes a coroutine, it does not run the body."""
+    out = []  # type: List[Any]
+    stack = list(tree.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.FunctionDef):
+            out.append(node)
+        elif not isinstance(node, (ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _exiting_functions(tree: Any, aliases: Dict[str, str]) -> set:
+    """Names of the module's functions that end the process when called, directly or through another of them (`def main(): sys.exit(run())`). A nested
+    function's own body is not part of its parent's."""
+    exits = set()  # type: set
+    callers = {}  # type: Dict[str, List[str]]
+    for fn in _module_functions(tree):
+        stack = list(fn.body)
+        while stack:
+            node = stack.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if _ends_process(node, aliases):
+                exits.add(fn.name)
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                callers.setdefault(node.func.id, []).append(fn.name)
+            stack.extend(ast.iter_child_nodes(node))
+    work = list(exits)
+    while work:
+        for caller in callers.get(work.pop(), ()):
+            if caller not in exits:
+                exits.add(caller)
+                work.append(caller)
+    return exits
+
+
+def _is_main_guard(node: Any) -> bool:
+    """`if __name__ == "__main__":` (any ordering of the operands)."""
+    t = getattr(node, "test", None)
+    if not isinstance(node, ast.If) or not isinstance(t, ast.Compare) or len(t.ops) != 1 or not isinstance(t.ops[0], ast.Eq):
+        return False
+    names = [t.left] + list(t.comparators)
+    return any(isinstance(x, ast.Name) and x.id == "__name__" for x in names) and any(isinstance(x, ast.Constant) and x.value == "__main__" for x in names)
+
+
+def module_exits(text: str) -> int:
+    """How many statements end the process while the module is IMPORTED (python only): `os._exit(0)`, `sys.exit()`, `exit()`, `quit()`, `os.abort()`,
+    `raise SystemExit` at module level, in a class body, or in an `if`, `try`, `with`, `for` or `while` at module level. Function bodies and an
+    `if __name__ == "__main__":` block do not count, because a CLI ends its own process there (its `else:` does). The calls are found through import aliases
+    (`import os as o; o._exit(0)`, `from os import _exit as e`), `getattr(os, "_exit")` and `__import__("os")._exit`, and a module-level call to a function of the
+    same file that ends the process counts too. A file that does not parse counts a line that starts at column 0 with one of those calls (fail closed)."""
+    fallback = r"(?m)^(?:os\._exit|sys\.exit|exit|quit|os\.abort)\("
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        found = len(re.findall(fallback, text))         # not python that can be imported ...
+        if any(w in str(exc) for w in ("nested", "overflow", "too deep", "too many")):
+            return max(1, found)                        # ... unless it is only too deep for THIS parser (`too many nested parentheses`): that is unread, not clean
+        return found
+    except ValueError:                                  # a NUL byte
+        return max(1, len(re.findall(fallback, text)))
+    except (RecursionError, MemoryError):               # too deep for the parser: it cannot be read, so it is not clean
+        return max(1, len(re.findall(fallback, text)))
+    try:
+        return _module_exit_count(tree)
+    except Exception:  # noqa: BLE001 - whatever the walk could not do, the answer is not "none"
+        return max(1, len(re.findall(fallback, text)))
+
+
+def _module_exit_count(tree: Any) -> int:
+    aliases = _import_aliases(tree)
+    exiting = _exiting_functions(tree, aliases)
+    count = 0
+    stack = list(tree.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            # the body runs when the function is called, but decorators and default values run at import
+            args = node.args
+            stack.extend(list(getattr(node, "decorator_list", [])) + list(args.defaults) + [d for d in args.kw_defaults if d is not None])
+            stack.extend(d.body for d in getattr(node, "decorator_list", []) if isinstance(d, ast.Lambda))        # a lambda used as a decorator is called at import
+            continue
+        if _is_main_guard(node):
+            stack.extend(node.orelse)                       # the guard's body is a CLI, but its `else:` runs when the module is imported
+            continue
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Lambda):
+            stack.append(node.func.body)                    # `(lambda: os._exit(0))()` runs the body now
+        if _ends_process(node, aliases) or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in exiting):
+            count += 1                                      # the second form: a call, at import time, to a function of the module that ends the process
+        stack.extend(ast.iter_child_nodes(node))
+    return count
 
 
 def _read_untracked(ctx: Any, path: str) -> Optional[str]:
@@ -305,6 +499,18 @@ def _output_lint(ctx: Any, rows: List[Any], findings: List[Dict[str, Any]], coun
             continue
         if any("os._exit(" in ln for ln in added):
             findings.append(_lib.finding("g5.hard-exit", "warn", "%s adds os._exit(): it ends the process before a test runner can report a failure" % path, path=path))
+        if path.endswith(".py") and module_exits(text_head) > module_exits(_lib.blob(ctx, ctx.base_sha, path) or ""):
+            findings.append(_lib.finding("g5.module-exit", "error", "%s ends the process when it is imported (os._exit, sys.exit, exit, quit or raise SystemExit outside a "
+                                         "function and outside `if __name__ == \"__main__\"`): importing it from a test would stop the run before the runner reports "
+                                         "a failure" % path, path=path))
+            counts["flags"] += 1
+        for i in range(len(added)):
+            win = "\n".join(added[i:i + 4])
+            if _RUNNER_LINE_RE.search(win) and (_TEST_NAME_RE.search(_DEF_HEAD_RE.sub("", win)) or re.search(r"\bRan (?:\d+|%d|\{\w*\}) tests?\b", win)):
+                findings.append(_lib.finding("g5.runner-shaped-output", "error", "%s adds text shaped like a test runner's output (a `... ok` or `PASSED` line naming a test, "
+                                             "or a `Ran N tests` summary): production code must not print test results" % path, path=path))
+                counts["flags"] += 1
+                break
         for i in range(len(added)):
             win = "\n".join(added[i:i + 4])
             if _RESULTS_RE.search(win) and _ACID_RE.search(win):
@@ -372,7 +578,7 @@ def _lint(ctx: Any, rows: List[Any], langs: List[str], findings: List[Dict[str, 
                 counts["flags"] += 1
 
 
-def run(ctx: Any) -> GateResult:
+def _run(ctx: Any) -> GateResult:
     try:
         rows = _lib.diff_status(ctx)
     except ValueError as exc:
@@ -393,3 +599,12 @@ def run(ctx: Any) -> GateResult:
     if any(f["severity"] == "error" for f in findings):
         return GateResult.failed(findings, **ev)
     return GateResult("pass", findings=findings, evidence=ev)
+
+
+def run(ctx: Any) -> GateResult:
+    """The integrity check. Any exception while reading (a RecursionError, a MemoryError, a bug) is a blocking `g5.unreadable` finding: never a pass."""
+    try:
+        return _run(ctx)
+    except Exception as exc:  # noqa: BLE001
+        return GateResult.failed([_lib.finding("g5.unreadable", "error", "The integrity check could not be read to the end (%s): a human reads the change" % (
+            common.clean_text(type(exc).__name__, 40),))])

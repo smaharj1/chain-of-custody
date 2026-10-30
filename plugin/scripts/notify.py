@@ -11,7 +11,7 @@ WHAT KEEPS IT SAFE (a message can be built from text a stranger wrote, so the ch
     REFUSED rather than guessed at; the program must be an absolute path or a bare name on PATH; and it must not live inside the
     repository or the git directory, because an agent can edit files there and this runs with the human's rights.
   * The program may not be a shell, an interpreter, `env`/`xargs`-style launcher or a general transfer tool (sh, python*, node, perl, curl,
-    wget, ssh, sudo ...), because those turn a plain argument into "run this file" or "send that file"; no argument may start with `@`
+    wget, ssh, sudo, arch, xcrun, caffeinate, script, watch, flock, mail, git, make ... the list is `_DENY_PROGRAMS`), because those turn a plain argument into "run this file" or "send that file"; no argument may start with `@`
     or name a path inside the repository, the worktree or a credential directory (`~/.aws`, `~/.ssh`, `~/.config/gh` ...). Put the
     behaviour in a small program of yours and name that program.
   * The message is never on the command line. It goes to the program on stdin as one JSON document and in `KIT_NOTIFY_*` variables.
@@ -71,7 +71,17 @@ _DENY_PROGRAMS = frozenset((
     "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "ash", "busybox", "env", "xargs", "node", "nodejs", "deno", "bun", "perl", "ruby",
     "php", "lua", "awk", "gawk", "mawk", "sed", "tclsh", "expect", "curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "scp", "sftp", "rsync",
     "ftp", "telnet", "osascript", "sudo", "doas", "su", "powershell", "pwsh", "nohup", "nice", "timeout", "setsid", "stdbuf", "command", "exec",
-    "find", "xterm", "open"))
+    "find", "xterm", "open",
+    # second review (R-E-1): launchers that run their arguments (`arch sh x.sh`, `xcrun sh`, `caffeinate sh`, `script /dev/null sh`), mailers and terminal
+    # multiplexers, build and package tools that run project files, editors and pagers with shell escapes, and the other file and archive tools
+    "arch", "xcrun", "caffeinate", "script", "scriptreplay", "watch", "flock", "taskset", "ionice", "chroot", "strace", "ltrace", "parallel", "time",
+    "gtimeout", "unbuffer", "sandbox-exec", "rlwrap", "winpty", "nsenter", "unshare", "bwrap", "firejail", "systemd-run", "launchctl", "at", "batch",
+    "crontab", "runuser", "pkexec", "chrt", "setpriv", "capsh", "cpulimit", "daemonize", "start-stop-daemon",
+    "mail", "mailx", "mutt", "sendmail", "msmtp", "ssmtp", "mailto",
+    "git", "gh", "hub", "glab", "make", "gmake", "just", "npm", "npx", "pnpm", "pnpx", "yarn", "bunx", "pip", "pip3", "pipx", "uv", "poetry", "cargo",
+    "go", "gradle", "mvn", "docker", "podman", "kubectl", "helm", "aws", "gcloud", "az", "terraform", "tofu", "pulumi", "claude", "tmux", "screen",
+    "vim", "vi", "nvim", "emacs", "nano", "ed", "ex", "less", "more", "man", "view", "tar", "zip", "unzip", "cpio", "openssl", "tee", "dd", "cp", "mv",
+    "ln", "install", "gdb", "lldb"))
 _DENY_PREFIXES = ("python", "pypy")
 # Directories under the human's home a notify program may never be pointed at (UN-5).
 _CREDENTIAL_DIRS = (".aws", ".ssh", ".config/gh", ".config/gcloud", ".azure", ".kube", ".docker", ".netrc", ".git-credentials", ".gnupg")

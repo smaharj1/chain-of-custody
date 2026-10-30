@@ -41,6 +41,7 @@ Run the commands from a plain terminal, not from inside a Claude Code session. T
 - [ ] **Probe V9 on the pinned CLI:** that `onFailure: block` is honoured and where it goes in the hook entry (the guards also fail closed by themselves). Probe V1 (`agent_id` and `agent_type` in hook input at depth 2 and 3) decides how much the caller classification can be trusted.
 - [ ] **Register the prose-loop conductor** if you use the prose `/orchestrate` loop: `python3 .claude/scripts/guards/run.py register-session --role conductor --session <id>` (human only; the driver and `loopctl begin` register themselves).
 - [ ] **Check that a sandboxed Bash command cannot create a file under `<git-common-dir>/loopctl/sessions/`** and that SessionStart still writes nonces (hooks are assumed not to be sandboxed [probe V19]).
+- [ ] **Probe V21 step 4 before the next kit-development session:** confirm that `{"disableAllHooks": true}` in a git-ignored `.claude/settings.local.json` turns off the project hooks in an interactive session (no `kit session_start: canary` line, and an edit to `.claude/scripts/` goes through). Until it is confirmed, follow the fallback in `docs/security/guards.md` "Developing the kit with agents".
 - [ ] **Read `docs/security/guards.md` "What the guards cannot see"** and decide whether any gap needs a platform control.
 - [ ] **Re-run the hello-loop against the live hooks and the live evals** (`claude plugin eval`); the synthetic evals prove only the graders and the replay.
 

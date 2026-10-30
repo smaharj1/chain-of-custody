@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Dict, FrozenSet, Optional, Sequence, Tuple
 
-__all__ = ["READ", "ACTION_READ", "FLAG_READ", "WRITE_FLAGS", "HUMAN_ONLY", "HUMAN_SUB", "HUMAN_FLAG", "RECONCILE_FACT_FLAGS",
+__all__ = ["READ", "ACTION_READ", "FLAG_READ", "WRITE_FLAGS", "HUMAN_ONLY", "HUMAN_SUB", "HUMAN_FLAG", "HUMAN_UNLESS_DRY_RUN", "RECONCILE_FACT_FLAGS",
            "APPROVE_RELAY", "classify"]
 
 READ = frozenset({"validate", "status", "render", "doctor", "audit", "report", "help", "--help", "-h", "version", "--version", "retro",
@@ -37,6 +37,8 @@ HUMAN_ONLY: Dict[str, FrozenSet[str]] = {"remote-lock": frozenset({"acquire", "r
                                          "claim": frozenset({"take", "release"})}
 HUMAN_SUB = frozenset({"resume"})
 HUMAN_FLAG: Dict[str, Tuple[str, ...]] = {"parallel": ("--apply",), "migrate-plan": ("--force",)}
+# flags that make the command human-only unless it is a dry run (`abort --rollback-to SHA` resets the work tree; `abort --dry-run --rollback-to SHA` only reports)
+HUMAN_UNLESS_DRY_RUN: Dict[str, Tuple[str, ...]] = {"abort": ("--rollback-to",)}
 RECONCILE_FACT_FLAGS = ("--prs", "--rule-suites")       # with --apply: human; --live: human always
 # approve scope -> the choices the conductor may relay from the human's chat reply (None: any choice)
 APPROVE_RELAY: Dict[str, Optional[FrozenSet[str]]] = {"checkpoint": None, "item": frozenset({"reject", "stop"}),
@@ -104,11 +106,19 @@ def classify(rest: Sequence[str]) -> Tuple[str, str, Optional[str]]:
     after = rest[first + 1:]
     action = after[0] if after and not after[0].startswith("-") else None
 
-    if sub in HUMAN_ONLY and action in HUMAN_ONLY[sub]:
-        return "human", sub, action
+    if sub in HUMAN_ONLY:
+        # the push actions: argparse finds the action word after any options (`remote-lock --owner x acquire`, `claim --by me take F1`), so the only form
+        # that is not human is a plain read word first (or just `--help`); an option, an unknown word or anything else in doubt is a human step
+        head = after[0] if after else None
+        if head in ("-h", "--help") and len(after) == 1:
+            return "read", sub, None
+        if head is not None and head not in ACTION_READ.get(sub, ()):
+            return "human", sub, action if action in HUMAN_ONLY[sub] else next((t for t in after if t in HUMAN_ONLY[sub]), action)
     if sub in HUMAN_SUB:
         return "human", sub, action
     if any(_has_flag(after, f) for f in HUMAN_FLAG.get(sub, ())):
+        return "human", sub, action
+    if sub in HUMAN_UNLESS_DRY_RUN and "--dry-run" not in after and any(_has_flag(after, f) for f in HUMAN_UNLESS_DRY_RUN[sub]):
         return "human", sub, action
     if sub == "reconcile":
         if _has_flag(after, "--live"):

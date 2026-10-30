@@ -41,3 +41,7 @@ Run gitleaks or trufflehog on every loop commit and every evidence artifact, bot
 ## If a secret leaked
 
 Rotate it first. Then remove it from the working tree, the index and history as your team does for any leak. The kit cannot un-leak a value; it only stops new ones.
+
+## Limits
+
+The built-in secrets scan (G11) and the redaction the kit applies to events, reports and logs are heuristic readers. They catch honest mistakes and cheap evasions, and they fail closed where they can: text they cannot read, or that has more matches than a file should, is a blocking finding and not a pass. They are not complete, and a clean result is not evidence that no secret is present. Bounds are part of that: a quoted value is read up to 4096 characters, and past that the rest of the line is redacted whole; a `${NAME:-default}` reference is read when it is nested at most four deep and shorter than 1100 characters, and past that it is read as a literal; a text with more than 20000 matches is one finding. A value in a shape they do not know, built up from parts, or hidden behind an indirection (a command in a script, a value passed through a step output) goes through. The checks that hold are the ones outside the agent's reach: the external scanner in CI (`secrets_scan_cmd`, gitleaks) and the human apply gate. The gaps already known are listed under "Known gaps" in the changelog entry for the secrets and supply-chain gates (the 2.0.0-rc.1 entry of `CHANGELOG.md`; the fragment `changelog.d/fix-b-gates-secrets-supply.md` has them round by round).

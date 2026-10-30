@@ -103,6 +103,12 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(v2["permissions"], live["permissions"])
         self.assertEqual(v2["hooks"], wiring.build_hooks(self.manifest))
 
+    def test_live_settings_are_the_activated_v2_wiring(self) -> None:
+        # Not `wiring.py --check`: an adopter edits settings.json, so only this repo's copy must match exactly.
+        live = load(os.path.join(REPO_ROOT, ".claude", "settings.json"))
+        self.assertEqual(live["hooks"], wiring.build_hooks(self.manifest))
+        self.assertEqual(live["permissions"]["allow"], [])
+
     def test_plugin_form_uses_the_plugin_root(self) -> None:
         doc = wiring.build_plugin_hooks(self.manifest)
         cmds = [h["command"] for gs in doc["hooks"].values() for g in gs for h in g["hooks"]]

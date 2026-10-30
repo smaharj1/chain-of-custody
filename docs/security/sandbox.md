@@ -18,7 +18,7 @@ The OS sandbox is what makes the agent's shell unable to do the things the crede
 
 The snippet also repeats the file rules as `Read(...)` / `Edit(...)` deny rules in `permissions.deny`, because Claude Code derives sandbox filesystem limits from permission rules. The report names `denyRead` and `denyWrite` lists, and the exact key names for the network and filesystem blocks are **unverified (V19)** against the Claude Code version you run. The doctor accepts either form (`sandbox.filesystem.denyRead`, `sandbox.denyRead`, or the permission rules). Check the snippet against `claude`'s settings reference before relying on it.
 
-**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a human edits the kit's own `.claude/scripts/**` (kit development) does not use it, because it would deny exactly those edits.
+**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a human edits the kit's own `.claude/scripts/**` (kit development) does not use it, because it would deny exactly those edits; how such a session runs is in [guards.md](guards.md#developing-the-kit-with-agents).
 
 **Not denied on purpose.** `.claude/context/**` (primers are editable on main), `.claude/pr/`, and `.git/loopctl/run.json`, `lock`, `HALT` and `nonces/`: the conductor legitimately writes the run record and the lock heartbeat and may need `loopctl halt`. Treat those four as writable by the agent; they are not protected by the sandbox, and the guards and the evidence checks do not rely on them for authority.
 

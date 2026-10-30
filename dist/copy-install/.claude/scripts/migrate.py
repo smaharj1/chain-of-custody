@@ -55,6 +55,7 @@ MAX_FILE = 8 * 1024 * 1024
 ADD, UPDATE, MERGE, CONFLICT, KEEP, UPTODATE = "add", "update", "merge", "conflict", "keep", "up-to-date"
 REMOVE, KEEP_RETIRED, SKIP_DELETED, TAKE_KIT, RESOLVED = "remove", "keep-retired", "skip-deleted", "take-kit", "resolved"
 CHANGES = (ADD, UPDATE, MERGE, REMOVE, TAKE_KIT)
+STILL_WIRED = "still wired in your settings.json: switch to the v2 guards first, then run migrate again"
 
 
 class MigrateError(Exception):
@@ -209,6 +210,8 @@ def plan(root: str, new_manifest: Dict[str, Any], new_files: Dict[str, bytes], b
     nf = new_manifest["files"]
     bf = base["files"]
     out = []   # type: List[Entry]
+    settings, _ = read_local(root, ".claude/settings.json")
+    wired = settings.decode("utf-8", "replace") if settings else ""
     for p in sorted(set(nf) | set(bf)):
         in_new, in_base = p in nf, p in bf
         local, problem = read_local(root, p)
@@ -224,6 +227,8 @@ def plan(root: str, new_manifest: Dict[str, Any], new_files: Dict[str, bytes], b
                 continue
             if cls != km.CLASS_KIT:
                 out.append(Entry(p, KEEP, "yours"))
+            elif p.startswith(".claude/hooks/") and p in wired:   # deleting it would leave a hook that fails open
+                out.append(Entry(p, KEEP_RETIRED, STILL_WIRED))
             elif L == B:
                 out.append(Entry(p, REMOVE, "no longer shipped, and you never changed it"))
             else:
@@ -279,8 +284,9 @@ def notes_for(root: str, entries: Sequence[Entry], new_manifest: Dict[str, Any])
         notes.append("Modes are skills now (.claude/skills/<mode>/SKILL.md). Unmodified .claude/commands/ files are removed. A command you changed stays: "
                      "move your edits into the skill of the same name and delete the command file (with both present, which one runs is Claude Code's choice).")
     if ".claude/settings.v2.json" in by or os.path.isfile(os.path.join(root, ".claude", "settings.v2.json")):
-        notes.append(".claude/settings.json is yours and was not touched. The v2 guards are staged in .claude/settings.v2.json; switching to them is a "
-                     "human step: read docs/packaging.md (Activating the v2 guards), then merge the hooks block.")
+        notes.append(".claude/settings.json is yours and was not touched. A fresh install ships the v2 guards wired in; for an upgrade, switching "
+                     "is a human step: read docs/packaging.md (The v2 guards are on by default), merge the hooks block from .claude/settings.v2.json, "
+                     "then run migrate again to remove the retired v1 hook scripts.")
     notes.append(".claude/loop.config.md is yours and was not touched. Keys added since your version use their defaults. "
                  "Run `python3 .claude/scripts/doctor.py` to see what the new version expects.")
     return notes
@@ -354,7 +360,8 @@ def apply(root: str, source: str, entries: Sequence[Entry], new_manifest: Dict[s
         elif e.action == CONFLICT and e.marked is not None:
             write_atomic(safe_dest(root, WORK_DIR + "/conflicts/" + e.path), e.marked, False)
     pending = [e.path for e in entries if e.action in (CONFLICT, KEEP_RETIRED)]
-    finished = not [e for e in entries if e.action == CONFLICT]
+    # A retired hook still wired keeps the old manifest as the base, so the run after the switch can remove it.
+    finished = not [e for e in entries if e.action == CONFLICT or (e.action == KEEP_RETIRED and e.detail == STILL_WIRED)]
     if finished:
         for rel in (km.VERSION_REL, km.MANIFEST_REL):
             with open(os.path.join(source, rel), "rb") as fh:
@@ -402,7 +409,8 @@ def render(doc: Dict[str, Any], entries: Sequence[Entry], notes: Sequence[str], 
     if applied:
         lines.append("")
         lines.append("applied: %d file(s) written or removed%s" % (len(applied["wrote"]), "; backups in " + applied["backup"] if applied["backup"] else ""))
-        lines.append("finished: KIT_VERSION and KIT_MANIFEST updated" if applied["finished"] else "not finished: resolve the conflicts above, then run it again")
+        lines.append("finished: KIT_VERSION and KIT_MANIFEST updated" if applied["finished"] else
+                     "not finished: resolve the conflicts above, or switch settings.json to the v2 guards while a retired hook is still wired, then run it again")
         lines.append("when you are happy: review `git diff`, commit, and delete .claude/.migrate/")
     elif any(e.action in CHANGES for e in entries):
         lines.append("")

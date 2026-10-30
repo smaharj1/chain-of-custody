@@ -762,6 +762,8 @@ def _h_lfs(ctx: Ctx, g: _Git) -> Optional[Decision]:
     pos = _positionals(g.rest)
     if pos and pos[0].lower() in ("install", "uninstall", "update", "track", "untrack", "migrate"):
         return deny(G, "config-write", "git lfs %s writes hooks, filters and .gitattributes (report §5.9)" % pos[0])
+    if pos and pos[0].lower() in ("push", "pre-push", "post-receive"):
+        return deny(G, "push", "git lfs %s uploads objects to the remote: it is a push, and no agent pushes (D3). The human runs it" % pos[0])
     return _need(ctx, 3, "lfs", "lfs")
 
 
@@ -882,14 +884,14 @@ def _h_push(ctx: Ctx, g: _Git) -> Optional[Decision]:
     # human-started `loopctl run`, which does not go through this hook. The checks below only choose the more specific message and rule id
     # for a conductor; whatever they let through is denied at the end.
     if ctx.kind != "conductor":
-        who = "an engineer or critic" if ctx.is_subagent else "this session"
-        return deny(G, "push", "git push is a remote write: agents never push (humans push at checkpoints, or loopctl does with the bot "
-                    "identity). %s is not the registered conductor; run `! git push ...` yourself or use pr_prepare" % who)
+        return deny(G, "push", "git push is a remote write: no agent pushes, the registered conductor included. The human pushes (`! git push ...`, or the commands "
+                    "`pr_prepare.py prepare` prints), or the Keeper does inside a `loopctl run` the human started")
     if ctx.tainted:
         return deny(G, "push-tainted", "this session has read untrusted content (§5.3): it holds no push authority")
     delivery = str(ctx.cfg("delivery", "local") or "local")
     if delivery not in ("push-branch", "draft-pr", "pr-automerge"):
-        return deny(G, "push-delivery", "delivery is %r: nothing is pushed by an agent (set delivery in loop.config, an H6 change)" % delivery)
+        return deny(G, "push-delivery", "delivery is %r: nothing is pushed by an agent, whatever `delivery` says; the human pushes, or the Keeper inside a `loopctl run` the "
+                    "human started (`delivery` in loop.config, an H6 file, only chooses what the Keeper and `pr_prepare.py` do)" % delivery)
     if dynamic_arg:
         return deny(G, "dynamic-args", "git push with a remote or refspec computed at run time cannot be checked against the refspec allowlist")
     if mirror:
@@ -1085,9 +1087,9 @@ def _check_github_http(ctx: Ctx, inv: Inv) -> Optional[Decision]:
             mutating = True
         elif a.startswith("-X") and len(a) > 2 and a[2:].upper() != "GET":
             mutating = True
-        elif a.startswith("--request=") and a.split("=", 1)[1].upper() != "GET":
+        elif a.startswith(("--request=", "--method=")) and a.split("=", 1)[1].upper() != "GET":
             mutating = True
-        elif a.startswith(("--data", "--form", "--upload-file", "--json", "--post")):
+        elif a.startswith(("--data", "--form", "--upload-file", "--json", "--post", "--body")):
             mutating = True
         elif a.startswith("-") and not a.startswith("--") and any(ch in "dFT" for ch in a[1:]) and not a.startswith("-X"):
             mutating = True          # curl: -d data, -F form, -T upload (-f is --fail and is fine)

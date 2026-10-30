@@ -144,6 +144,15 @@ def expand_glob(word: str, cwd: str, home: Optional[str] = None) -> List[str]:
         hits = sorted(_glob.glob(pat))
     except Exception:
         hits = []
+    if not hits:
+        # a file that does not exist yet (`.g?t/loopctl/sessions/new.json`): the directory part of the pattern may still name a real directory
+        head, tail = os.path.split(pat.rstrip("/"))
+        if head and tail and not any(c in tail for c in "*?[") and any(c in head for c in "*?["):
+            try:
+                dirs = sorted(_glob.glob(head))
+            except Exception:
+                dirs = []
+            hits = [os.path.join(d, tail) for d in dirs if os.path.isdir(d)]
     return hits[:64] if hits else [word]
 
 

@@ -332,7 +332,7 @@ python3 ../kit/.claude/scripts/migrate.py --repo . --apply    # from a plain ter
 
 `.claude/KIT_MANIFEST` records every installed file and its class, so the script can tell your edits from the kit's. It replaces what you did not touch, three-way merges what you and the kit both changed, and leaves your own files alone. It refuses to run inside a Claude Code session and backs up everything it replaces. The rules, conflicts and the move from v1 commands to skills are in [`docs/packaging.md`](docs/packaging.md).
 
-**A v1 install must wire the guards by hand.** `migrate.py` leaves `.claude/settings.json` alone, and it removes the v1 hook scripts you never edited, so right after it applies, replace the `hooks` block with the v2 one ("Activating the v2 guards" in the same page). Until you do, nothing guards git. If a CHANGELOG entry touches another file of yours, merge that change by hand.
+**A v1 install must wire the guards by hand.** `migrate.py` leaves `.claude/settings.json` alone, and it keeps the v1 hook scripts while your settings still name them. Right after it applies, replace the `hooks` block with the v2 one ("The v2 guards are on by default" in the same page), then run the migration again to remove the old scripts. Until you switch, only the v1 hooks guard. If a CHANGELOG entry touches another file of yours, merge that change by hand.
 
 ## Reference
 

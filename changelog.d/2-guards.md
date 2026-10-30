@@ -22,7 +22,7 @@
 
 ## Upgrade impact
 
-Staged only. Nothing is active until the release stage merges the hooks block of `.claude/settings.v2.json` into `.claude/settings.json` and removes the v1 hooks in one reviewed commit (IMP-13). `.claude/settings.json` and `.claude/hooks/*` are untouched. `.claude/loop.config.md` is regenerated with four new keys. After activation, edits to `.claude/scripts/**` and `.claude/context` become H6 (a human, or kit-dev mode, edits them).
+Staged in this package; the release stage merges the hooks block of `.claude/settings.v2.json` into `.claude/settings.json` and removes the v1 hooks in one reviewed commit (IMP-13). `.claude/loop.config.md` is regenerated with four new keys. After activation, edits to `.claude/scripts/**` and `.claude/context` become H6 (a human edits them, or a kit-development session as in [docs/security/guards.md](../docs/security/guards.md#developing-the-kit-with-agents)).
 
 ## New config keys
 

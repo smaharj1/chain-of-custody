@@ -39,6 +39,7 @@ doctor's deploy-surface scan follows one level of scripts); `.github/**` is a CO
 """
 from __future__ import annotations
 
+import functools
 import posixpath
 import re
 import shlex
@@ -63,7 +64,6 @@ def bot_reachable(events: Dict[str, Any]) -> List[str]:
 
 
 _CMD_RE = re.compile(r"(?<![\w./-])(terraform|tofu|terragrunt|pulumi|cdktf|cdk8s|cdk|kubectl|helm|sam)\b")
-_CFN_RE = re.compile(r"\baws\s+cloudformation\b")
 _INFRA_USES = ("hashicorp/setup-terraform", "opentofu/setup-opentofu", "pulumi/actions", "aws-actions/configure-aws-credentials",
                "hashicorp/terraform-github-actions", "dflook/terraform-", "aws-actions/aws-cloudformation-github-deploy")
 _APPLY_USES = ("hashicorp/terraform-github-actions", "dflook/terraform-apply", "dflook/terraform-destroy", "dflook/tofu-apply", "pulumi/actions",
@@ -72,27 +72,40 @@ _APPLY_USES = ("hashicorp/terraform-github-actions", "dflook/terraform-apply", "
 _MODE_USES = ("hashicorp/terraform-github-actions", "pulumi/actions", "gruntwork-io/terragrunt-action")   # one action, several commands: read the command
 _CRED_SECRETS = workflows.CRED_SECRETS
 _CRED_ACTIONS = workflows.CRED_ACTIONS
-_TF_SUBCMD = re.compile(r"(?<![\w./-])(terraform|tofu)\b((?:[ \t]+-chdir=\S+)*)[ \t]+([a-z][a-z-]*)\b([^\n;&|]*)")   # one line: a verb on the next line is not this command's
 _VALUE_FLAGS = {"-var", "-var-file", "-target", "-replace", "-parallelism", "-lock-timeout", "-state", "-state-out", "-backup", "-out", "-chdir"}
-_FL = r"(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*"     # flags between a program and its verb
+_BEHIND = workflows.PROG_BEHIND    # what may not stand in front of a program name (shared with the doctor): the start of every pattern below, and the flag run's stop rule
+
+
+def _fl(prog: str, words: str = "") -> str:
+    """The flags between a program and its verb (linear on hostile text; see `workflows.flags_re`), with this module's rule for where a call may start."""
+    return workflows.flags_re(prog, behind=_BEHIND, words=words)
+
+
+# `terraform [flags] SUBCOMMAND args`: the flags are read as the doctor reads them (any flag, a bare variable word, a quoted value with blanks). One line: a
+# verb on the next line is not this command's (`[^\S\n]` is any blank but a newline).
+_TF_SUBCMD = re.compile(_BEHIND + r"(terraform|tofu)\b(" + _fl("terraform|tofu") + r")[^\S\n]+([a-z][a-z-]*)\b([^\n;&|]*)")
+_CFN_RE = re.compile(_BEHIND + r"aws\b" + _fl("aws") + r"\s+cloudformation\b")      # `aws --region x cloudformation deploy`: the global flags come first (D4)
 _APPLY_OTHER = [
-    ("cdk deploy", re.compile(r"(?<![\w./-])cdk\b" + _FL + r"\s+(?:deploy|destroy)\b")),
-    ("cdktf deploy", re.compile(r"(?<![\w./-])cdktf\b" + _FL + r"\s+(?:deploy|destroy)\b")),
-    ("sam deploy", re.compile(r"(?<![\w./-])sam\b" + _FL + r"\s+(?:deploy|sync|delete)\b")),
-    ("copilot deploy", re.compile(r"(?<![\w./-])copilot\b" + _FL + r"\s+(?:(?:svc|env|job|pipeline)\s+)?deploy\b")),
-    ("eb deploy", re.compile(r"(?<![\w./-])eb\b" + _FL + r"\s+(?:deploy|create|terminate|upgrade|swap)\b")),
-    ("serverless deploy", re.compile(r"(?<![\w./-])(?:serverless|sls)\b" + _FL + r"\s+(?:deploy|remove)\b")),
+    ("cdk deploy", re.compile(r"(?<![\w./-])cdk\b" + _fl("cdk") + r"\s+(?:deploy|destroy)\b")),
+    ("cdktf deploy", re.compile(r"(?<![\w./-])cdktf\b" + _fl("cdktf") + r"\s+(?:deploy|destroy)\b")),
+    ("sam deploy", re.compile(r"(?<![\w./-])sam\b" + _fl("sam") + r"\s+(?:deploy|sync|delete)\b")),
+    ("copilot deploy", re.compile(r"(?<![\w./-])copilot\b" + _fl("copilot") + r"\s+(?:(?:svc|env|job|pipeline)\s+)?deploy\b")),
+    ("eb deploy", re.compile(r"(?<![\w./-])eb\b" + _fl("eb") + r"\s+(?:deploy|create|terminate|upgrade|swap)\b")),
+    ("serverless deploy", re.compile(r"(?<![\w./-])(?:serverless|sls)\b" + _fl("serverless|sls") + r"\s+(?:deploy|remove)\b")),
     ("ansible-playbook", re.compile(r"(?<![\w./-])ansible-playbook\b")),
-    ("pulumi up", re.compile(r"(?<![\w./-])pulumi\b" + _FL + r"\s+(?:up|update|destroy)\b")),
-    ("cloudformation", re.compile(r"\baws\s+cloudformation\s+(?:deploy|execute-change-set|create-stack|update-stack|delete-stack)\b")),
-    ("kubectl apply", re.compile(r"(?<![\w./-])kubectl\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:apply|replace|delete|patch|create)\b")),
-    ("helm upgrade", re.compile(r"(?<![\w./-])helm\b(?:\s+-{1,2}[\w-]+(?:[= ]\S+)?)*\s+(?:upgrade|install|uninstall|rollback)\b")),
-    ("terragrunt apply", re.compile(r"(?<![\w./-])terragrunt\b" + _FL + r"\s+(?:(?:run-all|run" + _FL + r"\s+(?:--all|-a))" + _FL + r"\s+)?(?:apply|destroy)\b")),
+    ("pulumi up", re.compile(r"(?<![\w./-])pulumi\b" + _fl("pulumi") + r"\s+(?:up|update|destroy)\b")),
+    ("cloudformation", re.compile(_BEHIND + r"aws\b" + _fl("aws") + r"\s+cloudformation\s+(?:deploy|execute-change-set|create-stack|update-stack|delete-stack)\b")),
+    ("kubectl apply", re.compile(r"(?<![\w./-])kubectl\b" + _fl("kubectl") + r"\s+(?:apply|replace|delete|patch|create)\b")),
+    ("helm upgrade", re.compile(r"(?<![\w./-])helm\b" + _fl("helm") + r"\s+(?:upgrade|install|uninstall|rollback)\b")),
+    ("terragrunt apply", re.compile(r"(?<![\w./-])terragrunt\b" + _fl("terragrunt", workflows.TERRAGRUNT_WORDS) + r"\s+(?:apply|destroy)\b")),
 ]  # type: List[Tuple[str, Any]]
-_INDIRECT_RE = re.compile(
-    r"(?:^|[;&|({]|\bthen\b|\bdo\b|\belse\b)[ \t]*(?:\w+=\S+[ \t]+)*(?:(?:sudo|exec|command|nohup|time|env)[ \t]+(?:\w+=\S+[ \t]+)*)*"
-    r"(?:\"?\$\{?[A-Za-z_]\w*\}?\"?|\$\([^)\n]{0,200}\)|`[^`\n]{0,200}`)[ \t]+(?:-\S+[ \t]+)*(?:apply|destroy|deploy|up)\b", re.M)
-_GATE_CMDS = ("authorize", "verify-hash", "base-is-main", "require-main-ref", "require-run-approval")
+# A command that is a variable, a substitution or a backtick pair, in front of a deploy verb. The same bounded text as the doctor's (`workflows.var_command_re`):
+# the old `(?:\w+=\S+[ \t]+)*` and `(?:-\S+[ \t]+)*` ran over `;` to the end of the text from every start, and `;A=x` repeated 50,000 times took 44 s (D1).
+_INDIRECT_RE = re.compile(workflows.var_command_re(workflows.VAR_WORD + r"|\$\([^)\n]{0,200}\)|`[^`\n]{0,200}`", r"[;&|({]|\bthen\b|\bdo\b|\belse\b",
+                                                   "apply|destroy|deploy|up"), re.M)
+_GATE_CMDS = ("authorize", "verify-hash", "base-is-main", "require-main-ref", "require-run-approval", "plan-digest")
+_GATE_ANY = re.compile(r"gate\.py\s+(?:%s)\b" % "|".join(_GATE_CMDS))
+_GATE_TAIL = re.compile(r"\|\|\s*\S|(?<!\|)\|(?!\|)|;\s*(?:true|:|exit\s+0)\b|&\s*$")
 _INIT_LIKE = ("init", "validate", "plan", "apply", "destroy", "providers", "get", "test", "console", "refresh", "import", "show")
 _REF_OK = re.compile(r"^\s*(?:main|master|refs/heads/main|\$\{\{\s*(?:github\.sha|github\.ref|github\.event\.repository\.default_branch|steps\.[\w.-]+\.outputs\.[\w.-]+|needs\.[\w.-]+\.outputs\.[\w.-]+)\s*\}\})\s*$")
 
@@ -104,13 +117,12 @@ class Ctx(object):
         self.job_perm = job_perm
 
 
+@functools.lru_cache(maxsize=128)
 def _norm_run(text: str) -> str:
-    """A run: script with comments stripped and the spellings that hide a command word normalised (`workflows.normalize_shell`)."""
-    out = []  # type: List[str]
-    for line in text.replace("\\\n", " ").split("\n"):
-        m = re.search(r"(?:^|\s)#", line)
-        out.append(line[:m.start()] if m else line)
-    return workflows.normalize_shell("\n".join(out))
+    """A run: script with comments stripped (`workflows.strip_comments`: quote-aware, and a line whose quoting is unclear keeps its `#`) and the
+    spellings that hide a command word normalised (`workflows.normalize_shell`). Comments go first, one physical line at a time, and the continuations
+    are joined after: a comment ends at its line, so the `\\` that ends `echo a # c \\` continues nothing and the next line is a command of its own (D3)."""
+    return workflows.normalize_shell(workflows.strip_comments(text).replace("\\\r\n", " ").replace("\\\n", " "))
 
 
 def _cmd(step: Any) -> str:
@@ -118,15 +130,47 @@ def _cmd(step: Any) -> str:
     return workflows.step_command_text(step)
 
 
+def _policy_prefixes(text: str) -> List[str]:
+    """For each `source_policy.py` in the text, the non-space characters in front of it (the path it is run from; at most 400 of them). `(\\S*)` in
+    front of a literal costs a scan to the start of the word per start position, so a long word is quadratic (R-INFRA-3)."""
+    out = []  # type: List[str]
+    i = 0
+    while True:
+        j = text.find("source_policy.py", i)
+        if j < 0:
+            return out
+        k = j
+        while k > 0 and j - k < 400 and not text[k - 1].isspace():
+            k -= 1
+        out.append(text[k:j])
+        i = j + len("source_policy.py")
+
+
+def _gate_tail(run: str) -> bool:
+    """A gate.py call followed on its line by `|| x`, a pipe, `; true` or a trailing `&`. Per line, from the first gate call only: a later call on the
+    same line has a subset of its tail, and a scan per call is quadratic on a line of repeated `gate.py authorize` words (R-INFRA-3)."""
+    for line in run.split("\n"):
+        m = _GATE_ANY.search(line)
+        if m and _GATE_TAIL.search(line, m.end()):
+            return True
+    return False
+
+
 def _tf_calls(run: str) -> List[Tuple[str, str, List[str]]]:
-    """(tool, subcommand, args) for every terraform/tofu call in a run: script."""
+    """(tool, subcommand, args) for every terraform/tofu call in a run: script. A call is listed once however often it is written: the normalised text
+    also holds a copy of the lines with a quoted string or an expression in them (`workflows.normalize_shell`), where `-chdir=${{ x }}` is one word."""
     calls = []  # type: List[Tuple[str, str, List[str]]]
+    seen = set()  # type: Set[Tuple[str, str, Tuple[str, ...]]]
     for m in _TF_SUBCMD.finditer(_norm_run(run)):
         try:
             args = shlex.split(m.group(4))
         except ValueError:
             args = m.group(4).split()
-        calls.append((m.group(1), m.group(3), args))
+        args = [a.replace("\x01", " ") for a in args]       # the blanks `normalize_shell` made one word in the copy
+        key = (m.group(1), m.group(3), tuple(args))
+        if key not in seen:
+            seen.add(key)
+            calls.append((m.group(1), m.group(3), args))
     return calls
 
 
@@ -222,52 +266,119 @@ def _chain_text(wf: Any, job: Any, before: Optional[int] = None) -> str:
     return "\n".join(parts)
 
 
-_AUTHZ_RE = re.compile(r"^[ \t]*(?:(?:\S*/)?python3?[ \t]+)?(?:\S*/)?gate\.py[ \t]+authorize\b([^\n]*)", re.M)
 _ACTOR_ARG_RE = re.compile(r"--actor[ \t=]+\S*\$")
 _OPENS_BLOCK_RE = re.compile(r"^[ \t]*(?:if|elif|else|case|while|until|for|select|exit|return)\b|(?:\bthen|\bdo|\belse|&&|\|\||\||\{|\()[ \t]*$")
+_GATE_SHELLS = ("", "bash", "sh")   # a `shell:` that runs the script as given; anything else (`true {0}`, `python {0}`) can turn the whole step into a no-op
 
 
-def _step_authorizes(st: Any) -> bool:
-    """One step that runs `gate.py authorize` for real: as the command itself (not an argument of `echo`, not in a comment), unconditionally
-    (no step `if:`, no `if`/`case`/loop around it, no `&&` or `||` in front of it, no `exit` before it), and with `continue-on-error`
-    absent or the literal `false` (so `${{ true }}` does not count)."""
-    if st.if_.strip():
+def _gate_rx(cmd: str) -> "re.Pattern":
+    """`[python3] [path/]gate.py CMD ARGS` as a command on its own line."""
+    return re.compile(r"^[ \t]*(?:(?:\S*/)?python3?[ \t]+)?(?:\S*/)?gate\.py[ \t]+" + re.escape(cmd) + r"\b([^\n]*)")
+
+
+def _step_plain(st: Any) -> bool:
+    """A step whose commands really run and whose failure fails the job: no `if:` of any kind (a literal `if: false` is falsy in the parsed
+    value, so the key is tested, not its text), `continue-on-error` absent or the literal `false`, and no custom `shell:`."""
+    if "if" in st.raw:
         return False
     if str(st.raw.get("continue-on-error", "")).strip().lower() not in ("", "false"):
         return False
+    return str(st.raw.get("shell", "") or "").strip().lower() in _GATE_SHELLS
+
+
+def _gate_args(st: Any, cmd: str) -> Optional[str]:
+    """The argument text of `gate.py CMD` when this step runs it for real: as the command itself (not an argument of `echo`, not in a comment),
+    in a plain step (`_step_plain`), with no `if`/`case`/loop around it, no `&&` or `||` in front of it and no `exit` before it. None otherwise.
+    Every gate command is read this way (R-INFRA-2), not only `authorize`."""
+    if not _step_plain(st):
+        return None
     lines = _norm_run(st.run).split("\n")
+    rx = _gate_rx(cmd)
     for i, line in enumerate(lines):
-        m = _AUTHZ_RE.match(line)
+        m = rx.match(line)
         if m:
-            # the actor must come from the run (`--actor "$ACTOR"`, `--actor "${{ github.actor }}"`): a constant name makes the check pass for ever
-            return bool(_ACTOR_ARG_RE.search(m.group(1))) and not any(_OPENS_BLOCK_RE.search(prev) for prev in lines[:i] if prev.strip())
-    return False
+            if any(_OPENS_BLOCK_RE.search(prev) for prev in lines[:i] if prev.strip()):
+                return None
+            return m.group(1)
+    return None
+
+
+def _step_authorizes(st: Any) -> bool:
+    """One step that runs `gate.py authorize` for real (`_gate_args`), with the actor taken from the run (`--actor "$ACTOR"`,
+    `--actor "${{ github.actor }}"`): a constant name makes the check pass for ever."""
+    args = _gate_args(st, "authorize")
+    return args is not None and bool(_ACTOR_ARG_RE.search(args))
+
+
+def _chain_steps(wf: Any, job: Any, before: Optional[int] = None, own_only: bool = False) -> List[Any]:
+    """The steps of the job's ancestors (unless own_only) and of the job itself (those before step index `before`, when given)."""
+    out = []  # type: List[Any]
+    for j in ([] if own_only else _ancestors(wf, job.id)) + [job]:
+        for st in j.steps:
+            if j is job and before is not None and st.index >= before:
+                continue
+            out.append(st)
+    return out
+
+
+def _has_gate(wf: Any, job: Any, cmd: str, before: Optional[int] = None, own_only: bool = False) -> bool:
+    return any(_gate_args(st, cmd) is not None for st in _chain_steps(wf, job, before, own_only))
 
 
 def _has_actor_check(wf: Any, job: Any, before: Optional[int] = None) -> bool:
     """Only the kit's gate.py authorize counts: a hand-written comparison cannot be checked structurally, so it is reported and a human reads it.
     The step must be in the job (before step `before`, when given) or in a job it needs: a job-level `if:` that skips an earlier job skips
     this one too, and a step in a job this one does not need gates nothing."""
-    for j in _ancestors(wf, job.id) + [job]:
-        for st in j.steps:
-            if j is job and before is not None and st.index >= before:
-                continue
-            if _step_authorizes(st):
+    return any(_step_authorizes(st) for st in _chain_steps(wf, job, before))
+
+
+_MAIN_REF_EXPR = re.compile(r"github\.ref\s*==\s*['\"]refs/heads/main['\"]|github\.ref_name\s*==\s*['\"]main['\"]")
+
+
+def _job_if_chain(wf: Any, job: Any) -> List[str]:
+    return [j.if_ for j in _ancestors(wf, job.id) + [job]]
+
+
+def _has_main_ref_check(wf: Any, job: Any, before: Optional[int] = None) -> bool:
+    """`gate.py require-main-ref` as a real command, or a job-level `if:` (this job's or an ancestor's, which skips this job too) that compares the
+    ref with main and is not widened by `||` or a status function. A step `if:` or an `echo` of the words gates nothing."""
+    if _has_gate(wf, job, "require-main-ref", before):
+        return True
+    return any(_MAIN_REF_EXPR.search(i) and "||" not in i and not re.search(r"\b(?:always|failure|cancelled)\s*\(", i) for i in _job_if_chain(wf, job))
+
+
+_HASH_RX = re.compile(r"^[ \t]*(?:sha256sum|shasum[ \t]+-a[ \t]+256)[ \t]+(?:-c|--check)\b|\|[ \t]*(?:sha256sum|shasum[ \t]+-a[ \t]+256)[ \t]+(?:-c|--check)\b", re.M)
+
+
+def _has_hash_check(wf: Any, job: Any, before: Optional[int] = None, own_only: bool = False) -> bool:
+    for st in _chain_steps(wf, job, before, own_only):
+        if _gate_args(st, "verify-hash") is not None:
+            return True
+        if _step_plain(st) and _HASH_RX.search(_norm_run(st.run)):
+            return True
+    return False
+
+
+_LS_REMOTE_RX = re.compile(r"^[ \t]*(?:[\w]+=\S*[ \t]+)*git[ \t]+ls-remote\b|\$\([ \t]*git[ \t]+ls-remote\b", re.M)
+
+
+def _has_sha_check(wf: Any, job: Any, before: Optional[int] = None, own_only: bool = False) -> bool:
+    for st in _chain_steps(wf, job, before, own_only):
+        if _gate_args(st, "base-is-main") is not None:
+            return True
+        if _step_plain(st):
+            run = _norm_run(st.run)
+            if _LS_REMOTE_RX.search(run) and re.search(r"GITHUB_SHA|github\.sha|PLANNED_SHA|planned[_-]sha", run + " " + st.text):
                 return True
     return False
 
 
-def _has_main_ref_check(text: str) -> bool:
-    return bool(re.search(r"gate\.py\s+require-main-ref\b|github\.ref\s*==\s*['\"]refs/heads/main['\"]|github\.ref_name\s*==\s*['\"]main['\"]", text))
+_DIGEST_RX = re.compile(r"(?:^[ \t]*|\$\([ \t]*|`[ \t]*)(?:(?:\S*/)?python3?[ \t]+)?(?:\S*/)?gate\.py[ \t]+plan-digest\b", re.M)
 
 
-def _has_hash_check(text: str) -> bool:
-    return bool(re.search(r"gate\.py\s+verify-hash\b|sha256sum\s+(?:-c|--check)\b|shasum\s+-a\s+256\s+(?:-c|--check)\b", text))
-
-
-def _has_sha_check(text: str) -> bool:
-    return bool(re.search(r"gate\.py\s+base-is-main\b", text)) or bool(
-        re.search(r"ls-remote", text) and re.search(r"GITHUB_SHA|github\.sha|PLANNED_SHA|planned[_-]sha", text))
+def _has_digest_check(wf: Any, job: Any, before: Optional[int] = None, own_only: bool = False) -> bool:
+    """`gate.py plan-digest` run for real (as a command or in `$(...)`) in a plain step."""
+    return any(_step_plain(st) and _DIGEST_RX.search(_norm_run(st.run)) for st in _chain_steps(wf, job, before, own_only))
 
 
 def _events_only_dispatch(events: Dict[str, Any]) -> bool:
@@ -295,11 +406,18 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
     has_apply_anywhere = False
     wf_text = "\n".join(j.text for j in wf.jobs.values())
 
+    # a default shell that is not a real shell turns every `run:` step, the gate commands included, into a no-op
+    for where, d in [("the workflow", wf.raw.get("defaults"))] + [("job %s" % j.id, j.raw.get("defaults")) for j in wf.jobs.values()]:
+        run_d = d.get("run") if isinstance(d, dict) else None
+        sh = str(run_d.get("shell", "") or "").strip().lower() if isinstance(run_d, dict) else ""
+        if sh not in _GATE_SHELLS:
+            out.append(("infra.gate-bypassable", ERROR, "", "%s sets defaults.run.shell to %r: a shell that does not run the script as written makes every gate command a no-op" % (where, sh)))
+
     # static credentials
     for jid, job in wf.jobs.items():
         m = _CRED_SECRETS.search(job.text)
         if m:
-            out.append(("infra.static-credentials", ERROR, jid, "a long-lived cloud credential (secrets.%s): use an OIDC role whose trust is pinned to an environment or workflow (docs/security/infra-human-gate.md)" % m.group(1)))
+            out.append(("infra.static-credentials", ERROR, jid, "a long-lived cloud credential (secrets.%s): use an OIDC role whose trust is pinned to an environment or workflow (docs/security/infra-human-gate.md)" % (m.group(1) or "[...]")))
         for s in job.steps:
             for key in ("aws-access-key-id", "aws-secret-access-key", "credentials_json"):
                 if key in s.with_ and "oidc" not in str(s.with_.get(key)).lower():
@@ -307,11 +425,10 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                     break
         for st in job.steps:
             run = _norm_run(st.run)
-            if not re.search(r"gate\.py\s+(?:%s)\b" % "|".join(_GATE_CMDS), run):
+            if not _GATE_ANY.search(run):
                 continue
             quiet = str(st.raw.get("continue-on-error", "")).lower() == "true"
-            tail = re.search(r"gate\.py\s+(?:%s)\b[^\n]*?(?:\|\|\s*\S|(?<!\|)\|(?!\|)|;\s*(?:true|:|exit\s+0)\b|&\s*$)" % "|".join(_GATE_CMDS), run, re.M)
-            if quiet or tail or re.search(r"\bset\s+\+e\b", run):
+            if quiet or _gate_tail(run) or re.search(r"\bset\s+\+e\b", run):
                 out.append(("infra.gate-bypassable", ERROR, jid, "a gate.py check can fail without failing the step (continue-on-error, `||`, a pipe, `set +e`)"))
                 break
         for st in job.steps:
@@ -351,13 +468,13 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
         if bad_if:
             out.append(("infra.gate-bypassable", ERROR, jid, "the apply job's if: contains %s(): it would run after a failed gate" % bad_if.group(0).rstrip("( ")))
         # gate
-        chain = _chain_text(wf, job)
+        first_apply = min(s.index for s, _ in applies)
         dispatch_only = _events_only_dispatch(events)
         if not job.environment:
-            if not (dispatch_only and _has_actor_check(wf, job, min(s.index for s, _ in applies))):
+            if not (dispatch_only and _has_actor_check(wf, job, first_apply)):
                 out.append(("infra.apply-ungated", ERROR, jid,
                             "an apply (%s) with no `environment:` (required reviewers) and no dispatch-only actor check against factory_approvers: nothing needs a human" % ", ".join(labels)))
-        if "workflow_dispatch" in events and not _has_main_ref_check(chain + "\n" + _chain_runs(wf, job)):
+        if "workflow_dispatch" in events and not _has_main_ref_check(wf, job, first_apply):
             out.append(("infra.dispatch-ref-unchecked", ERROR, jid, "a dispatch can run on any branch; require refs/heads/main (gate.py require-main-ref) before planning or applying"))
         # one job for plan and apply
         plans_here = [s for s in job.steps for tool, sub, args in _tf_calls(_cmd(s)) if sub == "plan"]
@@ -365,7 +482,6 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
             out.append(("infra.apply-same-job-as-plan", ERROR, jid, "plan and apply are in one job: an Environment approval comes before the job starts, so nobody approves the plan. Plan in an earlier job"))
         # per-apply-step checks
         for s, lab in applies:
-            before_text = _chain_runs(wf, job, before=s.index, own_only=True)
             for tool, sub, args in _tf_calls(_cmd(s)):
                 if sub in ("apply", "destroy"):
                     if not _has_plan_arg(args):
@@ -376,11 +492,11 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
             if lab.split()[0] not in ("terraform", "tofu"):
                 out.append(("infra.apply-tool-unsupported", WARN, jid, "%s: this kit's apply flow (plan, hash, base-is-main, approve) is written for terraform and tofu; keep the same human gate with a change set or equivalent" % lab))
                 continue
-            if not _has_hash_check(before_text):
+            if not _has_hash_check(wf, job, s.index, own_only=True):
                 out.append(("infra.apply-plan-hash-unverified", ERROR, jid, "the saved plan is not hash-checked before apply (gate.py verify-hash or sha256sum -c): it could have changed since it was approved"))
-            if not _has_sha_check(before_text):
+            if not _has_sha_check(wf, job, s.index, own_only=True):
                 out.append(("infra.apply-main-sha-unchecked", ERROR, jid, "nothing compares the planned commit with the tip of main before apply (gate.py base-is-main): a plan of an older main could be applied"))
-            if not job.environment and "plan-digest" not in before_text:
+            if not job.environment and not _has_digest_check(wf, job, s.index, own_only=True):
                 out.append(("infra.apply-digest-unchecked", ERROR, jid, "a dispatch apply must compare the fresh plan's digest (gate.py plan-digest) with the one a human approved"))
         # checkout refs in the apply job and its plan job
         for j in [job] + _ancestors(wf, jid):
@@ -391,7 +507,7 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                         out.append(("infra.apply-ref-input", ERROR, j.id, "checkout ref %r in an apply path: apply only main (or github.sha on a push to main)" % ref))
                     if ctx.step_pr(s):
                         out.append(("infra.apply-ref-input", ERROR, j.id, "an apply path checks out pull request code"))
-        if job.environment and not re.search(r"gate\.py\s+require-run-approval\b", _chain_runs(wf, job)):
+        if job.environment and not _has_gate(wf, job, "require-run-approval", first_apply):
             out.append(("infra.environment-approval-unverified", ERROR, jid, "an Environment created without reviewers gates nothing, and this lint cannot see GitHub: add gate.py require-run-approval (in this job or one it needs) so the apply refuses unless a listed approver approved this run"))
         if not (wf.raw.get("concurrency") or job.raw.get("concurrency")):
             out.append(("infra.apply-concurrency", WARN, jid, "no concurrency group: two applies of the same state could overlap"))
@@ -412,11 +528,10 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                 continue
             if any(apply_calls(s) for s in job.steps):
                 continue
-            chain = _chain_text(wf, job)
             untrusted = [e for e in pr_like]
             if not untrusted:
                 continue
-            ok_label = "pull_request_target" in events and set(untrusted) <= {"pull_request_target"} and "plan-ok" in chain and _has_actor_check(wf, job)
+            ok_label = "pull_request_target" in events and set(untrusted) <= {"pull_request_target"} and any("plan-ok" in i for i in _job_if_chain(wf, job)) and _has_actor_check(wf, job)
             if not ok_label:
                 out.append(("infra.plan-ungated", ERROR, jid,
                             "a plan with cloud credentials on %s needs a human gate: pull_request_target with the plan-ok label and an approver check (gate.py authorize), or workflow_dispatch (a push to any branch but main is reachable by the bot)" % "/".join(untrusted)))
@@ -431,8 +546,8 @@ def check(wf: Any, name: str, ctx: Ctx) -> List[Finding]:
                 p = posixpath.normpath(str(s.with_.get("path", ".") or "."))
                 (pr_paths if ctx.step_pr(s) else other_paths).add(p)
         for s in job.steps:
-            for m in re.finditer(r"(\S*)source_policy\.py", _norm_run(s.run)):
-                prefix = m.group(1).strip("\"'")
+            for raw_prefix in _policy_prefixes(_norm_run(s.run)):
+                prefix = raw_prefix.strip("\"'")
                 if not prefix or "$" in prefix:
                     continue
                 d = posixpath.normpath(posixpath.dirname(prefix) or ".")

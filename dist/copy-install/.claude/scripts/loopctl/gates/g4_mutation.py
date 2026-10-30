@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from .. import common
 from . import GateResult
 from . import _lib
+from . import g11_secrets
 
 NAME = "g4"
 OWNER_METRIC = "surviving-mutant rate"
@@ -37,12 +38,21 @@ _CODE_EXT = (".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".go", ".rs", 
 
 def changed_lines(ctx: Any) -> Dict[str, List[List[int]]]:
     """{path: [[first, last], ...]} of added or modified lines in production code (tests, config and non-code files excluded)."""
-    out = _lib.git_ok(ctx, ["diff", "-U0", "--no-ext-diff", "--no-textconv", "--no-renames", ctx.base_sha, _lib.head_of(ctx), "--"])
+    # quotePath=false and fixed prefixes: a name with non-ASCII characters is otherwise C-quoted (`+++ "b/caf\303\251.py"`) and a name with a space gets a
+    # trailing TAB, and a header read as "not a path" dropped the file from the scope; if only such files changed the gate then SKIPPED (R-GATES-5)
+    out = _lib.git_ok(ctx, ["-c", "core.quotePath=false", "diff", "-U0", "--no-ext-diff", "--no-textconv", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/",
+                            ctx.base_sha, _lib.head_of(ctx), "--"])
+    if out is None:
+        raise ValueError("git diff base..head failed")
     res = {}  # type: Dict[str, List[List[int]]]
     cur = None  # type: Optional[str]
-    for ln in (out or "").splitlines():
-        if ln.startswith("+++ "):
-            p = ln[6:] if ln.startswith("+++ b/") else None
+    in_header = False
+    for ln in out.splitlines():
+        if ln.startswith("diff --git "):
+            cur, in_header = None, True
+        elif in_header and ln.startswith("+++ "):
+            in_header = False
+            p = g11_secrets.diff_target(ln[4:])
             cur = p if p and p.endswith(_CODE_EXT) and not _lib.is_protected(p) else None
         elif cur is not None:
             m = _HUNK_RE.match(ln)
@@ -65,7 +75,10 @@ def run(ctx: Any) -> GateResult:
     dirty = _lib.uncommitted_changes(ctx)
     if dirty:
         return GateResult.failed([_lib.finding("g4.uncommitted-changes", "error", "tracked files differ from HEAD (%s): mutation would judge code HEAD does not hold" % ", ".join(dirty[:3]))])
-    scope_files = changed_lines(ctx)
+    try:
+        scope_files = changed_lines(ctx)
+    except ValueError as exc:
+        return GateResult.errored("cannot read the diff: %s" % common.clean_text(exc, 120))
     if not scope_files:
         return GateResult.skipped("no production code changed: nothing to mutate")
     spec, _p = _lib.g3_spec(ctx.item)
