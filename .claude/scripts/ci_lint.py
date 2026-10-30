@@ -26,6 +26,7 @@ It enforces the split-CI rules that make a pull request safe to run:
   ci.untrusted-comment-trigger comment/issue trigger with no author_association check (warning)
   ci.persist-credentials      checkout leaves the token in .git/config in a PR job (warning)
   ci.unparsed                 the restricted YAML subset could not read the file: manual review, never "passed"
+  ci.unreadable               the lint itself failed on the file (an exception, a recursion limit, more quotes and expressions than it reads): an error, never "passed"
   infra.*                     rules for workflows that run terraform, tofu, pulumi, cdk, kubectl or helm: the
                               apply gate, the saved plan, policy before init (infra/ci_rules.py, Phase 6, §8.4)
 
@@ -54,6 +55,11 @@ DEFAULT_RESTORE = (".claude", ".mcp.json", "plugin", ".claude-plugin")
 
 _PR_HEAD_RE = re.compile(r"github\.event\.pull_request\.head|github\.head_ref|refs/pull/|github\.event\.workflow_run\.head|"
                          r"github\.event\.pull_request\.merge_commit_sha|github\.event\.number|github\.event\.issue\.number|pull/\$\{\{", re.I)
+# On a pull_request (and merge_group) the workflow's own commit is the PR merge commit: `github.sha` and `github.ref` name PR code (R-INFRA-1)
+_MERGE_REF_RE = re.compile(r"github\.sha\b|github\.ref(?![\w])|github\s*\[\s*['\"](?:sha|ref)['\"]\s*\]|\bGITHUB_(?:SHA|REF)\b", re.I)
+# the refs a privileged-trigger job may check out: its own default branch. A `steps.*` or `needs.*` output is whatever an earlier step computed, which
+# is how a job fetches the PR head sha (R-INFRA-1), so unlike ci_rules._REF_OK these are not allowed here.
+_REF_OK_PRIV = re.compile(r"^\s*(?:main|master|refs/heads/main|\$\{\{\s*(?:github\.sha|github\.ref|github\.event\.repository\.default_branch)\s*\}\})\s*$")
 _BASE_REF_RE = re.compile(r"github\.event\.pull_request\.base|github\.base_ref|github\.event\.repository\.default_branch|github\.ref_name|^\s*(?:main|master)\s*$", re.I)
 _CLAUDE_P_RE = re.compile(r"(?:^|[\s;&|(/])(?:npx\s+(?:-y\s+)?(?:@anthropic-ai/claude-code\s+)?)?claude\b[^\n]*?\s(?:-p|--print)\b|\bclaude\s+(?:-p|--print)\b")
 _CLAUDE_ACTIONS = ("anthropics/claude-code-action", "anthropics/claude-code-base-action", "anthropics/claude-code-security-review")
@@ -76,28 +82,109 @@ def _expressions(text: str) -> List[Tuple[str, str]]:
 
 # github.event.* fields that are numbers or fixed words, or the repository's own: the only ones that may be interpolated into a script
 _EVENT_SAFE = re.compile(r"github\.event\.(?:number|pull_request\.number|issue\.number|action|repository(?:\.[\w-]+)+)", re.I)
-_EVENT_REF = re.compile(r"github\.event(?![\w])(?:\.[\w-]+|\[[^\]]*\])*", re.I)
+_EVENT_REF = re.compile(r"github\.event(?![\w])(?:\.[\w-]+|\[[^\]\[]*\])*", re.I)    # no `[` inside an index: an unclosed run of them would rescan to the end each
 # expression property names are case-insensitive and `github['event']` is the same as `github.event`
 _UNSAFE_REF = re.compile(r"(?<![\w.])inputs\b|github\.head_ref|github\.ref_name|github\.ref(?![\w])|client_payload|"
                          r"github\s*\[\s*['\"](?:event|head_ref|ref_name|ref)['\"]\s*\]", re.I)
 
 
+def _outside_strings(p: str) -> List[Tuple[int, str, int]]:
+    """(index, char, nesting depth) of every character of an expression that is outside a single-quoted string (`''` is an escaped quote)."""
+    out = []  # type: List[Tuple[int, str, int]]
+    depth, i, n = 0, 0, len(p)
+    while i < n:
+        c = p[i]
+        if c == "'":
+            i += 1
+            while i < n:
+                if p[i] == "'":
+                    if i + 1 < n and p[i + 1] == "'":
+                        i += 2
+                        continue
+                    break
+                i += 1
+            i += 1
+            continue
+        if c in ")]":
+            depth = max(depth - 1, 0)
+        out.append((i, c, depth))
+        if c in "([":
+            depth += 1
+        i += 1
+    return out
+
+
+def _split_top(inner: str) -> List[str]:
+    """The operands of `&&` and `||` at the top level of an expression (not inside a call, an index or a string)."""
+    pieces, last = [], 0
+    chars = _outside_strings(inner)
+    for k, (i, c, d) in enumerate(chars):
+        if d == 0 and c in "&|" and k + 1 < len(chars) and chars[k + 1][1] == c and chars[k + 1][0] == i + 1:
+            pieces.append(inner[last:i])
+            last = i + 2
+    pieces.append(inner[last:])
+    return pieces
+
+
+def _unwrap(p: str) -> str:
+    """`p` without the parentheses that enclose all of it (`((a == b))` -> `a == b`; `(a) == (b)` is left alone). One pass, however deep they nest."""
+    match, stack = {}, []  # type: Dict[int, int], List[int]
+    for i, c, _ in _outside_strings(p):
+        if c == "(":
+            stack.append(i)
+        elif c == ")" and stack:
+            match[stack.pop()] = i
+    lo, hi = 0, len(p)
+    while True:
+        while lo < hi and p[lo].isspace():
+            lo += 1
+        while hi > lo and p[hi - 1].isspace():
+            hi -= 1
+        if hi - lo >= 2 and p[lo] == "(" and match.get(lo) == hi - 1:
+            lo, hi = lo + 1, hi - 1
+        else:
+            return p[lo:hi]
+
+
 def _yields_boolean(piece: str) -> bool:
-    """A comparison, a negation or contains()/startsWith()/endsWith() yields true or false, which cannot carry text into a script."""
-    p = piece.strip().lstrip("(").strip()
-    return p.startswith("!") or bool(re.match(r"(?:contains|startsWith|endsWith)\(", p)) or bool(re.search(r"==|!=|<=|>=|(?<![-=])[<>]", p))
+    """The value of this operand is true or false, which cannot carry text into a script: its top-level operator is a comparison or `!`, or it is one
+    whole `contains()`/`startsWith()`/`endsWith()` call. A comparison inside a call (`format('{0}', title, 1 == 1)`) is not the top-level operator
+    (R-INFRA-4)."""
+    p = _unwrap(piece)
+    if p.startswith("!") and not p.startswith("!="):
+        return True
+    chars = _outside_strings(p)
+    for k, (i, c, d) in enumerate(chars):
+        if d != 0:
+            continue
+        nxt = chars[k + 1][1] if k + 1 < len(chars) and chars[k + 1][0] == i + 1 else ""
+        if (c in "=!<>" and nxt == "=") or (c in "<>" and nxt != "="):
+            return True
+    m = re.match(r"(?:contains|startsWith|endsWith)\s*\(", p)
+    if m:
+        # the call's own closing parenthesis must be the last character
+        for i, c, d in chars:
+            if c == ")" and d == 0:
+                return i == len(p) - 1
+    return False
 
 
-def injected(text: str) -> Tuple[List[str], List[str]]:
+_ENV_REF = re.compile(r"(?<![\w.])env\s*(?:\.\s*([A-Za-z_]\w*)|\[\s*'([A-Za-z_]\w*)'\s*\])", re.I)
+
+
+def injected(text: str, tainted: Iterable[str] = ()) -> Tuple[List[str], List[str]]:
     """(errors, warnings): the `${{ }}` expressions in a script whose value a stranger can choose (IN-8). The fix is always `env:`.
-    `&&` and `||` pass their operands' values through, so each operand is judged on its own."""
+    `&&` and `||` pass their operands' values through, so each operand is judged on its own. `tainted` names `env:` entries whose value is itself
+    untrusted text (`TITLE: ${{ github.event.issue.title }}`): `${{ env.TITLE }}` in a script is the same injection (R-INFRA-4)."""
     bad, warn = [], []  # type: List[str], List[str]
+    taint = {t.upper() for t in tainted}
     for whole, inner in _expressions(text):
         flagged = actor = False
-        for piece in re.split(r"&&|\|\|", inner):
+        for piece in _split_top(inner):
             if _yields_boolean(piece):
                 continue
-            if [t for t in _EVENT_REF.findall(piece) if not _EVENT_SAFE.fullmatch(t)] or _UNSAFE_REF.search(piece):
+            if [t for t in _EVENT_REF.findall(piece) if not _EVENT_SAFE.fullmatch(t)] or _UNSAFE_REF.search(piece) \
+                    or any((m.group(1) or m.group(2)).upper() in taint for m in _ENV_REF.finditer(piece)):
                 flagged = True
             elif re.search(r"github\.actor\b", piece):
                 actor = True
@@ -108,12 +195,38 @@ def injected(text: str) -> Tuple[List[str], List[str]]:
     return bad, warn
 
 
+def tainted_env(maps: Iterable[Any], seed: Iterable[str] = ()) -> List[str]:
+    """The names, among the given `env:` mappings, whose value interpolates untrusted text, directly or through another tainted entry (`seed` names
+    are tainted already: the workflow's and job's, when the maps are one step's). One pass over the entries and a work list, so a long chain of
+    entries costs no more than a short one."""
+    taint = {t.upper() for t in seed}
+    uses = {}      # type: Dict[str, List[str]]    # name -> names of the entries whose value reads it
+    for m in maps:
+        if not isinstance(m, dict):
+            continue
+        for k, v in m.items():
+            name, val = str(k).upper(), str(v)
+            if injected(val)[0]:
+                taint.add(name)
+            for _, inner in _expressions(val):
+                for r in _ENV_REF.finditer(inner):
+                    uses.setdefault((r.group(1) or r.group(2)).upper(), []).append(name)
+    work = list(taint)
+    while work:
+        for user in uses.get(work.pop(), []):
+            if user not in taint:
+                taint.add(user)
+                work.append(user)
+    return sorted(taint)
+
+
 _FETCHER_RE = re.compile(r"\b(?:curl|wget)\b", re.I)
 _GH_API_RE = re.compile(r"\bgh\s+api\b", re.I)
 _ARCHIVE_WORD_RE = re.compile(r"tarball|zipball|/archive/|\.tar(?:\.gz)?\b|\.tgz\b|\.zip\b", re.I)
 _EXTRACT_RE = re.compile(r"\b(?:tar|unzip|gunzip|bsdtar|7z)\b")
 _REPO_OK = re.compile(r"^\s*\$\{\{\s*github\.repository\s*\}\}\s*$")
-_SECRET_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)|secrets\[\s*['\"]([A-Za-z0-9_]+)['\"]\s*\]|(?i:tojson)\(\s*(secrets)\s*\)")
+# `secrets.NAME`, `secrets['NAME']`, `toJSON(secrets)`, and a computed index (`secrets[format(...)]`: the name is not visible, so it may be any secret)
+_SECRET_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)|secrets\[\s*['\"]([A-Za-z0-9_]+)['\"]\s*\]|(?i:tojson)\(\s*(secrets)\s*\)|secrets\s*\[(?!\s*['\"][A-Za-z0-9_]+['\"]\s*\])")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.I)
 
 
@@ -137,7 +250,7 @@ class Options(object):
 
 
 def _secret_name(m: "re.Match") -> str:
-    return m.group(1) or m.group(2) or "(all secrets)"
+    return m.group(1) or m.group(2) or ("(all secrets)" if m.group(3) else "(a computed secret name)")
 
 
 _perm = workflows.perm_level
@@ -152,12 +265,17 @@ def _is_checkout(step: workflows.Step) -> bool:
     return step.uses.lower().startswith("actions/checkout@") or step.uses.lower() == "actions/checkout"
 
 
+# `A ... B` on one line without the quadratic scan of `A[^\n]*B` (a line of ten thousand `git fetch` words took seconds)
+_GIT_FETCH_PR = workflows._Near(r"\bgit\s+(?:fetch|pull)\b", r"pull/|refs/pull/|head_ref|pull_request\.head")
+_GIT_CHECKOUT_PR = workflows._Near(r"\bgit\s+(?:clone|checkout|switch|reset|merge|cherry-pick|rebase)\b", r"pull_request\.head|head_ref|refs/pull/|FETCH_HEAD|workflow_run\.head")
+
+
 def _step_checks_out_pr_code(step: workflows.Step, events: Dict[str, Any]) -> bool:
     pr_event = any(e in events for e in ("pull_request", "pull_request_review", "pull_request_review_comment", "merge_group"))
     if _is_checkout(step):
         ref = str(step.with_.get("ref", "") or "")
         repo = str(step.with_.get("repository", "") or "")
-        if ref and _PR_HEAD_RE.search(ref):
+        if ref and (_PR_HEAD_RE.search(ref) or (pr_event and _MERGE_REF_RE.search(ref))):
             return True
         if repo and re.search(r"head\.repo|pull_request\.head", repo):
             return True
@@ -165,9 +283,7 @@ def _step_checks_out_pr_code(step: workflows.Step, events: Dict[str, Any]) -> bo
             return True  # default checkout on pull_request is the PR merge commit
         return False
     text = step.run
-    if re.search(r"\bgh\s+pr\s+checkout\b", text) or re.search(r"\bgit\s+(?:fetch|pull)\b[^\n]*(?:pull/|refs/pull/|head_ref|pull_request\.head)", text):
-        return True
-    if re.search(r"\bgit\s+(?:clone|checkout|switch|reset|merge|cherry-pick|rebase)\b[^\n]*(?:pull_request\.head|head_ref|refs/pull/|FETCH_HEAD|workflow_run\.head)", text):
+    if re.search(r"\bgh\s+pr\s+checkout\b", text) or _GIT_FETCH_PR.search(text) or _GIT_CHECKOUT_PR.search(text):
         return True
     return False
 
@@ -249,14 +365,59 @@ def _trusted_only_events(events: Dict[str, Any]) -> bool:
     return True
 
 
-def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_skills_dir: bool = False) -> List[Finding]:
+_GRANT_NO, _GRANT_UNKNOWN, _GRANT_YES = 0, 1, 2     # what a caller passes down, in the order a later caller can only raise it
+
+
+class Callers(object):
+    """What is known about the workflows that call a reusable workflow (`on: workflow_call`): `events` is the union of their triggers (a callee runs
+    on its callers' events, and its default checkout is the caller's commit, the PR merge commit for a pull_request caller), `id_token` that a
+    caller grants `id-token: write` (directly, or down a chain of reusable workflows that set no permissions; None when the only thing above is a
+    reusable workflow nothing here calls, so whether a token comes down is not known), `known` that at least one caller was found."""
+
+    def __init__(self, events: Optional[Dict[str, Any]] = None, id_token: Optional[bool] = False, known: bool = False) -> None:
+        self.events = events or {}
+        self.id_token = id_token
+        self.known = known
+
+
+def _merge_events(into: Dict[str, Any], other: Dict[str, Any]) -> None:
+    for e, cfg in other.items():
+        if e == "workflow_call":
+            continue
+        if e not in into or (e == "push" and workflows.push_main_only(into[e]) and not workflows.push_main_only(cfg)):
+            into[e] = cfg
+
+
+def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_skills_dir: bool = False,
+                  callers: Optional[Callers] = None) -> List[Finding]:
     out = []  # type: List[Finding]
-    events = wf.events
+    # A reusable workflow runs on its callers' events (R-INFRA-1). Callers found in the lint set are merged in; with none found it may be called from
+    # elsewhere, a pull request included, so it is read as if a pull_request called it. The infra rules read `wf.events`, so it is set here too.
+    events = dict(wf.events)
+    inherits_caller = "workflow_call" in events
+    if inherits_caller:
+        if callers is not None and callers.known:
+            _merge_events(events, callers.events)
+        else:
+            _merge_events(events, {"pull_request": {}})
+        wf.events = events
     pr_events = [e for e in events if e in ("pull_request", "pull_request_review", "pull_request_review_comment", "merge_group")]
     restore = list(opts.restore_paths)
     if repo_has_skills_dir and "skills" not in restore:
         restore.append("skills")
-    ctx = ci_rules.Ctx(lambda step: _step_checks_out_pr_code(step, events), _job_perm)
+    jp = _job_perm
+    if inherits_caller:
+        grants = callers.id_token if (callers is not None and callers.known) else None
+
+        def jp(w: workflows.Workflow, j: workflows.Job, n: str) -> Optional[str]:
+            """A reusable workflow with no `permissions:` of its own gets its caller's: id-token when a caller grants it (callers unknown: when the job
+            uses a credential action, which needs one)."""
+            v = _job_perm(w, j, n)
+            if n == "id-token" and v is None and j.permissions is None and w.permissions is None:
+                g = grants if grants is not None else any(st.uses.lower().startswith(a) for st in j.steps for a in workflows.CRED_ACTIONS)
+                return "write" if g else None
+            return v
+    ctx = ci_rules.Ctx(lambda step: _step_checks_out_pr_code(step, events), jp)
     bot_events = ci_rules.bot_reachable(events)
     any_perm = wf.permissions is not None or any(j.permissions is not None for j in wf.jobs.values())
     if not any_perm:
@@ -265,7 +426,8 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
     for jid, job in wf.jobs.items():
         pr_code = checks_out_pr_code(job, events)
         job_text = job.text
-        id_token = _job_perm(wf, job, "id-token") == "write"
+        id_token = jp(wf, job, "id-token") == "write"
+        job_taint = tainted_env([wf.env, job.env])
         # R1
         if id_token and pr_code:
             out.append(Finding("ci.oidc-with-pr-code", ERROR, name, jid,
@@ -300,13 +462,14 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
                                        "claude -p without --setting-sources user or --settings: project settings from the checkout would apply"))
         # R6
         for s in job.steps:
-            bad, warn = injected(s.run)
+            taint = tainted_env([s.env], job_taint) if s.env else job_taint
+            bad, warn = injected(s.run, taint)
             if bad:
                 out.append(Finding("ci.script-injection", ERROR, name, jid, "untrusted text %s interpolated into a run: script; pass it through env: instead" % bad[0]))
             elif warn:
                 out.append(Finding("ci.script-injection", WARN, name, jid, "%s interpolated into a run: script: an actor name is a login, but pass it through env: anyway" % warn[0]))
             script = str(s.with_.get("script", "")) if "github-script" in s.uses else ""
-            sbad, swarn = injected(script) if script else ([], [])
+            sbad, swarn = injected(script, taint) if script else ([], [])
             if sbad:
                 out.append(Finding("ci.script-injection", ERROR, name, jid, "untrusted text %s interpolated into github-script; pass it through env: instead" % sbad[0]))
             elif swarn:
@@ -345,7 +508,7 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
                     out.append(Finding("ci.persist-credentials", WARN, name, jid, "checkout without persist-credentials: false leaves the token in .git/config"))
                     break
         # R13 / IN-9: a privileged-trigger job that holds secrets or OIDC and takes in what a pull request produced or names
-        priv_trigger = [e for e in ("pull_request_target", "workflow_run") if e in events]
+        priv_trigger = [e for e in ("pull_request_target", "workflow_run", "issue_comment", "issues") if e in events]
         holds_priv = bool(secrets_used or id_token or inherits)
         if priv_trigger and holds_priv:
             if any(_downloads_artifact(st, "workflow_run" in events) for st in job.steps):
@@ -354,7 +517,7 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
             for st in job.steps:
                 if not _is_checkout(st):
                     continue
-                for key, ok in (("ref", ci_rules._REF_OK), ("repository", _REPO_OK)):
+                for key, ok in (("ref", _REF_OK_PRIV), ("repository", _REPO_OK)):
                     val = str(st.with_.get(key, "") or "")
                     if "${{" in val and not ok.match(val):
                         out.append(Finding("ci.pr-target-checkout-expression", ERROR, name, jid,
@@ -397,7 +560,18 @@ def lint_workflow(wf: workflows.Workflow, name: str, opts: Options, repo_has_ski
     return out
 
 
-def lint_text(text: str, name: str = "<workflow>", opts: Optional[Options] = None, repo_has_skills_dir: bool = False) -> List[Finding]:
+def lint_text(text: str, name: str = "<workflow>", opts: Optional[Options] = None, repo_has_skills_dir: bool = False,
+              callers: Optional[Callers] = None) -> List[Finding]:
+    """The findings for one workflow. Whatever goes wrong while reading it (an exception, `RecursionError`, `workflows.ScanLimit` when the script has
+    more quotes and expressions than the span pass reads) is one `ci.unreadable` error: the file is never read as clean (round 4, structural)."""
+    try:
+        return _lint_text(text, name, opts, repo_has_skills_dir, callers)
+    except Exception as exc:       # RecursionError and MemoryError are Exceptions too
+        return [Finding("ci.unreadable", ERROR, name, "", "unreadable: the lint stopped on this file (%s: %s); manual review, it is not read as clean"
+                        % (type(exc).__name__, str(exc)[:120]))]
+
+
+def _lint_text(text: str, name: str, opts: Optional[Options], repo_has_skills_dir: bool, callers: Optional[Callers]) -> List[Finding]:
     opts = opts or Options()
     try:
         wf = workflows.parse(text, name)
@@ -409,7 +583,7 @@ def lint_text(text: str, name: str = "<workflow>", opts: Optional[Options] = Non
         if re.search(r"id-token:\s*write", text) and re.search(r"pull_request", text):
             out.append(Finding("ci.unparsed", ERROR, name, "", "the raw text has both id-token: write and a pull_request trigger"))
         return out
-    return lint_workflow(wf, name, opts, repo_has_skills_dir)
+    return lint_workflow(wf, name, opts, repo_has_skills_dir, callers)
 
 
 def workflow_files(path: str) -> List[str]:
@@ -425,18 +599,84 @@ def workflow_files(path: str) -> List[str]:
     return out
 
 
+def _callers_of(parsed: Dict[str, workflows.Workflow]) -> Dict[str, Callers]:
+    """For each workflow file (by base name) that another file in the set calls with `uses: ./.github/workflows/NAME`: the triggers of its callers
+    (a caller that is itself reusable counts as the pull_request it might be called from, when nothing calls it) and whether one grants id-token."""
+    calls = {}  # type: Dict[str, List[Tuple[str, workflows.Workflow, workflows.Job]]]
+    for base, wf in parsed.items():
+        for job in wf.jobs.values():
+            if job.uses.startswith("./.github/workflows/"):
+                calls.setdefault(os.path.basename(job.uses.split("@", 1)[0]), []).append((base, wf, job))
+
+    # What each callee inherits, found by passes over the call graph until nothing changes: a chain of K files is K passes of work, where following
+    # every caller of every caller one by one costs 2**K when each file has two jobs that call the next. A pass only adds events and raises a
+    # grant, so it ends (a hop of the chain per pass at most, and a cycle adds nothing the second time round).
+    inherited = {callee: {} for callee in calls}    # type: Dict[str, Dict[str, Any]]
+    granted = {callee: _GRANT_NO for callee in calls}
+
+    def events_of(base: str) -> Dict[str, Any]:
+        ev = dict(parsed[base].events)
+        if "workflow_call" in ev:
+            _merge_events(ev, inherited[base] if base in calls else {"pull_request": {}})   # nothing calls it here: it might be a pull request
+        return ev
+
+    def grant_via(callee: str, cb: str, cwf: workflows.Workflow, cjob: workflows.Job) -> int:
+        """What the job `cjob` of `cb` passes down to `callee`: its own `id-token: write`, or, when it and its workflow set no permissions and the
+        workflow is reusable itself, whatever its own callers pass down (GitHub hands the caller's token permissions down the chain)."""
+        level = _job_perm(cwf, cjob, "id-token")
+        if level == "write":
+            return _GRANT_YES
+        if level is None and cjob.permissions is None and cwf.permissions is None and "workflow_call" in cwf.events and cb != callee:
+            return granted[cb] if cb in calls else _GRANT_UNKNOWN
+        return _GRANT_NO
+
+    def signature(ev: Dict[str, Any]) -> Any:
+        return sorted((e, e == "push" and workflows.push_main_only(cfg)) for e, cfg in ev.items())
+
+    for _ in range(len(parsed) + 2):
+        changed = False
+        for callee, cs in calls.items():
+            events = {}  # type: Dict[str, Any]
+            grant = _GRANT_NO
+            for cb in dict.fromkeys(c[0] for c in cs):
+                if cb != callee:
+                    _merge_events(events, events_of(cb))
+            for cb, cwf, cjob in cs:
+                grant = max(grant, grant_via(callee, cb, cwf, cjob))
+            if signature(events) != signature(inherited[callee]) or grant != granted[callee]:
+                changed = True
+            inherited[callee], granted[callee] = events, grant
+        if not changed:
+            break
+    return {callee: Callers(inherited[callee], {_GRANT_YES: True, _GRANT_UNKNOWN: None}.get(granted[callee], False), True) for callee in calls}
+
+
 def lint_paths(paths: Sequence[str], opts: Optional[Options] = None, repo: Optional[str] = None) -> List[Finding]:
     opts = opts or Options()
     has_skills = bool(repo) and os.path.isdir(os.path.join(repo, "skills"))
     out = []  # type: List[Finding]
+    texts = []  # type: List[Tuple[str, str]]
     for p in paths:
         for f in workflow_files(p):
             text, problem = safeio.read_text_status(f, 1 << 20)
             if text is None:
                 out.append(Finding("ci.unparsed", ERROR, f, "", "unreadable (%s): manual review" % problem))
                 continue
-            name = os.path.relpath(f, repo) if repo else f
-            out.extend(lint_text(text, name, opts, has_skills))
+            texts.append((os.path.relpath(f, repo) if repo else f, text))
+    parsed = {}  # type: Dict[str, workflows.Workflow]
+    for name, text in texts:
+        try:
+            parsed[os.path.basename(name)] = workflows.parse(text, name)
+        except Exception:          # Unparsed, or the parser gave out: `lint_text` reports the file below
+            pass
+    try:
+        callers = _callers_of(parsed)
+    except Exception as exc:       # the call graph could not be read: every callee is judged as if a pull request called it
+        callers = {}
+        out.append(Finding("ci.unreadable", ERROR, "", "", "unreadable: the callers of the reusable workflows could not be followed (%s: %s); manual review"
+                           % (type(exc).__name__, str(exc)[:120])))
+    for name, text in texts:
+        out.extend(lint_text(text, name, opts, has_skills, callers.get(os.path.basename(name))))
     return out
 
 

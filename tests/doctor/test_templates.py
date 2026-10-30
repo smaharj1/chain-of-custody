@@ -114,7 +114,8 @@ class OidcTrust(unittest.TestCase):
         allow = [a for st in doc["Statement"] if st["Effect"] == "Allow" for a in (st["Action"] if isinstance(st["Action"], list) else [st["Action"]])]
         for bad in ("secretsmanager:GetSecretValue", "kms:Decrypt", "ssm:GetParameter", "iam:PassRole", "sts:AssumeRole"):
             self.assertNotIn(bad, allow)
-        self.assertFalse([a for a in allow if re.search(r"(Create|Put|Update|Delete|Attach|Run|Start|Terminate|Invoke)", a)])
+        # a positive list: every allowed action is a Get, List or Describe (or API Gateway's GET); a write verb the pattern list forgot cannot slip in
+        self.assertFalse([a for a in allow if not re.match(r"^[\w-]+:(Get|List|Describe|GET)\w*\*?$", a)])
         deny = [st for st in doc["Statement"] if st["Effect"] == "Deny"][0]
         self.assertIn("secretsmanager:GetSecretValue", deny["Action"])
 

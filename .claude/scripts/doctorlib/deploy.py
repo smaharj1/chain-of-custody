@@ -152,6 +152,8 @@ def fires_on(wf: workflows.Workflow) -> List[str]:
         elif ev in workflows.PR_EVENTS:
             out.append("pull_request")
         elif ev == "workflow_run":
+            # `branches: [main]` filters on the triggering run's head branch, and a run from a fork's branch named `main` has that name: the
+            # label records the filter, but the trigger is not main-only (see is_main_only)
             br = [str(b) for b in workflows._as_list(cfg.get("branches"))]
             out.append("workflow_run:main" if br and all(b in MAIN_NAMES for b in br) else "workflow_run")
         elif ev == "schedule":
@@ -164,7 +166,7 @@ def fires_on(wf: workflows.Workflow) -> List[str]:
 
 
 def is_main_only(fire: str) -> bool:
-    return fire in ("push:main", "workflow_run:main", "schedule:main")
+    return fire in ("push:main", "schedule:main")
 
 
 def bot_pushable(fire: str) -> bool:
@@ -264,7 +266,17 @@ def _job_deploys(job: workflows.Job, wf_by_path: Dict[str, workflows.Workflow], 
 
 def classify_workflow(rel: str, text: str, wf_by_path: Optional[Dict[str, workflows.Workflow]] = None, exp: Optional[Expander] = None) -> Dict[str, Any]:
     """One workflow's deploy facts. `parsed` False means the subset parser failed and the raw-text
-    fallback was used: triggers are then unknown and treated as bot-pushable."""
+    fallback was used: triggers are then unknown and treated as bot-pushable. If the reader itself fails on the file (an exception, `RecursionError`,
+    `workflows.ScanLimit`), the file is unreadable and counts as a deploy on a bot-pushable trigger: never as one with no deploy in it (round 4)."""
+    try:
+        return _classify_workflow(rel, text, wf_by_path, exp)
+    except Exception as exc:
+        label = "unreadable: the deploy-surface reader stopped on this file (%s); treated as a deploy" % type(exc).__name__
+        return {"file": rel, "parsed": False, "error": "unreadable (%s: %s)" % (type(exc).__name__, str(exc)[:120]), "deploys": True, "labels": [label],
+                "fires_on": ["push:branches"], "jobs": [], "environment_all": False, "release_automation": False}
+
+
+def _classify_workflow(rel: str, text: str, wf_by_path: Optional[Dict[str, workflows.Workflow]], exp: Optional[Expander]) -> Dict[str, Any]:
     try:
         wf = workflows.parse(text, rel)
     except workflows.Unparsed as exc:
@@ -325,7 +337,7 @@ def gather_deploy_surface(ctx: Context) -> Dict[str, Any]:
     for r, t in texts.items():
         try:
             parsed[r] = workflows.parse(t, r)
-        except workflows.Unparsed:
+        except Exception:      # Unparsed, or the parser gave out: `classify_workflow` reads the file as unreadable
             pass
     exp = Expander(ctx.repo)
     wfs = [classify_workflow(r, texts[r], parsed, exp) for r in wf_rels]
@@ -523,23 +535,45 @@ def level_caps(ctx: Context, surface: Dict[str, Any], ev: Dict[str, Any]) -> Lis
 
 # --- apply jobs and their Environments (IN-4, IN-11) ----------------------------------------------------------
 
-def apply_jobs(ctx: Context) -> List[Dict[str, Any]]:
-    """Every apply-class job (terraform/tofu apply, cdk deploy, pulumi up, ...) in the repository's workflows, found with the same rules `ci_lint.py`
-    uses: {"file", "job", "environment" (the static name or None), "dynamic" (the name is a `${{ }}` expression)}."""
+def _jobs_with_environment(ctx: Context) -> List[Tuple[workflows.Workflow, str, workflows.Job, str]]:
+    """(workflow, file, job, kind) for every job in the repository's workflows that applies infrastructure (kind "apply", found with the same rules
+    `ci_lint.py` uses) or can obtain cloud credentials (kind "credentialed": `id-token: write`, a credential action or a stored cloud key)."""
     from infra import ci_rules
-    out = []  # type: List[Dict[str, Any]]
+    out = []  # type: List[Tuple[workflows.Workflow, str, workflows.Job, str]]
     for rel in sorted(r for r in ctx.fact("repo_files") if r.startswith(".github/workflows/") and r.endswith((".yml", ".yaml")) and r.count("/") == 2):
         text = safeio.read_text(os.path.join(ctx.repo, rel), 1 << 20)
         try:
             wf = workflows.parse(text or "", rel)
-        except workflows.Unparsed:
+        except Exception:      # Unparsed, or the parser gave out: the surface check reports the file
             continue
         for jid, job in wf.jobs.items():
-            if any(ci_rules.apply_calls(st) for st in job.steps):
-                env = job.environment
-                dynamic = bool(env) and "${{" in env
-                out.append({"file": rel, "job": jid, "environment": None if (not env or dynamic) else env, "dynamic": dynamic})
+            try:
+                applies = any(ci_rules.apply_calls(st) for st in job.steps)
+            except Exception:  # the reader failed on this job (including ScanLimit): it counts as an apply, never as none
+                applies = True
+            if applies:
+                out.append((wf, rel, job, "apply"))
+            elif workflows.job_credentialed(wf, job):
+                out.append((wf, rel, job, "credentialed"))
     return out
+
+
+def _env_row(rel: str, job: workflows.Job) -> Dict[str, Any]:
+    env = job.environment
+    dynamic = bool(env) and "${{" in env
+    return {"file": rel, "job": job.id, "environment": None if (not env or dynamic) else env, "dynamic": dynamic}
+
+
+def apply_jobs(ctx: Context) -> List[Dict[str, Any]]:
+    """Every apply-class job (terraform/tofu apply, cdk deploy, pulumi up, ...) in the repository's workflows, found with the same rules `ci_lint.py`
+    uses: {"file", "job", "environment" (the static name or None), "dynamic" (the name is a `${{ }}` expression)}."""
+    return [_env_row(rel, job) for _, rel, job, kind in _jobs_with_environment(ctx) if kind == "apply"]
+
+
+def credentialed_jobs(ctx: Context) -> List[Dict[str, Any]]:
+    """Like `apply_jobs`, for every job that applies or can obtain cloud credentials (R-INFRA-5): the plan and drift roles trust the Environment name
+    only, so a branch the bot pushed could name one and get the role."""
+    return [dict(_env_row(rel, job), kind=kind) for _, rel, job, kind in _jobs_with_environment(ctx)]
 
 
 # --- checks -------------------------------------------------------------------------------------------------
@@ -625,10 +659,13 @@ def check_iac(ctx: Context) -> Result:
 
 @check("deploy.environment-branch-policy", "deploy-surface")
 def check_environment_branch_policy(ctx: Context) -> Result:
-    """IN-11: an Environment that gates an apply should also restrict which branches may deploy to it. Best effort: it reads the recorded GitHub data."""
-    names = sorted({j["environment"] for j in apply_jobs(ctx) if j["environment"]})
+    """IN-11, R-INFRA-5: an Environment that a credentialed job names should also restrict which branches may deploy to it. Every Environment named by a
+    job that applies or can obtain cloud credentials counts, not only the apply jobs' (the plan-preview, plan-main and drift roles trust the Environment
+    name alone). Best effort: it reads the recorded GitHub data."""
+    jobs = [j for j in credentialed_jobs(ctx) if j["environment"]]
+    names = sorted({j["environment"] for j in jobs})
     if not names:
-        return skipped("deploy.environment-branch-policy", "no apply job names a static Environment")
+        return skipped("deploy.environment-branch-policy", "no apply or credentialed job names a static Environment")
     gh = ctx.fact("gh")
     envs = gh.get("environments") if isinstance(gh, dict) else None
     if envs is None:
@@ -642,5 +679,5 @@ def check_environment_branch_policy(ctx: Context) -> Result:
             why.append("Environment(s) %s have no deployment branch policy: any branch's workflow run can ask to deploy there" % ", ".join(missing))
         if absent:
             why.append("Environment(s) %s do not exist yet (GitHub creates one with no protection the first time a workflow names it)" % ", ".join(absent))
-        return failed("deploy.environment-branch-policy", "; ".join(why), "restrict each apply Environment to the main branch (Settings, Environments, Deployment branches)", severity=WARN)
-    return passed("deploy.environment-branch-policy", "every apply Environment (%s) has a deployment branch policy" % ", ".join(names))
+        return failed("deploy.environment-branch-policy", "; ".join(why), "restrict each Environment a credentialed job names to the main branch (Settings, Environments, Deployment branches)", severity=WARN)
+    return passed("deploy.environment-branch-policy", "every Environment a credentialed job names (%s) has a deployment branch policy" % ", ".join(names))
