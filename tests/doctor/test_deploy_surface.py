@@ -563,5 +563,191 @@ class ApplyEnvironments(SurfaceCase):
         ctx2 = self.ctx(self.repo_with({"infra/main.tf": ""}), ghapi=self.gh(gf.env_with_reviewers("production")))
         self.assertEqual(self.check_one(ctx2, "deploy.environment-branch-policy")[0].status, "skipped")
 
+
+PLAN_ROLE = """name: plan
+on:
+  pull_request_target:
+    types: [labeled]
+permissions:
+  id-token: write
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: %s
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/plan
+      - run: terraform plan -out=tfplan
+"""
+
+
+class CredentialedEnvironments(SurfaceCase):
+    """R-INFRA-5: the deployment branch policy is checked for every Environment a credentialed job names, not only an apply job's. The plan-preview,
+    plan-main and drift roles trust the Environment name alone."""
+
+    def gh(self, *envs):
+        from doctorlib import github
+        from . import ghfixtures as gf
+        return github.fixture_ghapi(gf.build(environments={"environments": list(envs)}))
+
+    def check(self, text, *envs):
+        repo = self.repo_with({".github/workflows/plan.yml": text})
+        ctx = self.ctx(repo, ghapi=self.gh(*envs) if envs else None)
+        return self.check_one(ctx, "deploy.environment-branch-policy")[0]
+
+    def test_a_plan_job_environment_with_no_branch_policy_is_a_warning(self):
+        from . import ghfixtures as gf
+        r = self.check(PLAN_ROLE % "plan-preview", gf.env_with_reviewers("plan-preview"))
+        self.assertEqual((r.status, r.severity), ("fail", "warn"))
+        self.assertIn("plan-preview", r.message)
+
+    def test_a_plan_job_environment_with_a_branch_policy_passes(self):
+        from . import ghfixtures as gf
+        env = gf.env_with_reviewers("plan-preview")
+        env["deployment_branch_policy"] = {"protected_branches": False, "custom_branch_policies": True}
+        self.assertEqual(self.check(PLAN_ROLE % "plan-preview", env).status, "pass")
+
+    def test_a_plan_environment_that_does_not_exist_yet_is_a_warning(self):
+        from . import ghfixtures as gf
+        r = self.check(PLAN_ROLE % "drift", gf.env_with_reviewers("production"))
+        self.assertEqual(r.status, "fail")
+        self.assertIn("do not exist", r.message)
+
+    def test_a_job_with_no_credentials_and_an_environment_is_not_judged(self):
+        text = "name: x\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    environment: staging\n    steps:\n      - run: make test\n"
+        r = self.check(text, {"name": "other"})
+        self.assertEqual(r.status, "skipped")
+
+    def test_a_credential_action_or_a_stored_key_counts(self):
+        from . import ghfixtures as gf
+        for body in ("      - uses: google-github-actions/auth@v2\n", "      - run: aws s3 ls\n        env:\n          K: ${{ secrets.AWS_ACCESS_KEY_ID }}\n",
+                     "      - run: aws s3 ls\n        env:\n          K: ${{ secrets['AWS_ACCESS_KEY_ID'] }}\n",
+                     "      - run: aws s3 ls\n        env:\n          K: ${{ secrets[format('AWS_{0}', 'ACCESS_KEY_ID')] }}\n"):
+            with self.subTest(body=body):
+                text = "name: x\non: push\njobs:\n  t:\n    runs-on: ubuntu-latest\n    environment: plan-main\n    steps:\n" + body
+                r = self.check(text, gf.env_with_reviewers("plan-main"))
+                self.assertEqual((r.status, r.severity), ("fail", "warn"))
+
+    def test_apply_jobs_alone_still_lists_only_apply_jobs(self):
+        repo = self.repo_with({".github/workflows/plan.yml": PLAN_ROLE % "plan-main"})
+        ctx = self.ctx(repo)
+        self.assertEqual(deploy.apply_jobs(ctx), [])
+        self.assertEqual([(j["job"], j["environment"], j["kind"]) for j in deploy.credentialed_jobs(ctx)], [("plan", "plan-main", "credentialed")])
+
+
+class FlagValuesDoNotHideTheDeploy(SurfaceCase):
+    """Second review: a flag value that begins with the tool's name (`cdk --app cdk.out deploy`) or a directory called `run` must not hide the verb from
+    the deploy-surface check, which is the doctor's one view of what can deploy."""
+
+    TEXT = "name: d\non:\n  push:\n    branches: [main]\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - run: %s\n"
+
+    def test_each_spelling_is_a_deploy_on_the_surface(self):
+        for cmd, label in (("cdk --app cdk.out deploy --all", "cdk deploy"), ("cdk -a cdk.out deploy", "cdk deploy"),
+                           ("kubectl --kubeconfig kubectl/cfg apply -f k8s/", "kubectl apply"), ("helm --kubeconfig deploy.yaml upgrade app ./chart", "helm upgrade"),
+                           ("terragrunt run --all --working-dir terragrunt/live apply", "terragrunt apply"),
+                           ("terragrunt run --all --working-dir run apply", "terragrunt apply"), ("terragrunt --working-dir run run --all apply", "terragrunt apply"),
+                           ("terragrunt run --all -- apply", "terragrunt apply"), ("terragrunt stack run apply", "terragrunt apply")):
+            with self.subTest(cmd):
+                repo = self.repo_with({".github/workflows/d.yml": self.TEXT % cmd})
+                hit = self.assertFails(self.results(self.ctx(repo)), "deploy.main-workflow")
+                self.assertIn(label, hit[0].message)
+
+    def test_a_plan_with_the_same_flags_is_not_a_deploy(self):
+        for cmd in ("cdk --app cdk.out synth", "kubectl --kubeconfig kubectl/cfg get pods", "terragrunt run --all --working-dir run plan"):
+            with self.subTest(cmd):
+                repo = self.repo_with({".github/workflows/d.yml": self.TEXT % cmd})
+                self.assertNotIn("fail", [r.status for r in self.by_id(self.results(self.ctx(repo)), "deploy.main-workflow")])
+
+
+class ExpressionsQuotesAndPackagesOnTheSurface(SurfaceCase):
+    """Round 3: the doctor's view of what can deploy reads the same spellings the lint does (`workflows.normalize_shell` is shared): a flag value with
+    blanks (`${{ matrix.dir }}`, `$(echo x y)`, `-c a="x y"`, `my\\ ns`), a package runner (`npx aws-cdk@2 deploy`), and one rule for what may stand in
+    front of a program name (`x-cdk deploy` is not a call)."""
+
+    TEXT = "name: d\non:\n  push:\n    branches: [main]\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          %s\n"
+
+    def surface(self, cmd):
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % cmd})
+        return self.by_id(self.results(self.ctx(repo)), "deploy.main-workflow")
+
+    def test_each_spelling_is_a_deploy_on_the_surface(self):
+        for cmd, label in (("terraform -chdir=${{ matrix.dir }} apply -auto-approve", "terraform apply"), ("kubectl --context ${{ matrix.ctx }} apply", "kubectl apply"),
+                           ("kubectl --namespace $(echo x y) apply", "kubectl apply"), ('cdk -c a="x y" deploy', "cdk deploy"), ("kubectl -n my\\ ns apply", "kubectl apply"),
+                           ('cdk --app "' + "x " * 101 + '" deploy', "cdk deploy"), ("npx aws-cdk@2 deploy --all", "cdk deploy"), ("${DIR}/cdk deploy", "cdk deploy"),
+                           ('ssh host "cd app && kubectl --context ${{ a b }} apply"', "kubectl apply")):
+            with self.subTest(cmd[:60]):
+                hit = [r for r in self.surface(cmd) if r.status == "fail"]
+                self.assertTrue(hit, "no deploy found for %r" % cmd)
+                self.assertIn(label, hit[0].message)
+
+    def test_a_name_that_only_ends_with_a_tool_and_a_plan_are_not_deploys(self):
+        for cmd in ("x-cdk deploy", "ssh sam@host deploy", "npm install aws-cdk-lib", "cdk --profile ${{ matrix.p }} synth",
+                    'cdk -c a="x y" synth', "kubectl --context ${{ matrix.ctx }} get pods"):
+            with self.subTest(cmd):
+                self.assertNotIn("fail", [r.status for r in self.surface(cmd)])
+
+    def test_the_apply_jobs_list_finds_an_expression_apply(self):
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % "terraform -chdir=${{ matrix.dir }} apply -auto-approve"})
+        self.assertEqual([j["job"] for j in deploy.apply_jobs(self.ctx(repo))], ["d"])
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % "npx aws-cdk@2 deploy"})
+        self.assertEqual([j["job"] for j in deploy.apply_jobs(self.ctx(repo))], ["d"])
+
+
+class UnreadableWorkflowsAreDeploys(SurfaceCase):
+    """Round 4, structural and D6: a workflow the reader cannot read (more delimiters than it follows, an exception) is a deploy on a bot-pushable trigger, not
+    a file with no deploy in it. The reader's failure never reads as a pass."""
+
+    TEXT = "name: d\non:\n  push:\n    branches: [main]\njobs:\n  d:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n%s\n"
+
+    def test_a_script_past_the_delimiter_limit_is_a_deploy_surface(self):
+        run = "echo " + "$(x)" * 60000 + "\nmake build"
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % "\n".join("          " + l for l in run.split("\n"))})
+        res = self.results(self.ctx(repo))
+        hit = [r for r in self.by_id(res, "deploy.main-workflow") if r.status == "fail"]
+        self.assertTrue(hit)
+        self.assertIn("unreadable", hit[0].message)
+
+    def test_an_exception_in_the_reader_is_a_deploy_surface(self):
+        from unittest import mock
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % "          make build"})
+        with mock.patch.object(deploy.workflows, "deploy_labels", side_effect=RecursionError("deep")):
+            surface = self.ctx(repo).fact("deploy_surface")
+        wf = [w for w in surface["workflows"] if w["file"].endswith("d.yml")][0]
+        self.assertTrue(wf["deploys"])
+        self.assertIn("unreadable", wf["labels"][0])
+
+    def test_an_ordinary_build_script_is_not(self):
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % "          make build"})
+        self.assertNotIn("fail", [r.status for r in self.by_id(self.results(self.ctx(repo)), "deploy.main-workflow")])
+
+    def test_the_new_readings_are_deploys_on_the_surface(self):
+        for cmd, label in (("aws --region x cloudformation deploy --stack-name s", "cloudformation deploy"), ("gcloud --project p run deploy svc", "gcloud deploy"),
+                           ("az --subscription s webapp deploy --name x", "az deploy"), ("terraform $TF_FLAGS apply", "terraform apply"),
+                           ("terra'form' apply", "terraform apply"), ('"$T" apply', "deploy through a variable"),
+                           ("cat <<'EOF'\ndon't\nEOF\ncdk -c a='x y' deploy", "cdk deploy"), ('cdk -c "a #b" deploy', "cdk deploy")):
+            with self.subTest(cmd[:40]):
+                repo = self.repo_with({".github/workflows/d.yml": self.TEXT % "\n".join("          " + l for l in cmd.split("\n"))})
+                hit = [r for r in self.by_id(self.results(self.ctx(repo)), "deploy.main-workflow") if r.status == "fail"]
+                self.assertTrue(hit, cmd)
+                self.assertIn(label, hit[0].message)
+
+
+class WorkflowRunFromAFork(SurfaceCase):
+    """R-INFRA-6: `workflow_run` with `branches: [main]` filters on the triggering run's head branch, and a fork's branch can be named `main`."""
+
+    TEXT = "name: d\non:\n  workflow_run:\n    workflows: [CI]\n    branches: [main]\njobs:\n  d:\n    runs-on: ubuntu-latest\n%s    steps:\n      - run: flyctl deploy\n"
+
+    def test_the_trigger_is_not_main_only(self):
+        self.assertFalse(deploy.is_main_only("workflow_run:main"))
+        self.assertTrue(deploy.bot_pushable("workflow_run:main"))
+        self.assertTrue(deploy.is_main_only("push:main"))
+
+    def test_an_ungated_deploy_on_it_is_a_push_workflow_failure(self):
+        repo = self.repo_with({".github/workflows/d.yml": self.TEXT % ""})
+        res = self.results(self.ctx(repo))
+        self.assertEqual(self.by_id(res, "deploy.push-workflow")[0].status, "fail")
+
+
 if __name__ == "__main__":
     unittest.main()

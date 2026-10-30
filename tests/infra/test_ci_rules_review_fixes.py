@@ -522,10 +522,13 @@ class HostileInputIsLinear(unittest.TestCase):
         for name, text in texts.items():
             with self.subTest(name):
                 t0 = time.time()
-                workflows.deploy_labels(text)
-                norm = ci_rules._norm_run(text)
-                ci_rules._INDIRECT_RE.search(norm)
-                ci_rules._tf_calls(text)
+                try:
+                    workflows.deploy_labels(text)
+                    norm = ci_rules._norm_run(text)
+                    ci_rules._INDIRECT_RE.search(norm)
+                    ci_rules._tf_calls(text)
+                except workflows.ScanLimit:      # more delimiters than the span pass reads: the script is unreadable, which is an answer too (D6)
+                    pass
                 ci_lint.injected(text)
                 ci_lint._fetches_archive(text)
                 self.assertLess(time.time() - t0, self.LIMIT, name)

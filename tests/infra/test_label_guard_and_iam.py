@@ -118,7 +118,9 @@ class PlanReadonlyPolicy(unittest.TestCase):
         import re
         for st in self.doc["Statement"]:
             if st["Effect"] == "Allow":
-                self.assertFalse([a for a in st["Action"] if re.search(r"(Create|Put|Update|Delete|Attach|Run|Start|Terminate|Invoke|Decrypt|GetSecretValue)", a)])
+                # a write verb at the start of the action name (`lambda:GetFunctionEventInvokeConfig` is a read, `lambda:InvokeFunction` is not), or a secret read anywhere
+                self.assertFalse([a for a in st["Action"]
+                                  if re.search(r"^[\w-]+:(Create|Put|Update|Delete|Attach|Run|Start|Terminate|Invoke)", a) or re.search(r"(Decrypt|GetSecretValue)", a)])
 
 
 if __name__ == "__main__":
