@@ -1,0 +1,16 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyRead": [
+        "{{SCRATCH}}/heldout"
+      ]
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(sh .claude/probe/read-heldout.sh *)"
+    ]
+  }
+}

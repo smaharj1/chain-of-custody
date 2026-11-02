@@ -1,0 +1,27 @@
+{
+  "name": "chain-of-custody-agent",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "remoteUser": "vscode",
+  "runArgs": ["--cap-drop=ALL", "--security-opt=no-new-privileges", "--network=bridge"],
+  "mounts": [],
+  "remoteEnv": {
+    "GH_TOKEN": "",
+    "GITHUB_TOKEN": "",
+    "SSH_AUTH_SOCK": "",
+    "AWS_PROFILE": "",
+    "AWS_ACCESS_KEY_ID": "",
+    "AWS_SECRET_ACCESS_KEY": "",
+    "AWS_SESSION_TOKEN": ""
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "remote.containers.copyGitConfig": false,
+        "dev.containers.copyGitConfig": false,
+        "dev.containers.gitCredentialHelperConfigLocation": "none",
+        "dev.containers.dockerCredentialHelper": false,
+        "terminal.integrated.inheritEnv": false
+      }
+    }
+  }
+}

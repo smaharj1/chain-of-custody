@@ -1,0 +1,48 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadResourceConfiguration",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*", "elasticloadbalancing:Describe*", "autoscaling:Describe*", "rds:Describe*", "rds:ListTagsForResource",
+        "s3:GetBucket*", "s3:ListAllMyBuckets", "s3:GetAccelerateConfiguration", "s3:GetEncryptionConfiguration",
+        "iam:Get*", "iam:List*", "dynamodb:Describe*", "dynamodb:List*",
+        "lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:GetFunctionCodeSigningConfig", "lambda:GetFunctionConcurrency",
+        "lambda:GetFunctionEventInvokeConfig", "lambda:GetFunctionUrlConfig", "lambda:GetPolicy", "lambda:GetAlias", "lambda:GetEventSourceMapping",
+        "lambda:GetLayerVersion", "lambda:GetLayerVersionPolicy", "lambda:GetProvisionedConcurrencyConfig", "lambda:GetCodeSigningConfig",
+        "lambda:GetRuntimeManagementConfig", "lambda:List*",
+        "cloudfront:Get*", "cloudfront:List*", "route53:Get*", "route53:List*", "logs:Describe*", "sqs:GetQueueAttributes", "sqs:ListQueues",
+        "sns:Get*", "sns:List*", "kms:Describe*", "kms:ListAliases", "apigateway:GET"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StateReadOnlyExample",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::acme-terraform-state", "arn:aws:s3:::acme-terraform-state/*"]
+    },
+    {
+      "Sid": "NeverReadSecretValues",
+      "Effect": "Deny",
+      "Action": ["secretsmanager:GetSecretValue", "ssm:GetParameter*", "kms:Decrypt"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NeverReadApiKeyValues",
+      "Effect": "Deny",
+      "Action": ["apigateway:GET"],
+      "Resource": [
+        "arn:aws:apigateway:*::/apikeys", "arn:aws:apigateway:*::/apikeys/*",
+        "arn:aws:apigateway:*::/usageplans/*/keys", "arn:aws:apigateway:*::/usageplans/*/keys/*"
+      ]
+    },
+    {
+      "Sid": "ReadObjectsOnlyInTheStateBucket",
+      "Effect": "Deny",
+      "Action": ["s3:GetObject"],
+      "NotResource": ["arn:aws:s3:::acme-terraform-state/*"]
+    }
+  ]
+}

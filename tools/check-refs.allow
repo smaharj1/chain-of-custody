@@ -1,0 +1,67 @@
+# Paths that tools/check-refs.py may find mentioned in markdown without a matching file.
+# One fnmatch pattern per line, matched against the repo-relative path. Keep this short:
+# every entry needs a reason. Run `python3 tools/check-refs.py --list-unused-allow` to prune.
+
+# Runtime files the v1 loop creates in a user's project; they are gitignored, so never tracked here.
+.claude/loop.jsonl
+.claude/metrics.jsonl
+.claude/orchestrate.lock
+.claude/settings.local.json
+.claude/worktrees
+.claude/worktrees/
+
+# Files that live in a user's project, not in the kit (the docs tell the user to create them).
+docs/tech_spec.md
+docs/features
+docs/features/*
+.claude/rules*
+
+# Historical CHANGELOG entries naming files that were moved or renamed since.
+docs/design/loop-engineering.md
+
+# The v1 shell hooks, retired in 2.0.0: the migration docs name them as they sit in a v1 install.
+.claude/hooks
+.claude/hooks/
+.claude/hooks/guard-git.sh
+.claude/hooks/guard-main-edit.sh
+
+# Human-committed evidence gate (IMP-1) and the baseline result files the human fills: absent in the kit repo by design.
+docs/baseline/evidence.json
+docs/baseline/results/run-N.json
+
+# The hello-loop fixture's kit-overlay primers name files of the fixture project (the run's root), not the kit repo.
+tests/helpers.py
+tests/test_health.py
+tests/test_migrate.py
+
+# 0b-prose: files that live in a user's project, not in the kit.
+.claude/launch.json
+docs/domain-glossary.md
+
+# 0b-prose: moved to .claude/context/choosing-your-stack.md (IMP-20). CHANGELOG entries are history.
+docs/choosing-your-stack.md
+
+# Probe harness (IMP-7): paths inside a scratch repo (tools/probes/files/ copies them there), the results file the
+# human creates from the template.
+.claude/probe/*
+docs/design/probe-results.md
+
+# 6-infra-ci and later: workflows a user installs from .claude/templates/ into their own .github/workflows/, and the
+# policy file the infra CI templates read (all in the user's project, not in the kit repo).
+.github/workflows/infra-*.yml
+.github/workflows/label-guard.yml
+.github/workflows/verify.yml
+.claude/infra-policy.json
+
+# 11a-bootstrap-ops: files /bootstrap writes in a user's project (never tracked in the kit repo).
+.claude/bootstrap-receipt.json
+.claude/bootstrap-receipt.json.lock
+.claude/bootstrap/*
+.claude/pr/
+
+# 9-packaging: files the migration tooling creates in a user's project, and the retired v1 mode directory the migration notes name.
+.claude/commands
+.claude/commands/*
+.claude/.migrate
+.claude/.migrate/*
+.claude/settings.json.pre-init

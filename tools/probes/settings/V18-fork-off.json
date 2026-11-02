@@ -1,0 +1,10 @@
+{
+  "env": {
+    "CLAUDE_CODE_FORK_SUBAGENT": "0"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(sh .claude/probe/slow.sh *)"
+    ]
+  }
+}

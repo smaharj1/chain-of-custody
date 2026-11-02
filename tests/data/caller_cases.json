@@ -1,0 +1,247 @@
+{
+ "registry": {
+  "s-conductor": {
+   "role": "conductor"
+  },
+  "s-eng": {
+   "role": "backend-engineer"
+  },
+  "s-critic": {
+   "role": "plugin:code-reviewer"
+  },
+  "s-weird": {
+   "role": "wizard"
+  },
+  "s-norole": {}
+ },
+ "rows": [
+  {
+   "name": "registered conductor, no agent_id",
+   "input": {
+    "session_id": "s-conductor"
+   },
+   "kind": "conductor",
+   "role": "conductor"
+  },
+  {
+   "name": "registered conductor even with --agent style agent_type",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_type": "backend-engineer"
+   },
+   "kind": "conductor",
+   "role": "conductor"
+  },
+  {
+   "name": "unregistered main session",
+   "input": {
+    "session_id": "s-other"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "unregistered session whose agent_type claims conductor",
+   "input": {
+    "session_id": "s-other",
+    "agent_type": "conductor"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "unregistered session with an engineer agent_type (human --agent session)",
+   "input": {
+    "session_id": "s-other",
+    "agent_type": "backend-engineer"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "driver child registered as engineer",
+   "input": {
+    "session_id": "s-eng"
+   },
+   "kind": "engineer",
+   "role": "backend-engineer"
+  },
+  {
+   "name": "driver child registered with plugin-prefixed critic role",
+   "input": {
+    "session_id": "s-critic"
+   },
+   "kind": "critic",
+   "role": "code-reviewer"
+  },
+  {
+   "name": "registered session with an off-roster role",
+   "input": {
+    "session_id": "s-weird"
+   },
+   "kind": "unknown",
+   "role": "wizard"
+  },
+  {
+   "name": "registered session without a role",
+   "input": {
+    "session_id": "s-norole"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "subagent engineer",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": "a1",
+    "agent_type": "database-engineer"
+   },
+   "kind": "engineer",
+   "role": "database-engineer"
+  },
+  {
+   "name": "subagent engineer with plugin prefix",
+   "input": {
+    "session_id": "s-x",
+    "agent_id": "a1",
+    "agent_type": "chain-of-custody:app-engineer"
+   },
+   "kind": "engineer",
+   "role": "app-engineer"
+  },
+  {
+   "name": "subagent critic",
+   "input": {
+    "session_id": "s-x",
+    "agent_id": "a2",
+    "agent_type": "design-critic"
+   },
+   "kind": "critic",
+   "role": "design-critic"
+  },
+  {
+   "name": "subagent security reviewer in an unregistered session",
+   "input": {
+    "session_id": "s-x",
+    "agent_id": "a3",
+    "agent_type": "security-reviewer"
+   },
+   "kind": "critic",
+   "role": "security-reviewer"
+  },
+  {
+   "name": "subagent with unknown agent_type is an engineer (IMP-7 V1)",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": "a4",
+    "agent_type": "mystery-agent"
+   },
+   "kind": "engineer",
+   "role": "mystery-agent"
+  },
+  {
+   "name": "subagent claiming to be the conductor is an engineer",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": "a5",
+    "agent_type": "conductor"
+   },
+   "kind": "engineer",
+   "role": "conductor"
+  },
+  {
+   "name": "subagent without agent_type",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": "a6"
+   },
+   "kind": "unknown-subagent"
+  },
+  {
+   "name": "subagent with non-string agent_type",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": "a7",
+    "agent_type": 7
+   },
+   "kind": "unknown-subagent"
+  },
+  {
+   "name": "subagent with empty agent_type",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": "a8",
+    "agent_type": "  "
+   },
+   "kind": "unknown-subagent"
+  },
+  {
+   "name": "non-string agent_id",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": 5,
+    "agent_type": "app-engineer"
+   },
+   "kind": "unknown-subagent"
+  },
+  {
+   "name": "empty agent_id is treated as absent",
+   "input": {
+    "session_id": "s-conductor",
+    "agent_id": ""
+   },
+   "kind": "conductor",
+   "role": "conductor"
+  },
+  {
+   "name": "missing session_id",
+   "input": {
+    "agent_id": "a1",
+    "agent_type": "app-engineer"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "session_id with path traversal",
+   "input": {
+    "session_id": "../../etc/passwd",
+    "agent_type": "x"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "session_id with a slash",
+   "input": {
+    "session_id": "a/b"
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "non-string session_id",
+   "input": {
+    "session_id": 12
+   },
+   "kind": "unknown"
+  },
+  {
+   "name": "empty input",
+   "input": {},
+   "kind": "unknown"
+  },
+  {
+   "name": "input not an object",
+   "input": [
+    1,
+    2
+   ],
+   "kind": "unknown"
+  },
+  {
+   "name": "input is null",
+   "input": null,
+   "kind": "unknown"
+  },
+  {
+   "name": "input is a string",
+   "input": "hello",
+   "kind": "unknown"
+  }
+ ]
+}

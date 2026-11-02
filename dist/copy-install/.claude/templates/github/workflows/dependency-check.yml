@@ -1,0 +1,115 @@
+# dependency-check: a weekly job that opens `factory:deps` issues (report 19.7 "Primer and lockfile drift"; F-31 row 24; DEC-32).
+# Copy to .github/workflows/dependency-check.yml. Needs the labels from apply-labels.sh.
+#
+# It looks for: majors that are out of date (npm outdated, pip), security advisories (osv-scanner), peer dependencies the lockfile
+# does not satisfy, and a primer or CLAUDE.md that names a different major than the lockfile has. It opens one issue per finding
+# (at most 10 per run, never twice for the same title) and changes nothing else. Patch and minor bumps are counted, not opened.
+# A model is not involved: python3 .claude/scripts/dependency_report.py reads the saved JSON and writes the issue texts.
+#
+# Two jobs, so the one that runs your project's package manager cannot write to the repository:
+#   * `scan`   contents: read, no secrets, runs the package managers with --ignore-scripts, saves JSON as an artifact;
+#   * `report` issues: write, no checkout of anything but the default branch's kit scripts, runs no package manager.
+# Package names reach issue titles only after a strict pattern check, and reach the shell only as data read from a file.
+#
+# Edit the "Set up" step for your toolchain (setup-node, setup-python, a pinned osv-scanner release). Actions are referenced by tag;
+# pin each to a commit SHA (ci_lint warns). It runs on the default branch only. Starting it by hand is `workflow_dispatch`.
+name: dependency-check
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-check
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      # Set up: add the toolchain your project needs here, for example actions/setup-node or actions/setup-python
+      # (pin them), and install osv-scanner from a pinned release if you want advisories. Without them the matching
+      # checks are skipped, and the report says so.
+
+      - name: Collect
+        run: |
+          set -u
+          mkdir -p .deps
+          if [ -f package.json ] && command -v npm >/dev/null 2>&1; then
+            if [ -f package-lock.json ]; then npm ci --ignore-scripts >/dev/null 2>&1 || true; fi
+            npm outdated --json > .deps/npm-outdated.json 2>/dev/null || true   # exits 1 when something is outdated
+          fi
+          if { [ -f requirements.txt ] || [ -f pyproject.toml ]; } && command -v pip >/dev/null 2>&1; then
+            pip list --outdated --format=json > .deps/pip-outdated.json 2>/dev/null || true
+          fi
+          if command -v osv-scanner >/dev/null 2>&1; then
+            osv-scanner --format json --recursive . > .deps/osv.json 2>/dev/null || true   # exits 1 when it finds something
+          fi
+
+      - uses: actions/upload-artifact@v4 # pin to a commit SHA
+        with:
+          name: dependency-scan
+          path: .deps
+          retention-days: 3
+
+  report:
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4 # pin to a commit SHA
+        with:
+          name: dependency-scan
+          path: .deps-in
+
+      - name: Decide what is worth an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          mkdir -p .deps
+          gh issue list --label factory:deps --state open --limit 200 --json title > .deps/existing.json
+          # the lockfiles and primers are this job's own checkout of the default branch, not the scan job's copies
+          args=""
+          [ -f .deps-in/npm-outdated.json ] && args="$args --npm-outdated .deps-in/npm-outdated.json"
+          [ -f .deps-in/pip-outdated.json ] && args="$args --pip-outdated .deps-in/pip-outdated.json"
+          [ -f .deps-in/osv.json ] && args="$args --osv .deps-in/osv.json"
+          # shellcheck disable=SC2086
+          python3 .claude/scripts/dependency_report.py --repo . --out-dir .deps --existing-issues .deps/existing.json --max-issues 10 $args
+          cat .deps/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open the issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          n="$(jq length .deps/issues.json)"
+          i=0
+          while [ "$i" -lt "$n" ]; do
+            jq -r ".[$i].title" .deps/issues.json > .deps/title.txt
+            jq -r ".[$i].body" .deps/issues.json > .deps/body.md
+            gh issue create --title "$(cat .deps/title.txt)" --body-file .deps/body.md --label factory:deps
+            i=$((i + 1))
+          done

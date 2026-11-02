@@ -1,0 +1,2 @@
+== named spawn ==
+Dispatch the subagent probe-named with the Agent tool and set the name parameter to "probe-alpha". Tell me in one line whether the tool result calls it a teammate or a subagent, and quote the id it returned. Then use SendMessage to send "second message: follow your instructions" to probe-alpha and tell me what happened.

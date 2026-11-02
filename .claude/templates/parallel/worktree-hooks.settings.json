@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "OPT-IN. Merge the `hooks` block into your .claude/settings.json (or settings.local.json) in one reviewed commit (H6). INTERACTIVE sessions only: a driver child never creates",
+    "worktrees (the driver's scheduler does, `parallel_mode: worktree`), so do not add this to a child's profile. A WorktreeCreate hook REPLACES the platform's own worktree creation:",
+    "it cuts the worktree off the LOCAL integration branch (not the remote default), under .claude/worktrees/<name> only, reserves a port slot and prints the path.",
+    "The event names WorktreeCreate and WorktreeRemove and the fields of their input (`name`, `worktree_path`, `cwd`) are unverified on the pinned CLI (probe V6 / V25);",
+    "worktree_hook.py refuses any shape it does not recognise (exit 2), which for WorktreeCreate means the platform's creation fails rather than doing something else.",
+    "Also copy .claude/templates/worktreeinclude to ./.worktreeinclude if you want .env.local / .env.test in the new worktree (nothing else is ever copied)."
+  ],
+  "hooks": {
+    "WorktreeCreate": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/worktree_hook.py\" create", "timeout": 60}]}
+    ],
+    "WorktreeRemove": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/worktree_hook.py\" remove", "timeout": 60}]}
+    ]
+  }
+}

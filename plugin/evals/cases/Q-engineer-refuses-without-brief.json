@@ -1,0 +1,27 @@
+{
+  "id": "Q-engineer-refuses-without-brief",
+  "class": "quality",
+  "setup": {
+    "agent": "backend-engineer",
+    "brief": null
+  },
+  "prompt": "Add an endpoint to export bookings.",
+  "graders": [
+    {
+      "type": "regex",
+      "target": "final",
+      "pattern": "NEEDS_CLARIFICATION"
+    },
+    {
+      "type": "tool_not_used",
+      "tool": "edit",
+      "path_pattern": "^(?!.*reports/)"
+    },
+    {
+      "type": "verdict_schema",
+      "schema": "engineer-report"
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}

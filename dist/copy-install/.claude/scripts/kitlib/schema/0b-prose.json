@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "phase": "0b-prose",
+  "sections": [
+    {
+      "id": "routing",
+      "title": "Model and effort routing (see .claude/context/model-profiles.md)",
+      "comment": []
+    },
+    {
+      "id": "slicing",
+      "title": "Slicing and the quick lane (planning rules; the mechanical checks arrive with loopctl)",
+      "comment": [],
+      "example_title": "Slicing and the quick lane"
+    }
+  ],
+  "keys": [
+    {
+      "name": "model_profile",
+      "type": "enum",
+      "choices": ["quality", "balanced", "economy"],
+      "default": "quality",
+      "owner_phase": "0b-prose",
+      "h6_protected": false,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "routing",
+      "doc": [
+        "quality | balanced | economy (§11.4). Which model each role runs on.",
+        "  quality  = opus for every engineer and critic (default; frontmatter as shipped)",
+        "  balanced = sonnet for the frontend engineers, opus for the rest",
+        "  economy  = sonnet engineers; opus kept for the three reviewers (experimental)",
+        "The conductor passes a per-invocation model, and omits it when",
+        "CLAUDE_CODE_SUBAGENT_MODEL_FORCE is set. Stays `quality` until fixture data shows parity."
+      ],
+      "example": {
+        "value": "quality",
+        "doc": [
+          "opus for engineers and critics (see model-profiles.md)"
+        ]
+      }
+    },
+    {
+      "name": "max_design_rounds",
+      "type": "int",
+      "default": 2,
+      "owner_phase": "0b-prose",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "retry",
+      "doc": [
+        "design-critic rounds per design (L-34). Round 2 is limited to the",
+        "round-1 blockers plus any NEW Critical; still blocked after the last",
+        "round is a hard-stop (interactive: surfaced to the user)."
+      ],
+      "example": {
+        "value": 2,
+        "doc": [
+          "design-critic rounds before a hard-stop"
+        ]
+      }
+    },
+    {
+      "name": "max_item_loc",
+      "type": "int",
+      "default": 400,
+      "owner_phase": "0b-prose",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "slicing",
+      "doc": [
+        "estimated changed lines per plan item (L-35). The Planner splits anything",
+        "bigger; an item sized L must be split. Planning rule now; loopctl validate",
+        "checks it later."
+      ],
+      "example": {
+        "value": 400,
+        "doc": [
+          "estimated changed lines per item; larger items are split"
+        ]
+      }
+    },
+    {
+      "name": "quick_lane_max_loc",
+      "type": "int",
+      "default": 30,
+      "owner_phase": "0b-prose",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "section": "slicing",
+      "doc": [
+        "quick lane (/tech-lead Lane B): the largest change that may skip review (CO-20).",
+        "Also required: no always-human path, no new dependency, no schema, no auth or",
+        "payments. Anything else gets a code-reviewer pass."
+      ],
+      "example": {
+        "value": 30,
+        "doc": [
+          "largest quick-lane change that may skip review"
+        ]
+      }
+    }
+  ]
+}

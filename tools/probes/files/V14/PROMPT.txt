@@ -1,0 +1,2 @@
+== denials ==
+Run these four Bash commands, each in its own tool call, and report each result in one line. Do not retry a denied command. Commands: echo probe-v14-1 ; echo probe-v14-2 ; echo probe-v14-3 ; echo probe-v14-4

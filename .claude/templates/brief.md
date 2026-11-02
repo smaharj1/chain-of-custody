@@ -5,8 +5,8 @@
 **Authored by**: Tech Lead
 **Date**: <YYYY-MM-DD>
 **Iteration**: 1
-**max_review_rounds**: 2
-**tool_call_budget**: <use protocol default unless overriding — see `.claude/context/engineer-protocol.md` section 4>
+**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md` (default 2). One cap name across the kit. There is no tool-call budget (`.claude/context/engineer-protocol.md` section 4).
+**Report path**: `docs/features/<slug>/reports/<engineer>.md` (write your own report here; the conductor does not re-type it)
 
 ---
 
@@ -50,13 +50,20 @@ What "done" looks like for this engineer specifically.
 - [ ] ...
 - [ ] ...
 - [ ] Lint clean. Existing tests still pass. Domain verification commands all PASS.
-- [ ] Code review returns no blockers within `max_review_rounds` (the Tech Lead's `code-review:code-review` Skill interactively; the independent `code-reviewer` Agent in the loop).
+- [ ] The independent `code-reviewer` agent returns no blockers within the retry cap (same reviewer in every lane).
+- [ ] The report's `## Primer Delta` and `## Doc Delta` are filled in (`NONE` with a `checked:` line is fine). A new endpoint or environment variable is documented.
 
 ## Out of Scope
 
 (Explicit fences. Don't touch these areas even if they look related.)
 
 - ...
+- ...
+
+## Clarifications
+
+(Empty at dispatch. If you return `NEEDS_CLARIFICATION`, the Tech Lead or Orchestrator writes the answer here before resuming you, so the record exists. Read this section again when you are resumed.)
+
 - ...
 
 ## Notes from Tech Lead / Architect
@@ -69,8 +76,8 @@ What "done" looks like for this engineer specifically.
 
 ## Iteration 2 Addendum (only filled in for re-dispatch after review)
 
-> When Tech Lead re-dispatches you after a `CHANGES_REQUESTED` review, this section will list:
+> When Tech Lead **resumes you** (by `agent_id`) after a `CHANGES_REQUESTED` review, this section or the resume message will list:
 >
-> - **Blockers to address** (from the `code-review:code-review` Skill interactively, or the `code-reviewer` Agent in the loop)
+> - **Blockers to address** (from the `code-reviewer` agent)
 > - **Suggestions to address** (unless you have a stated reason to disagree)
 > - **Pointer to your iteration-1 report** at `docs/features/<slug>/reports/<engineer>.md` (`<engineer>` = the domain shortname: `database`, `backend`, `app`, `admin-app`, `infra`)

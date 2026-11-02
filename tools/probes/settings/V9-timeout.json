@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" sleep --tag v9-timeout-pretooluse --seconds 30 --log \"{{LOG}}\"",
+            "timeout": 2,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" sleep --tag v9-timeout-permissionrequest --seconds 30 --log \"{{LOG}}\"",
+            "timeout": 2,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" sleep --tag v9-timeout-configchange --seconds 30 --log \"{{LOG}}\"",
+            "timeout": 2,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  }
+}

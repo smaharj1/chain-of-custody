@@ -1,6 +1,6 @@
 # Examples — a worked reference, not a running project
 
-Everything in this folder describes **TaskFlow**, a fictional SaaS project management app. TaskFlow does not exist as code — not in this repo, not anywhere. There is no `packages/api/`, no `apps/web/`, no database to migrate.
+Everything in this folder except `hello-loop/` (see [below](#hello-loop-a-real-fixture)) describes **TaskFlow**, a fictional SaaS project management app. TaskFlow does not exist as code — not in this repo, not anywhere. There is no `packages/api/`, no `apps/web/`, no database to migrate.
 
 These files are **hand-authored illustrations** of what the kit's artifacts look like when they're filled in properly. They were written by hand as a reference; they were not captured from an actual `/pm` → `/architect` → `/tech-lead` session. Read them the way you'd read a worked example in a textbook: the shape, depth, and specificity are the lesson, and the contents are invented.
 
@@ -28,6 +28,10 @@ The paths here mirror where each file lives once you've copied the kit, minus on
 
 Don't copy these files into your own project — they describe someone else's fictional app, and an engineer that reads them as project context will chase files that aren't there. Copy the **templates** (`.claude/context/`, `.claude/templates/`) and keep these open alongside as the answer key.
 
+## hello-loop: a real fixture
+
+[`hello-loop/`](hello-loop/README.md) is the one directory here that is real, runnable code: a small bookmarks service (Python standard library only) with a three-item build plan, pre-filled primers, held-out acceptance checks and an answer key. It is the fixture the kit is measured against ([`docs/baseline/README.md`](../docs/baseline/README.md), `tools/baseline/`). It is hand-written, not the output of a `/planner` and `/orchestrate` run.
+
 ## What's missing
 
-The kit does not ship a runnable demo: a real, small codebase produced by actually running `/planner` and `/orchestrate` end to end, committed together with the artifacts that run genuinely emitted. That's a real gap — it means the loop's output has never been published in a form anyone can verify. Until that exists, treat this folder as a specification of intent rather than evidence of results.
+The kit still has no published run: a codebase produced by actually running `/planner` and `/orchestrate` end to end, committed with the artifacts that run genuinely emitted. `hello-loop/` is the input for such a run, not a record of one, and no baseline run has been made yet. Until transcripts exist, treat the TaskFlow files as a specification of intent rather than evidence of results.

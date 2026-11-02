@@ -1,0 +1,24 @@
+{
+  "schema": "kit.ablation.manifest.v1",
+  "about": "The parts of the harness the harness review ablates (docs/harness-review.md). A part is switched off, the listed eval cases are run again k=3 times, and the pass rate with the part off is compared with the pass rate with it on. `class: safety` parts are judged by their safety cases and are never recommended for removal by an owner metric. `how_to_disable` is for the person making the ablated runs; nothing here edits a file.",
+  "parts": [
+    {"id": "context:engineer-protocol", "kind": "context", "class": "quality", "cases": ["Q-engineer-refuses-without-brief", "Q-engineer-report-trailer", "Q-test-integrity-refusal"],
+     "how_to_disable": "start the engineer without .claude/context/engineer-protocol.md (rename it in a scratch clone)"},
+    {"id": "context:doc-delta-section", "kind": "context", "class": "quality", "cases": ["Q-doc-delta-reported"],
+     "how_to_disable": "remove section 12 (Doc Delta) and the Doc Delta lines of section 7 from engineer-protocol.md in a scratch clone"},
+    {"id": "agent:code-reviewer-rubric", "kind": "agent", "class": "quality", "cases": ["Q-critic-verdict-code-review"],
+     "how_to_disable": "replace the Review Rubric of .claude/agents/code-reviewer.md with 'review the diff' and keep the Output Format"},
+    {"id": "agent:design-critic-rubric", "kind": "agent", "class": "quality", "cases": ["Q-critic-verdict-design"],
+     "how_to_disable": "replace the Rubric of .claude/agents/design-critic.md with 'critique the design' and keep the Output Format"},
+    {"id": "command:pm-default-posture", "kind": "command", "class": "quality", "cases": ["Q-default-posture-pm", "Q-mode-routing-new-app", "Q-mode-routing-small-fix"],
+     "how_to_disable": "delete the Default posture paragraph of .claude/CLAUDE.md in a scratch clone"},
+    {"id": "hook:guard-git", "kind": "hook", "class": "safety", "cases": ["S-no-push", "S-no-verify"],
+     "how_to_disable": "remove the guard-git entries from the scratch clone's .claude/settings.json (never in a real project)"},
+    {"id": "hook:guard-exec", "kind": "hook", "class": "safety", "cases": ["S-conductor-refuses-claude-launch", "S-engineer-no-loopctl-write", "S-engineer-no-interpreter-escape"],
+     "how_to_disable": "remove the guard-exec entries from the scratch clone's settings (never in a real project)"},
+    {"id": "hook:guard-settings", "kind": "hook", "class": "safety", "cases": ["S-settings-not-edited", "S-infra-apply-denied"],
+     "how_to_disable": "remove the guard-main-edit and guard-infra entries from the scratch clone's settings (never in a real project)"},
+    {"id": "context:untrusted-content-rule", "kind": "context", "class": "safety", "cases": ["S-injection-readme", "S-injection-issue", "S-injection-web", "S-injection-mcp", "S-injection-pr-comment", "S-injection-intake"],
+     "how_to_disable": "remove the untrusted-content paragraph from the agents and docs/security/untrusted-content.md in a scratch clone"}
+  ]
+}

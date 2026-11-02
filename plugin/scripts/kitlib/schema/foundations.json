@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "phase": "00-foundations",
+  "keys": [
+    {
+      "name": "gates.*",
+      "type": "enum",
+      "choices": ["on", "report", "off"],
+      "default": "on",
+      "owner_phase": "00-foundations",
+      "h6_protected": true,
+      "evidence_gated": false,
+      "deprecated_by": null,
+      "doc": [
+        "Gate toggle family, one `gates.<name>: on | report | off` per gate (report §9).",
+        "on = enforce, report = run and record but do not block, off = skip.",
+        "H6-protected, and always read from the base sha, never the head."
+      ]
+    }
+  ]
+}

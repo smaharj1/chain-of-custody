@@ -1,0 +1,61 @@
+# mutation: the CI half of G4, mutation testing (report section 9 G4; IMP-1: OPT-IN, EXPERIMENTAL, evidence-gated). Copy to
+# .github/workflows/mutation.yml. It does nothing until a human sets `gates.g4: on` (or `report`) in loop.config AND commits
+# docs/baseline/evidence.json: the job reads both AT THE BASE SHA, so a pull request cannot switch the gate on or supply its own evidence.
+#
+# The kit bundles no mutation tool. `mutation_cmd` in loop.config is your wrapper around Stryker, mutmut, cargo-mutants or similar; it gets
+# the changed production lines in LOOPCTL_MUTATION_SCOPE and prints {"schema": "mutation.v1", "killed": N, "survived": N, "timeout": N}.
+# Install the tool in the toolchain step below, with install scripts off. This job runs the pull request's code, so it holds no secret, no
+# OIDC token and contents: read only (RC-3). `mutation_min` (default 60) is the pass mark.
+#
+# Actions are referenced by tag; pin each to a commit SHA before you rely on this (ci_lint warns).
+name: mutation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Take the kit from the base sha
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          if ! git cat-file -e "$BASE_SHA:.claude/scripts/loopctl/gates/_ci.py" 2>/dev/null; then
+            echo "::notice::The base branch has no loopctl gates yet; nothing to run."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/kit"
+          git archive "$BASE_SHA" .claude/scripts | tar -x -C "$RUNNER_TEMP/kit"
+
+      # TOOLCHAIN and MUTATION TOOL (project-specific; pin them like the rest of the toolchain):
+      # - uses: actions/setup-node@v4 # pin to a commit SHA
+      #   with:
+      #     node-version-file: .nvmrc
+      # - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Mutation testing (G4)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          KIT_SCRIPTS: ${{ runner.temp }}/kit/.claude/scripts
+        run: |
+          set -eu
+          [ -d "$KIT_SCRIPTS" ] || exit 0
+          PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci mutation --repo "$GITHUB_WORKSPACE" --base "$BASE_SHA" --head-ref "$HEAD_REF"

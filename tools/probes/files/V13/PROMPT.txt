@@ -1,0 +1,4 @@
+== agents ==
+Dispatch the subagent probe13:plugin-agent, wait for it, then dispatch the subagent project-agent. Use the prompt "Follow your instructions." for both. Do nothing else. Reply with one line: v13 agents done.
+== command ==
+/probe13:probe-cmd

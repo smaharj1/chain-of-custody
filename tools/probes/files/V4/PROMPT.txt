@@ -1,0 +1,4 @@
+== setup ==
+Remember the codeword CODEWORD-V4-ALPHA. Reply "ok" and nothing else.
+== skill ==
+/probe-fork-skill

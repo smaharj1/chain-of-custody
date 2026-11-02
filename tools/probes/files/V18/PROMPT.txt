@@ -1,0 +1,6 @@
+== direct ==
+Dispatch the subagent probe-slow with the prompt "Follow your instructions." As your very next action, with no waiting, run the Bash command: echo probe-v18-parent-after. Then reply with one line: v18 direct done.
+== nested ==
+Dispatch the subagent probe-spawner with the prompt "Follow your instructions." Do nothing else. When it returns, reply with one line: v18 nested done.
+== driver ==
+Follow your instructions.

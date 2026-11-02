@@ -1,0 +1,49 @@
+{
+  "_comment": "Template for docs/baseline/evidence.json, the human-committed evidence gate (IMP-1). Copy to evidence.json, replace every <placeholder>, set clean/completed to true only when it is true, and commit it yourself. While any <...>, TODO, CHANGEME or TBD string remains the file counts as incomplete. Needs 3 clean fixture runs with unique ids and 1 completed real feature. Format checked by kitlib.evidence (schema evidence.v1); extra fields are allowed.",
+  "schema": "evidence.v1",
+  "fixture_runs": [
+    {
+      "id": "<run id, for example e1>",
+      "clean": false,
+      "date": "<YYYY-MM-DD>",
+      "kit_version": "<kit version under test>",
+      "level": "<L2 or higher>",
+      "runner": "<driver or sequential>",
+      "control_flow_rescues": "<number>",
+      "results_file": "<path to the results file>",
+      "notes": "<what made it clean: no rescues, all held-out checks passed>"
+    },
+    {
+      "id": "<run id>",
+      "clean": false,
+      "date": "<YYYY-MM-DD>",
+      "kit_version": "<kit version under test>",
+      "level": "<L2 or higher>",
+      "runner": "<driver or sequential>",
+      "control_flow_rescues": "<number>",
+      "results_file": "<path to the results file>",
+      "notes": "<...>"
+    },
+    {
+      "id": "<run id>",
+      "clean": false,
+      "date": "<YYYY-MM-DD>",
+      "kit_version": "<kit version under test>",
+      "level": "<L2 or higher>",
+      "runner": "<driver or sequential>",
+      "control_flow_rescues": "<number>",
+      "results_file": "<path to the results file>",
+      "notes": "<...>"
+    }
+  ],
+  "real_feature": {
+    "id": "<feature id or PR reference>",
+    "completed": false,
+    "level": "<L2 or higher>",
+    "description": "<one line>",
+    "pr_url": "<url of the merged pull request>"
+  },
+  "kill_criteria_checked": false,
+  "attested_by": "<your name>",
+  "attested_at": "<YYYY-MM-DD>"
+}

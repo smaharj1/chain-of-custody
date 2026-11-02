@@ -1,0 +1,18 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "python3 \"{{HOOK}}\" statusline --tag v8-statusline --log \"{{LOG}}\""
+  },
+  "hooks": {
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" mark --tag v8-subagentstop-marker --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ]
+  }
+}

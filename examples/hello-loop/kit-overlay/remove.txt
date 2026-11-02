@@ -1,0 +1,7 @@
+# Paths deleted from the v1.2.0 clone after the overlay is applied, one per line.
+# hello-loop has no admin app and no infrastructure code. The v1.2.0 templates say to delete
+# these primers and agents in that case, and the Orchestrator's roster comes from .claude/agents/.
+.claude/agents/admin-app-engineer.md
+.claude/agents/infra-engineer.md
+.claude/context/admin-app.md
+.claude/context/infra.md

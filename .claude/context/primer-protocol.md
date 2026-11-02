@@ -27,19 +27,19 @@ The information is in the repo. Read it.
 - **Conventions** — file naming, error handling, logging, test layout: read several real files and describe what they *do*, not what's idiomatic elsewhere.
 - **Canonical exemplar** — name a real file per layer, one that exists and is representative. This is the highest-value line in any primer; engineers copy it.
 - **Catalogs** (endpoints, tables) — **point at the source of truth** (`see src/routes/*.ts`) rather than enumerating. A pointer that stays true beats a list that goes stale.
-- **Library specifics** — context7 MCP, not training memory.
+- **Library specifics** — a documentation tool if one is available, otherwise `WebFetch` on the library's own docs; never training memory.
 
 Two hard limits:
 
 - **Never assert what the code doesn't show.** An unsupported claim in a primer is worse than an absent one — engineers treat primers as fact.
-- **Execution-critical commands must be proven, not guessed.** The run/test/reset commands in `local-dev.md` (and their `loop.config.md` counterparts) get **run once** to confirm they work before you write them down. A plausible-looking wrong command surfaces later as a mystery hard-stop mid-run.
+- **Execution-critical commands must be proven, not guessed.** The run/test/reset commands in `local-dev.md` (and their `loop.config.md` counterparts) get **proven once, in the sandboxed probe** (`.claude/context/probe-protocol.md`: command list shown to the human first, network off, explicit go) before you write them down. Never run an unknown repo's scripts in the host shell. A plausible-looking wrong command surfaces later as a mystery hard-stop mid-run.
 
 ## Greenfield: no code to read yet
 
 On an empty folder the evidence doesn't exist. Then:
 
 - Write what the **decided stack** determines (the Planner made those calls with the user in plain language — see `/planner` Phase 2).
-- Leave the evidence-dependent sections — exemplars, catalogs, layering specifics — marked `TODO(primer): <what's missing>`, and let the baseline item's ship fill them (the Orchestrator's primer-delta step 5.5 / Tech-Lead A.8 step 5). A primer that describes a repo layout nobody has built yet is fiction.
+- Leave the evidence-dependent sections — exemplars, catalogs, layering specifics — marked `TODO(primer): <what's missing>`, and let the baseline item's ship fill them (the Orchestrator's primer-delta step / Tech-Lead A.8 step 5). A primer that describes a repo layout nobody has built yet is fiction.
 
 ## What you may ask the user
 
@@ -83,3 +83,12 @@ A primer is only worth reading if it matches reality, and reality moves every ti
 Also close out `TODO(primer)` markers as the code that resolves them lands. That's what lifts a loop's autonomy downgrade, and nothing re-checks it on its own.
 
 Update in place. Primers are living documents, not append-only logs — replace the stale claim, don't stack a "Revision 3" note on top of it. When a primer's own accuracy is what's in question, the code wins: re-derive that section from the evidence.
+
+## Rules: invariants that must hold on every edit
+
+A primer is read on purpose, at the start of a task. Some facts must hold even when nobody re-reads the primer: "validation errors are `422`, never `400`", "SQL uses the production dialect's quoting", "route handlers never touch the database directly". Put those few invariants in short, **path-scoped rule files** under `.claude/rules/<topic>.md` (template: `.claude/templates/rule.md`), not in a primer. Rules are loaded automatically for the paths they name, **including inside subagents**, so an engineer sees them whether or not its brief mentioned them.
+
+- One invariant per file, a few lines each, with the `paths:` it applies to. A rule that needs a page of explanation belongs in the primer, with the rule pointing at it.
+- Primers stay the custody-visible read (the exemplars, the layering, the "why"); rules carry only what must never be violated.
+- The always-loaded context stays small: `.claude/CLAUDE.md` plus all rules should stay under about 8 KiB. If it grows past that, move prose into primers.
+- Rules are project knowledge: the agents write them from evidence (a repeated review finding, a brief gap), exactly as they write primers, and the human can read and correct them.
