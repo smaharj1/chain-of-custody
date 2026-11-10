@@ -7,22 +7,32 @@ import shutil
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 from tests import REPO_ROOT, SCRIPTS_DIR
 from tests.helpers import BaseTestCase, install_fake_claude, read_jsonl
 from tests.helpers.fakehome import FAKE_AWS_KEY_ID, FAKE_AWS_SECRET, FAKE_GH_TOKEN
 
-from doctorlib.model import CHECKS
+from doctorlib.model import CHECKS, Context
 
-from .helpers import BoundaryCase, DOCTOR, run_doctor
+from .helpers import BoundaryCase, DOCTOR, guarded_run, run_doctor
 
 SECRET_FRAGMENTS = (FAKE_AWS_KEY_ID, FAKE_AWS_SECRET, FAKE_GH_TOKEN, "FAKESESSIONTOKEN", "ZmFrZTpmYWtl")
 
 
 class Cli(BoundaryCase):
     def run_cli(self, repo, *args, env_extra=None):
+        """doctor.py in this process, with the host's docker socket, groups and sudo faked: a CI runner has docker and passwordless sudo."""
         env = self.fake_home.env(env_extra)
-        return run_doctor(["--repo", repo.path, "--home", self.fake_home.path, "--claude-version", "2.1.305"] + list(args), env)
+        real_init = Context.__init__
+
+        def init(ctx, *a, **kw):
+            kw.setdefault("fs_root", self.fs_root)
+            kw.setdefault("groups", [])
+            kw["run"] = guarded_run
+            real_init(ctx, *a, **kw)
+        with mock.patch.object(Context, "__init__", init):
+            return run_doctor(["--repo", repo.path, "--home", self.fake_home.path, "--claude-version", "2.1.305"] + list(args), env)
 
     def test_json_document_shape(self):
         repo = self.kit_repo()

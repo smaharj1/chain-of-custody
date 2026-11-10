@@ -80,7 +80,7 @@ All of this runs only in Claude Code, through the plugin:
 - **Human-step enforcement.** The agent is told to stop and ask before a merge or an infrastructure apply. Nothing makes it.
 
 Kit scripts (`verify.py`, `pr_prepare.py`, `loopctl`, `doctor.py`) are not copied. The copy names each one as
-"`scripts/x` (Claude Code plugin only; link)". The link shows what the script does; it does not run here. `GUIDE.md` says
+"`scripts/<name>` (Claude Code plugin only; link)". The link shows what the script does; it does not run here. `GUIDE.md` says
 what to do instead: run the `verify_*` commands yourself, and deliver by hand.
 
 For real enforcement, use your CI: required status checks and code review on every pull request, and branch protection on

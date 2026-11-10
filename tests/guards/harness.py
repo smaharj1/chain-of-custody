@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import tempfile
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -39,12 +40,30 @@ SESSIONS = {
 CONFIG_TEXT = "# Loop Config\n\n```yaml\nautonomy_level: L1\n```\n"
 
 
+# PATH entries under these are denied (g_exec path-hijack), so a fake HOME there makes `$HOME/.local/bin` look hijacked
+_SCRATCH_PREFIXES = ("/tmp", "/var/tmp", "/private/tmp", "/dev/shm")
+
+
+def _fixture_base() -> Optional[str]:
+    """Where the fixtures go: the temp directory, unless it is a scratch dir like Linux's /tmp; then the user's cache directory, which
+    sits under the real HOME as a real HOME does."""
+    tmp = os.path.realpath(tempfile.gettempdir())
+    if not any(tmp == p or tmp.startswith(p + "/") for p in _SCRATCH_PREFIXES):
+        return None
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Caches")
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
 class Fixtures(object):
     """main repo (on main), feat repo (on feat/x), a linked worktree of main on feat/wt, a detached worktree, a plain
     directory and a fake HOME."""
 
     def __init__(self) -> None:
-        self.root = os.path.realpath(tempfile.mkdtemp(prefix="kit-guards-fx-"))
+        self.root = os.path.realpath(tempfile.mkdtemp(prefix="kit-guards-fx-", dir=_fixture_base()))
         self.home = os.path.join(self.root, "home")
         os.makedirs(os.path.join(self.home, ".ssh"))
         self.plain = os.path.join(self.root, "plain")

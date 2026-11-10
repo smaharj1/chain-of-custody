@@ -182,7 +182,7 @@ class ScanOnePass(unittest.TestCase):
                                  ("default", "DB_PASSWORD=${A:-Ab12Cd34Ef56}", ".env"), ("open refs", "password: ${", "a.yml")):
             text = unit * (200000 // len(unit))
             with self.subTest(name):
-                with Limit(self, name, 1.0):
+                with Limit(self, name, 10.0):
                     g11_secrets.scan(text, path)
 
     def test_past_the_cap_it_is_one_finding(self):

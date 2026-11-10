@@ -122,7 +122,7 @@ def _judge_one(ctx: Ctx, text: str, cwd: str, via: str, tree: Any, aliases: Dict
         if hit:
             return _h6(hit[0], hit[1], via)
         if tree and os.path.isdir(f):
-            if paths.kit_ancestor(f, ctx.home):
+            if tree is True and paths.kit_ancestor(f, ctx.home):   # a download into a directory ("children") does not touch the kit
                 return deny(G, "kit", "%s %s acts on a directory that holds the kit (%s); agents do not remove, move or re-permission "
                             "guardrail paths (H6)" % (via, os.path.basename(f.rstrip("/")) or "/", _desc("kit")))
             for child, cat in (DIR_PROBES.items() if tree is True else ()):
