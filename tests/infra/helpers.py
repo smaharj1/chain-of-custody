@@ -13,9 +13,9 @@ from tests import REPO_ROOT
 from tests.helpers import BaseTestCase
 
 FIXTURES = os.path.join(REPO_ROOT, "tests", "fixtures", "infra")
-TEMPLATES = os.path.join(REPO_ROOT, ".claude", "templates", "infra")
-SOURCE_POLICY = os.path.join(REPO_ROOT, ".claude", "scripts", "infra", "source_policy.py")
-GATE = os.path.join(REPO_ROOT, ".claude", "scripts", "infra", "gate.py")
+TEMPLATES = os.path.join(REPO_ROOT, "templates", "infra")
+SOURCE_POLICY = os.path.join(REPO_ROOT, "scripts", "infra", "source_policy.py")
+GATE = os.path.join(REPO_ROOT, "scripts", "infra", "gate.py")
 
 def read_tree(root: str) -> Dict[str, str]:
     out = {}  # type: Dict[str, str]

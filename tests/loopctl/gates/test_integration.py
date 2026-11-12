@@ -145,7 +145,7 @@ class Registry(LoopTestCase):
         self.assertIn("gates.g4", r.err)
 
     def test_the_generated_config_lists_the_new_keys(self):
-        with open(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".claude", "loop.config.md")) as fh:
+        with open(os.path.join(os.path.dirname(__file__), "..", "..", "..", "seed", ".claude", "loop.config.md")) as fh:
             text = fh.read()
         for k in ("g4: off", "g5_ast_lint: []", "heldout_cmd:", "mutation_min: 60", "migrate_check_cmd:", "dep_check_cmd:", "secrets_scan_cmd:"):
             self.assertIn(k, text)

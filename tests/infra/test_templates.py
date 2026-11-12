@@ -16,7 +16,7 @@ from tests.doctor.helpers import BoundaryCase
 
 from .helpers import TEMPLATES
 
-SEC = os.path.join(REPO_ROOT, ".claude", "templates", "security")
+SEC = os.path.join(REPO_ROOT, "templates", "security")
 WF = os.path.join(TEMPLATES, "workflows")
 
 
@@ -294,7 +294,8 @@ class DoctorSeesThem(BoundaryCase):
     def install(self, apply_variant):
         files = {}
         for name, dest in (("infra-check.yml", "infra-check.yml"), ("infra-plan.yml", "infra-plan.yml"), (apply_variant, "infra-apply.yml"), ("infra-drift.yml", "infra-drift.yml")):
-            files[".github/workflows/" + dest] = slurp(WF, name)
+            # filled in the way the setup script's render_new fills them: a placeholder left in .github/workflows is ci.kit-placeholder
+            files[".github/workflows/" + dest] = slurp(WF, name).replace("{{KIT_REF}}", "v2.0.0").replace("{{KIT_SHA}}", "0" * 40)
         files["infra/main.tf"] = 'resource "aws_s3_bucket" "b" {}\n'
         return files
 

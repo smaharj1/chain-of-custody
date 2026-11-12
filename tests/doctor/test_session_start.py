@@ -17,21 +17,26 @@ from tests.helpers import BaseTestCase, install_fake_claude, read_jsonl
 
 from .helpers import KIT_VERSION_V2, config_text
 
-SCRIPT = os.path.join(REPO_ROOT, ".claude", "scripts", "session_start.py")
+SCRIPT = os.path.join(REPO_ROOT, "scripts", "session_start.py")
 
 
 class Base(BaseTestCase):
     def setUp(self):
         super().setUp()
         self.r = self.repo()
-        self.r.write(".claude/KIT_VERSION", KIT_VERSION_V2)
+        self.kit = self.tmpdir()          # a stand-in kit root: only its KIT_VERSION is read
+        self.kit_version(KIT_VERSION_V2)
         self.r.write(".claude/loop.config.md", config_text({}))
         self.env = {"PATH": "/nonexistent-dir", "KIT_CLAUDE_VERSION": "2.1.305"}
 
     def go(self, sid="sess-1", source="startup", env=None, cwd=None, **extra):
         hi = {"session_id": sid, "source": source, "cwd": cwd or self.r.path, "hook_event_name": "SessionStart"}
         hi.update(extra)
-        return session_start.run(hi, env if env is not None else self.env)
+        return session_start.run(hi, env if env is not None else self.env, kit_root=self.kit)
+
+    def kit_version(self, text):
+        with open(os.path.join(self.kit, "KIT_VERSION"), "w") as fh:
+            fh.write(text)
 
     def state(self):
         return runstate.RunState.for_path(self.r.path)
@@ -133,7 +138,7 @@ class VersionRange(Base):
         self.assertTrue(self.go(env={"PATH": "/x", "KIT_CLAUDE_VERSION": "2.2.0"})["refused"])
 
     def test_untested_maximum_none(self):
-        self.r.write(".claude/KIT_VERSION", "2.0.0-rc.1 (2026-10-26)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: none\n")
+        self.kit_version("2.0.0-rc.1 (2026-10-26)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: none\n")
         res = self.go()
         self.assertIn("canary has never passed", res["context"])
         self.assertFalse(res["refused"])
@@ -148,7 +153,7 @@ class VersionRange(Base):
         self.assertTrue(self.go(env={"PATH": "/nonexistent-dir"})["refused"])
 
     def test_v1_kit_version_file_falls_back_to_the_floor(self):
-        self.r.write(".claude/KIT_VERSION", "1.2.0 (2026-07-30)\n")
+        self.kit_version("1.2.0 (2026-07-30)\n")
         res = self.go(env={"PATH": "/x", "KIT_CLAUDE_VERSION": "2.1.250"})
         self.assertIn("BELOW the kit floor 2.1.302", res["context"])
 
@@ -188,6 +193,48 @@ class VersionRange(Base):
         os.chmod(p, 0o755)
         res = self.go(env={"PATH": "/x", "KIT_CLAUDE_BIN": p})
         self.assertEqual(res["status"], "unknown")
+
+
+class KitLine(Base):
+    def test_the_context_names_the_kit_root_and_its_version(self):
+        ctx = self.go()["context"]
+        self.assertIn("kit: %s (" % self.kit, ctx)
+        self.assertNotIn("/chain-of-custody:init", ctx)
+        self.kit_version("2.0.0 (2026-10-30)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: 2.1.310\n")
+        self.assertIn("kit: %s (2.0.0)." % self.kit, self.go()["context"])
+
+    def test_without_loop_config_it_reminds_to_run_init(self):
+        os.remove(os.path.join(self.r.path, ".claude", "loop.config.md"))
+        ctx = self.go()["context"]
+        self.assertIn("suggest /chain-of-custody:init", ctx)
+        self.assertNotIn("loop.config not found", ctx, "the reminder says it once")
+        self.assertIsNotNone(self.go(sid="s2")["nonce"], "the canary still runs")
+
+    def test_an_old_copy_install_points_to_migrate(self):
+        self.r.write(".claude/KIT_VERSION", "1.2.0 (2026-07-30)\n")
+        ctx = self.go()["context"]
+        self.assertIn("/chain-of-custody:migrate", ctx)
+        self.assertNotIn("/chain-of-custody:init", ctx)
+
+    def test_the_kits_own_checkout_gets_neither_line(self):
+        self.r.write(".claude-plugin/plugin.json", "{}")
+        self.r.write("scripts/kitlib/__init__.py", "")
+        os.remove(os.path.join(self.r.path, ".claude", "loop.config.md"))
+        ctx = self.go()["context"]
+        self.assertNotIn("kit: ", ctx)
+        self.assertNotIn("/chain-of-custody:", ctx)
+        self.assertIn("nonce=", ctx)
+
+    def test_the_context_stays_under_one_kib_with_a_long_kit_path(self):
+        deep = os.path.join(self.kit, *(["d" * 60] * 8))
+        os.makedirs(deep)
+        with open(os.path.join(deep, "KIT_VERSION"), "w") as fh:
+            fh.write(KIT_VERSION_V2)
+        os.remove(os.path.join(self.r.path, ".claude", "loop.config.md"))
+        hi = {"session_id": "long", "source": "startup", "cwd": self.r.path}
+        ctx = session_start.run(hi, {"PATH": "/x", "KIT_CLAUDE_VERSION": "2.2.0"}, kit_root=deep)["context"]
+        self.assertLessEqual(len(ctx), session_start.MAX_CONTEXT)
+        self.assertIn("nonce=", ctx)
 
 
 class NeverBlocks(Base):

@@ -2,7 +2,7 @@
 
 By default the loop builds one item at a time. `parallel_mode: worktree` lets the driver (`runner: driver`) build up to `max_parallel` items at once, each in its own git worktree, and merge them one at a time. It is OPT-IN and **refuses to start until the evidence gate has passed** (three clean fixture runs and one real feature, `docs/baseline/evidence.json`): a parallel run multiplies every fault the serial loop can have, so the kit does not let it be switched on before the serial loop has earned trust. Whether it is actually faster, at an equal defect rate, is the exit criterion for parallel mode and needs live runs (see "What nobody has measured").
 
-The design is in `.claude/spec/loopctl-parallel.md`; this page is what you need to run it.
+The design is in `spec/loopctl-parallel.md`; this page is what you need to run it.
 
 ## Turn it on
 
@@ -18,7 +18,7 @@ max_parallel: 2          # 1 to 4
 3. `loopctl parallel check` prints what would stop a run and, from the plan, which items could run side by side and which cannot. `loopctl run --dry-run` shows the same `parallel.*` rows.
 4. `loopctl run` as before. One terminal, one `loopctl run`.
 
-Optional: copy `.claude/templates/worktreeinclude` to `./.worktreeinclude` and commit it if the new worktrees need `.env.local` / `.env.test` (nothing else is ever copied). To get the same worktrees for `claude --worktree` and for `isolation: worktree` subagents (cut off your **local** integration branch, not the remote default), merge `.claude/templates/parallel/worktree-hooks.settings.json` into your interactive settings (see "The WorktreeCreate and WorktreeRemove hooks").
+Optional: copy `templates/worktreeinclude` to `./.worktreeinclude` and commit it if the new worktrees need `.env.local` / `.env.test` (nothing else is ever copied). To get the same worktrees for `claude --worktree` and for `isolation: worktree` subagents (cut off your **local** integration branch, not the remote default), merge `templates/parallel/worktree-hooks.settings.json` into your interactive settings (see "The WorktreeCreate and WorktreeRemove hooks").
 
 ## What it does with your plan
 
@@ -29,7 +29,7 @@ The plan decides how much runs together. An item starts only when:
 - it does not need a lane someone else holds. A migration (or `touches.schema: true`) uses the **schema** lane and a dependency change (`touches.deps_change: true`) the **deps** lane: one item at a time in each, from its start until it has merged;
 - an item with **no** `touches.paths` runs alone.
 
-So slice the plan the way the slicing rules ask (`.claude/skills/planner/SKILL.md`): vertical slices with a footprint. A plan whose items declare nothing runs exactly like the serial loop. `loopctl parallel check` shows the width you actually get.
+So slice the plan the way the slicing rules ask (`skills/planner/SKILL.md`): vertical slices with a footprint. A plan whose items declare nothing runs exactly like the serial loop. `loopctl parallel check` shows the width you actually get.
 
 Each item gets `.claude/worktrees/<slug>-a<n>` on its own branch `feat/<slug>-a<n>`, its own port block (`KIT_PORT_OFFSET`, a multiple of 100 added to every `verify_ports` entry) and its own child sessions. When it is reviewed and green it waits for the **integrator**, which merges one finished item at a time, in plan order: it checks the item stayed inside its declared footprint, rebases it onto the branch if the branch moved, runs `verify` again on the rebased code, and then merges with the usual `Loop-Item` trailer.
 
@@ -59,7 +59,7 @@ Each child gets `--max-budget-usd` equal to the remaining budget divided by the 
 
 ## The WorktreeCreate and WorktreeRemove hooks
 
-Optional and unverified on a live CLI. A `WorktreeCreate` hook **replaces** the platform's own worktree creation, so `.claude/scripts/worktree_hook.py create` makes the worktree itself: under `.claude/worktrees/<name>` and nowhere else, on a branch `worktree-<name>` cut off the **local** integration branch, with `.worktreeinclude` applied and a port slot reserved. `remove` takes it away and gives the slot back. A name with a separator, a path outside `.claude/worktrees`, a symbolic link on the way or any input shape the script does not know is refused with exit 2. The hook does not install dependencies or create a database; key those on `KIT_PORT_OFFSET` in your own setup script. The kit does not wire the hooks (the hook manifest has no opt-in entries): merge the settings snippet yourself.
+Optional and unverified on a live CLI. A `WorktreeCreate` hook **replaces** the platform's own worktree creation, so `scripts/worktree_hook.py create` makes the worktree itself: under `.claude/worktrees/<name>` and nowhere else, on a branch `worktree-<name>` cut off the **local** integration branch, with `.worktreeinclude` applied and a port slot reserved. `remove` takes it away and gives the slot back. A name with a separator, a path outside `.claude/worktrees`, a symbolic link on the way or any input shape the script does not know is refused with exit 2. The hook does not install dependencies or create a database; key those on `KIT_PORT_OFFSET` in your own setup script. The kit does not wire the hooks (the hook manifest has no opt-in entries): merge the settings snippet yourself, with `__KIT__` replaced by the kit folder (`$KIT`, the `kit:` line the doctor prints).
 
 After a rebase every deterministic gate (`g5 g1 g3 g6 g9 g11 docs g10 g4` and `g7`; the reviewers are not run again) is re-run on the rebased code before the item merges, so the evidence is for the code that merges.
 

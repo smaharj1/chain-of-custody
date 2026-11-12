@@ -109,7 +109,7 @@ class GenConfigCli(BaseTestCase):
         self.assertEqual(rc, 0, out + err)
 
     def test_stdout_matches_committed_files(self):
-        for flag, rel in (([], ".claude/loop.config.md"), (["--example"], "examples/loop.config.md")):
+        for flag, rel in (([], "seed/.claude/loop.config.md"), (["--example"], "examples/loop.config.md")):
             rc, out, _ = run([GEN_CONFIG, "--stdout"] + flag)
             self.assertEqual(rc, 0)
             with open(os.path.join(REPO_ROOT, rel)) as fh:
@@ -117,9 +117,9 @@ class GenConfigCli(BaseTestCase):
 
     def test_check_fails_and_write_repairs_a_drifted_copy(self):
         d = self.tmpdir()
-        os.makedirs(os.path.join(d, ".claude"))
+        os.makedirs(os.path.join(d, "seed", ".claude"))
         os.makedirs(os.path.join(d, "examples"))
-        for rel in (".claude/loop.config.md", "examples/loop.config.md"):
+        for rel in ("seed/.claude/loop.config.md", "examples/loop.config.md"):
             with open(os.path.join(d, rel), "w") as fh:
                 fh.write("hand edited\n")
         rc, out, err = run([GEN_CONFIG, "--check", "--repo", d])

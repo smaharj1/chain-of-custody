@@ -28,7 +28,7 @@ Summary:
 | V9 | kit hooks fail closed themselves; canary detects non-firing | 3 |
 | V10, V11 | moot / closed | - |
 | V12 | critics keep CLAUDE.md | later |
-| V13 | plugin hooks.json plus canary; `/init` can write project hooks | later |
+| V13 | plugin hooks.json is the only wiring; canary detects non-firing | later |
 | V14, V16, V17, V25, V26 | documentation only | later |
 | V15 | pin the CLI instead of `eval --model` | later |
 | V18 | event-driven dispatch; fork env set explicitly; never trust a blocking return | 4 |
@@ -48,10 +48,10 @@ Summary:
   engineer (restrictive). A call with no `agent_id` and an unregistered `session_id` gets least
   privilege whatever `agent_type` says. `agent_type` is only trusted at depth 1 where the platform
   documents it.
-- **Encoded in.** `.claude/scripts/kitlib/caller.py` (`classify`, rule 2 and rule 4; the module
+- **Encoded in.** `scripts/kitlib/caller.py` (`classify`, rule 2 and rule 4; the module
   docstring quotes IMP-7), tests in `tests/kitlib/test_caller.py`; guard corpus rows for "agent_id
   present, agent_type missing" (`caller-018`) and an unregistered `--agent` session (`caller-007`,
-  `caller-010`) in `tests/guards/corpus/callers.json`; the guard library `.claude/scripts/guards/`
+  `caller-010`) in `tests/guards/corpus/callers.json`; the guard library `scripts/guards/`
   (`lib.py`) calls `classify` and never reads `agent_type` alone. Unverified: the hook input at depth
   2-3 and in Workflow agents.
 - **If the probe shows otherwise.**
@@ -76,10 +76,10 @@ Summary:
 - **Assumption.** Not available. `pipeline_host: workflow` is not implemented; reviews fan out from the
   conductor with sequential Agent calls (`pipeline_host: conductor`).
 - **Encoded in.** The config key `pipeline_host` (`conductor` | `workflow`, evidence-gated) in
-  `.claude/scripts/kitlib/schema/8-parallel.json`; the doctor check `parallel.pipeline-host`
-  (`.claude/scripts/doctorlib/parallel.py`), which reports `workflow` as an error whatever the evidence,
+  `scripts/kitlib/schema/8-parallel.json`; the doctor check `parallel.pipeline-host`
+  (`scripts/doctorlib/parallel.py`), which reports `workflow` as an error whatever the evidence,
   and the `loopctl run` preflight row of the same name; the design note
-  `.claude/spec/pipeline-host-workflow.md`; the host paragraph of `.claude/skills/orchestrate/SKILL.md`.
+  `spec/pipeline-host-workflow.md`; the host paragraph of `skills/orchestrate/SKILL.md`.
   Nothing implements the `workflow` value.
 - **If otherwise.** The `workflow` choice can be built behind a saved workflow file, following the design note. Per-agent worktree
   isolation would also give parallel reviewers write isolation; record the exact option names.
@@ -87,28 +87,35 @@ Summary:
 ### V4. `context: fork` + `agent:` skill starts clean (P9)
 
 - **Assumption.** Unknown, so no kit skill relies on it. Critiques are subagent dispatches.
-- **Encoded in.** The skills under `.claude/skills/` use no `context: fork`;
+- **Encoded in.** The skills under `skills/` use no `context: fork`;
   `tests/test_frontmatter.py` asserts that no mode forks.
 - **If otherwise.** If it starts clean, on-demand critique skills (`/critique`) become cheap to add;
   if it inherits the conversation, keep critics as explicit Agent dispatches and note it in the skill guide.
 
 ### V5. Driver child (`-p --agent`) inheritance: hooks, settings, sandbox, branch point
 
-- **Assumption.** Nothing is inherited. The driver passes `--settings`, `--agents`, `--allowedTools` and
-  `--permission-mode` explicitly, creates the worktree itself, and sets the working directory.
+- **Assumption.** Nothing is inherited. The driver passes `--plugin-dir`, `--settings`, `--agents`,
+  `--allowedTools` and `--permission-mode` explicitly, creates the worktree itself, and sets the working
+  directory. A child's hooks come only from the plugin it is given with `--plugin-dir` (`hooks/hooks.json`).
 - **Encoded in.** The driver launch line, `launch.build_argv` and `launch.build_settings` in
-  `.claude/scripts/loopctl/launch.py`, run by `.claude/scripts/loopctl/driver.py` (report §11.1 item 2);
-  the headless profile template `.claude/templates/settings/headless-child.settings.json`
-  (`permissions.defaultMode: dontAsk`, explicit `allowedTools`, `enableAllProjectMcpServers: false`);
-  `launch.validate_settings`, which refuses a profile with a `Workflow` or `claude` allow, and the doctor's
-  `settings.workflow-allow` check (`.claude/scripts/doctorlib/settings.py`);
-  `.claude/scripts/kitlib/runstate.py` documents that held-out tests are hidden only under
+  `scripts/loopctl/launch.py`, run by `scripts/loopctl/driver.py` (report §11.1 item 2).
+  `build_settings` reads the kit's template for the child's kind
+  (`templates/settings/headless-child.settings.json`, or `critic.settings.json` for a critic:
+  `permissions.defaultMode: dontAsk`, explicit `allowedTools`, `enableAllProjectMcpServers: false`), adds
+  the project's verify commands as allow rules, write-denies the runstate directory, read-denies the
+  held-out tests, sets the fork-mode variables (V18), and drops any `hooks` key, so nothing is wired
+  twice. `launch.validate_settings` refuses a profile that carries hooks of its own or a `Workflow` or
+  `claude` allow; the doctor's `settings.workflow-allow` check (`scripts/doctorlib/settings.py`) does the
+  same for the project's settings;
+  `scripts/kitlib/runstate.py` documents that held-out tests are hidden only under
   `runner: driver` because the child has its own sandbox settings. Unverified on the real CLI:
   `--session-id` with `-p`, and `--allowedTools` taking one argument per rule.
 - **If the probe shows otherwise.**
-  - *Project hooks and settings are inherited:* the explicit flags stay (they are still the only
-    reproducible surface), but the hook-liveness canary can rely on project hooks in the child and
-    `loopctl` may drop the duplicated `--settings` hooks. Do not remove the flags.
+  - *Project settings are inherited:* the explicit flags stay (they are still the only reproducible
+    surface). Check that an inherited project setting cannot widen the child's profile. Do not remove the
+    flags.
+  - *Plugin hooks do not load through `--plugin-dir`:* the child runs with no guards. The canary check
+    refuses the child (`startrun.py`, `launch.py`); treat it as a blocker for `runner: driver`.
   - *Sandbox is NOT applied to the child:* the driver must pass sandbox settings in `--settings` (the
     assumption already requires it) and the doctor must verify the child's effective sandbox with the
     liveness canary; held-out isolation under `runner: driver` is void until fixed.
@@ -118,10 +125,10 @@ Summary:
 ### V6. `isolation: worktree` base-branch resolution
 
 - **Assumption.** Not used. The conductor and loopctl create worktrees from the recorded base.
-- **Encoded in.** Worktree creation in `.claude/scripts/loopctl/parallel/worktrees.py` (a plain
+- **Encoded in.** Worktree creation in `scripts/loopctl/parallel/worktrees.py` (a plain
   `git worktree add <path> <existing branch>`, never `isolation: worktree` or `worktree.baseRef`) and
-  `startrun.py` for the loop worktree; agent frontmatter under `.claude/agents/` has no `isolation:` key.
-  The opt-in hooks `.claude/scripts/worktree_hook.py` and `.claude/templates/parallel/worktree-hooks.settings.json`
+  `startrun.py` for the loop worktree; agent frontmatter under `agents/` has no `isolation:` key.
+  The opt-in hooks `scripts/worktree_hook.py` and `templates/parallel/worktree-hooks.settings.json`
   assume the `WorktreeCreate` / `WorktreeRemove` event names, their input fields (`name`, `worktree_path`,
   `cwd`) and that the platform takes the path from the hook's standard output; all unverified, and the plugin's
   `hooks.json` does not wire them.
@@ -132,20 +139,20 @@ Summary:
 ### V7. SubagentStart sees the dispatch prompt (D-16)
 
 - **Assumption.** No. Brief-path enforcement is by report parse and prose, not a SubagentStart hook.
-- **Encoded in.** The engineer-report validator `.claude/scripts/loopctl/report.py` (the JSON trailer's
+- **Encoded in.** The engineer-report validator `scripts/loopctl/report.py` (the JSON trailer's
   `report_path` must be the path the brief named: `trailer-mismatch`); dispatch prose in
-  `.claude/skills/tech-lead/SKILL.md`. The SubagentStart hook only records telemetry
-  (`.claude/scripts/guards/telemetry.py`).
-- **If otherwise.** Add a SubagentStart guard in `.claude/scripts/guards/` that denies a
+  `skills/tech-lead/SKILL.md`. The SubagentStart hook only records telemetry
+  (`scripts/guards/telemetry.py`).
+- **If otherwise.** Add a SubagentStart guard in `scripts/guards/` that denies a
   dispatch whose prompt names no brief path. Keep the report check as the second layer.
 
 ### V8. SubagentStop / statusLine expose model, cost, tokens (P33)
 
 - **Assumption.** No. Cost comes from the `-p` JSON output per driver child only; in-session dispatches
   have an estimated cost.
-- **Encoded in.** The spend ledger `.claude/scripts/loopctl/ledger.py` (§10.5); an unknown cost parks the
+- **Encoded in.** The spend ledger `scripts/loopctl/ledger.py` (§10.5); an unknown cost parks the
   run (IMP-25) and an unattended run estimates the cost of a child it had to kill
-  (`.claude/scripts/loopctl/unattended.py`); `tools/baseline/summarize.py` derives counts from tool
+  (`scripts/loopctl/unattended.py`); `tools/baseline/summarize.py` derives counts from tool
   events only. Unverified: `total_cost_usd` and the `subtype` values of the `-p` JSON result.
 - **If otherwise.** Log the fields into the spend ledger for in-session runners and tighten
   `--max-budget-usd` accounting; the ledger remains an estimate (P26).
@@ -157,15 +164,15 @@ Summary:
   one case the field alone would cover, a missing interpreter, is reported by the SessionStart check and
   caught by the liveness canary (a session whose nonce is missing is refused).
   `"onFailure": "block"` is still written on every blocking-capable hook.
-- **Encoded in.** The fail-closed entry point `.claude/scripts/guards/run.py` with `engine.py`;
-  `"onFailure": "block"` written by `.claude/scripts/guards/wiring.py` into `.claude/settings.json`
-  (`settings.v2.json`) and the templates in `.claude/templates/settings/`; the doctor row
-  `guards.on-failure`; the canary in `.claude/scripts/session_start.py` and the `loopctl` canary check
+- **Encoded in.** The fail-closed entry point `scripts/guards/run.py` with `engine.py`;
+  `"onFailure": "block"` written by `scripts/guards/wiring.py` into the plugin's `hooks/hooks.json`, the
+  only place the guards are wired (`templates/settings/` holds permission templates with no hooks); the
+  doctor row `guards.on-failure`, which reads `hooks/hooks.json`; the canary in `scripts/session_start.py` and the `loopctl` canary check
   (`startrun.py`, `launch.py`); `tools/baseline/observe.py` is deliberately the opposite (always exit 0).
   Unverified: the field name and placement, and the behaviour on a missing interpreter or a timeout.
 - **If the probe shows otherwise.**
-  - *The field is misnamed or in the wrong place:* fix the spelling in the hooks template and the doctor's
-    expected-settings check; because the wrappers fail closed already, no guard changes.
+  - *The field is misnamed or in the wrong place:* fix the spelling in `wiring.py`, regenerate
+    `hooks/hooks.json` with `wiring.py --write`, and fix the doctor's `guards.on-failure` check; because the wrappers fail closed already, no guard changes.
   - *A missing interpreter fails open even with the field:* the canary is the only protection; make the
     canary mandatory (not advisory) at every level above L1 and keep the SessionStart banner.
   - *A timeout fails open:* give every handler a `timeout` below the point where the platform proceeds and
@@ -176,7 +183,7 @@ Summary:
 
 ### V11. `--max-budget-usd` covers subagents. **Closed: yes, as an estimate (P26).**
 
-- **Encoded in.** `Ledger.launch_budget` (`.claude/scripts/loopctl/ledger.py`) passes the remaining budget
+- **Encoded in.** `Ledger.launch_budget` (`scripts/loopctl/ledger.py`) passes the remaining budget
   as `--max-budget-usd`; with parallel workers it reserves a share per live child (`live_children`), so
   the sum of the allowances cannot pass the ceiling. Unverified: how far a child that is killed can
   overshoot its flag. The unattended supervisor therefore charges a killed child an estimate between
@@ -185,27 +192,33 @@ Summary:
 ### V12. `omitClaudeMd` effect on critics
 
 - **Assumption.** Critics keep CLAUDE.md (no `omitClaudeMd`). A change needs an eval A/B.
-- **Encoded in.** Critic frontmatter in `.claude/agents/code-reviewer.md`, `design-critic.md` and
+- **Encoded in.** Critic frontmatter in `agents/code-reviewer.md`, `design-critic.md` and
   `security-reviewer.md` (no such key).
 - **If otherwise.** If `omitClaudeMd: true` works, run the eval A/B before adding it; the saving is
   context tokens, the risk is a critic that misses project conventions.
 
 ### V13. Plugin `hooks.json` for plugin and project agents; `${CLAUDE_PLUGIN_ROOT}` in commands
 
-- **Assumption.** The plugin ships `hooks.json`, and the liveness canary detects non-firing hooks. `/init`
-  can also write project-level hooks, so a project does not depend on plugin hooks.
-- **Encoded in.** `plugin/hooks/hooks.json` (generated by `wiring.build_plugin_hooks`); the canary
-  (`.claude/scripts/session_start.py`); the `/init` skill (`.claude/skills/init/SKILL.md`,
-  `.claude/scripts/init_project.py`).
-- **If otherwise.** If plugin hooks do not fire for project agents (or at all), `/init` must always write
-  the hooks into project settings and the plugin's hooks.json becomes optional; if
-  `${CLAUDE_PLUGIN_ROOT}` does not expand in command text, commands use relative paths via the skill
-  directory instead.
+- **Assumption.** Plugin hooks fire for the plugin's agents and for project agents, and
+  `${CLAUDE_PLUGIN_ROOT}` expands in hook commands and in skill and agent text. The plugin's `hooks.json`
+  is the only wiring of the guards: `/init` writes no hooks, and the doctor reports a second wiring of
+  the kit's scripts in project settings. The liveness canary detects hooks that do not fire.
+- **Encoded in.** `hooks/hooks.json` (generated by `wiring.py --write` from
+  `scripts/guards/hooks.manifest.json`; every handler runs a script under `${CLAUDE_PLUGIN_ROOT}/scripts/`); the
+  canary (`scripts/session_start.py`); the doctor row `guards.wiring` and `wiring.py --check --project`;
+  the `/init` skill (`skills/init/SKILL.md`, `scripts/init_project.py`), which writes permissions and the
+  sandbox only. Unverified: all of it, on the real binary (`tools/validate-plugin-real.sh` and
+  `claude --plugin-dir .` in a scratch project).
+- **If otherwise.** If plugin hooks do not fire for project agents (or at all), the guards have no other
+  wiring: the kit needs a project-level wiring again (generated by `wiring.py`, written by `/init`), and
+  `guards.wiring` must accept it instead of reporting it as a second wiring. If `${CLAUDE_PLUGIN_ROOT}`
+  does not expand in hook commands, the handlers need absolute paths written at install time; if it does
+  not expand in skill and agent text, the prose's `${CLAUDE_PLUGIN_ROOT}/...` paths need another form.
 
 ### V14. Do denials count toward the auto-mode pause? (P23)
 
 - **Assumption.** Documentation only; moot under `dontAsk`, which the driver uses.
-- **Encoded in.** The headless profile template `.claude/templates/settings/headless-child.settings.json`
+- **Encoded in.** The headless profile template `templates/settings/headless-child.settings.json`
   (`dontAsk`); `docs/faq.md` points here for what is assumed.
 - **If otherwise.** If denials count, interactive auto-mode users should be told that guard denials can pause
   auto mode; no code change.
@@ -214,8 +227,8 @@ Summary:
 
 - **Assumption.** No pin. Pin the Claude Code CLI version and set the model in the eval's settings.
 - **Encoded in.** `tools/evals/` (`run_local.py` grades recorded transcripts; `ablate.py` reads recorded
-  ablation transcripts); `claude_code_tested_max` in `.claude/KIT_VERSION` (IMP-8) and
-  `.claude/scripts/kitlib/levels.py` (`version_cap`). P27 (the flags of `claude plugin eval --ablation`)
+  ablation transcripts); `claude_code_tested_max` in `KIT_VERSION` (IMP-8) and
+  `scripts/kitlib/levels.py` (`version_cap`). P27 (the flags of `claude plugin eval --ablation`)
   is used by the harness review (`docs/harness-review.md`); if the flags differ, `tools/evals/ablate.py`
   works from hand-recorded transcripts.
 - **If otherwise.** If `--model` works, the eval runner passes it and the eval record stores the model id.
@@ -223,8 +236,8 @@ Summary:
 ### V16. Named spawn with teams off: teammate or subagent (P34)
 
 - **Assumption.** Documentation only. Resume is by `agent_id` (SendMessage), never by `name`.
-- **Encoded in.** The conductor prose in `.claude/skills/tech-lead/SKILL.md` and
-  `.claude/skills/orchestrate/SKILL.md` ("resume by `agent_id`"). There is no guard-corpus row for `name`
+- **Encoded in.** The conductor prose in `skills/tech-lead/SKILL.md` and
+  `skills/orchestrate/SKILL.md` ("resume by `agent_id`"). There is no guard-corpus row for `name`
   on an Agent call.
 - **If otherwise.** None required; record the result for the FAQ.
 
@@ -241,10 +254,10 @@ Summary:
   never "the Agent call returned". The driver sets the fork-mode and background-task env explicitly per
   runner and the doctor asserts them. Critics and engineers are always dispatched with an explicit
   `subagent_type`, so they are never forks of the conductor.
-- **Encoded in.** The event-driven wait in `.claude/scripts/loopctl/driver.py` (a valid report file plus
+- **Encoded in.** The event-driven wait in `scripts/loopctl/driver.py` (a valid report file plus
   a state transition) and the child launch in `launch.py`; the headless profile's `env` block
   (`launch.FORK_ENV`: `CLAUDE_CODE_FORK_SUBAGENT=0`, `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`); the doctor
-  check `fork.env` (`.claude/scripts/doctorlib/extras.py`, `FORK_ENV_EXPECTED`); the orchestrate
+  check `fork.env` (`scripts/doctorlib/extras.py`, `FORK_ENV_EXPECTED`); the orchestrate
   prose. If a name is wrong, change `launch.FORK_ENV` and `FORK_ENV_EXPECTED` together.
 - **If the probe shows otherwise.**
   - *The env names are wrong:* fix them in the headless profile and the doctor; until fixed the driver
@@ -261,10 +274,10 @@ Summary:
   so an unattested sandbox keeps L2+ off.
 - **Encoded in.** The check ids `sandbox.failIfUnavailable`, `sandbox.deny-paths`,
   `sandbox.registry-path` and `sandbox.attestation`, and the cap `levelcalc.cap_sandbox`
-  (`.claude/scripts/doctorlib/settings.py`, `levelcalc.py`); the cap arithmetic in
-  `.claude/scripts/kitlib/levels.py` (`effective_level`); the key `sandbox_verified` in
-  `.claude/scripts/kitlib/schema/1-boundary.json`; the sandbox profile
-  `.claude/templates/security/sandbox.settings.json` and `wiring.py --sandbox-snippet`
+  (`scripts/doctorlib/settings.py`, `levelcalc.py`); the cap arithmetic in
+  `scripts/kitlib/levels.py` (`effective_level`); the key `sandbox_verified` in
+  `scripts/kitlib/schema/1-boundary.json`; the sandbox profile
+  `templates/security/sandbox.settings.json` and `wiring.py --sandbox-snippet`
   ([sandbox.md](../security/sandbox.md)). Unverified: the `sandbox.*` key names, the `Edit(//absolute/path)`
   spelling and glob entries in `denyWrite`, and whether a child's sandbox honours them.
 - **If the probe shows otherwise.**
@@ -277,9 +290,9 @@ Summary:
 
 - **Assumption.** Implemented, with a fallback: orchestrate prose re-reads `loopctl status --json` at each
   stage, so a failed injection loses nothing but a few tokens.
-- **Encoded in.** The SessionStart(`compact`) handler `.claude/scripts/loopctl/compact_hook.py` (an entry
-  of `.claude/scripts/guards/hooks.manifest.json`); the re-read of `loopctl status --json` at each stage in
-  `.claude/skills/orchestrate/SKILL.md`.
+- **Encoded in.** The SessionStart(`compact`) handler `scripts/loopctl/compact_hook.py` (an entry
+  of `scripts/guards/hooks.manifest.json`); the re-read of `loopctl status --json` at each stage in
+  `skills/orchestrate/SKILL.md`.
 - **If otherwise.** If `compact` never fires or the context is not seen, delete the handler (keep the
   prose) and drop §10.6's first bullet; if it works, the prose re-read can be made conditional.
 
@@ -288,7 +301,7 @@ Summary:
 - **Assumption.** Yes, overridable. L3+ recommends a separate OS user or a credential-free container;
   managed settings are defence in depth only.
 - **Encoded in.** The managed-settings recipe in `docs/security/sandbox.md` and the template
-  `.claude/templates/security/managed-settings.example.json` (there is no separate
+  `templates/security/managed-settings.example.json` (there is no separate
   `managed-settings.md`); the doctor's L3 prerequisite "managed settings or credential-free container"
   (`managed.settings`, `levelcalc.py`). The managed-settings file paths are unverified.
 - **If otherwise.** If the same user cannot override a root-owned managed file, the recipe becomes a
@@ -298,10 +311,10 @@ Summary:
 
 - **Assumption.** The driver launch line is built and unit-tested only against the fake `claude`
   (`tests/helpers/fake_claude.py`); the first real run is the probe.
-- **Encoded in.** The launch-line builder `launch.build_argv` in `.claude/scripts/loopctl/launch.py`
+- **Encoded in.** The launch-line builder `launch.build_argv` in `scripts/loopctl/launch.py`
   (`--agents` carries `{role: {description, prompt, tools, disallowedTools, model, effort}}`) and its tests
   (`tests/loopctl/fault_injection/test_launch_unit.py`); the fake in `tests/helpers/fake_claude.py`; `caller.normalize_agent_type`
-  in `.claude/scripts/kitlib/caller.py` strips a `<plugin>:` prefix so both spellings classify.
+  in `scripts/kitlib/caller.py` strips a `<plugin>:` prefix so both spellings classify.
 - **If the probe shows otherwise.** Change only the builder (flag spelling, which spelling of the role the
   roster JSON uses, whether `--agents` can override a project agent) and its golden test; the roster
   prefix normalisation stays.
@@ -311,9 +324,9 @@ Summary:
 - **Assumption.** `Workflow` is denied in the headless profile and in engineers' `disallowedTools`; the
   doctor fails on any `Workflow` allow outside the human-run `/orchestrate` profile. The kit behaves the
   same whatever the answer.
-- **Encoded in.** The deny block and headless profile templates (`.claude/templates/settings/`);
+- **Encoded in.** The deny block and headless profile templates (`templates/settings/`);
   `launch.validate_settings` (refuses a profile that allows `Workflow`); the doctor checks
-  `settings.workflow-allow` and `settings.agent-workflow` (`.claude/scripts/doctorlib/settings.py`); the
+  `settings.workflow-allow` and `settings.agent-workflow` (`scripts/doctorlib/settings.py`); the
   "Workflow allow" fixtures in `tests/loopctl/fault_injection/` and `tests/doctor/test_adversarial.py`
   `pipeline_host: workflow` is refused (V3).
 - **If otherwise.** Nothing to change; replace UNVERIFIED with the observed behavior in §11.1 and P13.
@@ -322,11 +335,11 @@ Summary:
 
 - **Assumption.** No per-subagent sandbox. Held-out isolation under `in-session` and `sequential` is
   impossible; held-out tests are driver-only or CI-only, and L2+ requires `runner: driver` or CI-only G3.
-- **Encoded in.** `.claude/scripts/kitlib/runstate.py` (held-out directory "hidden from engineers only
+- **Encoded in.** `scripts/kitlib/runstate.py` (held-out directory "hidden from engineers only
   under runner: driver"); the L2 prerequisite "held-out isolation (RC-6)" in
-  `.claude/scripts/doctorlib/levelcalc.py` (`runner: driver`, or `g3_ci_only` in `platform_attested`);
-  G3's `g3.heldout-isolation` finding (`.claude/spec/loopctl-gates.md`); the CI half in
-  `.claude/templates/github/workflows/heldout.yml` with `heldout-sync.yml`. The child profile's
+  `scripts/doctorlib/levelcalc.py` (`runner: driver`, or `g3_ci_only` in `platform_attested`);
+  G3's `g3.heldout-isolation` finding (`spec/loopctl-gates.md`); the CI half in
+  `templates/github/workflows/heldout.yml` with `heldout-sync.yml`. The child profile's
   `denyRead` of the held-out directory and the V24 sandbox frontmatter keys are unverified.
 - **If the probe shows otherwise.**
   - *A subagent can use a stricter sandbox via frontmatter:* in-session held-out isolation becomes possible
@@ -340,13 +353,13 @@ Summary:
 ### V25. `worktree.baseRef: "head"` (L-45)
 
 - **Assumption.** Documentation only. The conductor creates worktrees itself, so the setting is not used.
-- **Encoded in.** Worktree creation in `.claude/scripts/loopctl/parallel/worktrees.py` (see V6); §19.7 notes.
+- **Encoded in.** Worktree creation in `scripts/loopctl/parallel/worktrees.py` (see V6); §19.7 notes.
 - **If otherwise.** Replace UNVERIFIED with the result; no code change.
 
 ### V26. Does a project `code-review` skill override the bundled one? (L-45)
 
 - **Assumption.** Unknown; the kit never names a skill `code-review`.
-- **Encoded in.** The skill name list under `.claude/skills/`; `tests/test_frontmatter.py` (`RESERVED`
+- **Encoded in.** The skill name list under `skills/`; `tests/test_frontmatter.py` (`RESERVED`
   rejects `loop` and `code-review`).
 - **If otherwise.** None required; if a project skill wins, mention it in the skill guide as a way to
   customise review.
@@ -355,10 +368,10 @@ Summary:
 
 - **Assumption.** Unknown means unavailable. The doctor caps the effective level unless the human attests
   the feature (`rulesets`, `code-owner review`, `push rulesets`, `merge queue`).
-- **Encoded in.** The platform-cap computation in `.claude/scripts/doctorlib/levelcalc.py`
-  (`cap_platform`) using `.claude/scripts/kitlib/levels.py` (`Cap`, `effective_level`); the platform table
+- **Encoded in.** The platform-cap computation in `scripts/doctorlib/levelcalc.py`
+  (`cap_platform`) using `scripts/kitlib/levels.py` (`Cap`, `effective_level`); the platform table
   in `docs/security/rulesets.md` ("Platform requirements"; there is no `platform-requirements.md`); the
-  attestation key `platform_attested` in `.claude/scripts/kitlib/schema/1-boundary.json`. Needs real
+  attestation key `platform_attested` in `scripts/kitlib/schema/1-boundary.json`. Needs real
   GitHub plans to settle.
 - **If the probe shows otherwise.** For each feature found available on a plan, move it from "attest"
   to "doctor reads it with `gh api`" for that plan and update the §8.4 table row; features found
@@ -368,12 +381,12 @@ Summary:
 
 ## Other platform names the build relies on (no V number)
 
-- **Notification hooks** (`.claude/templates/notify/notify-hooks.settings.json`, `.claude/scripts/notify.py`).
+- **Notification hooks** (`templates/notify/notify-hooks.settings.json`, `scripts/notify.py`).
   The events `Notification`, `StopFailure` and `PermissionRequest`, and the input fields the hook reads
   (an event name, a notification type, a tool name), are unverified. The hook takes no free text from its
   input, so a wrong field name loses a notification, not safety. If the names differ, change the snippet and
   `notify.py --hook` together.
-- **`CLAUDE_CODE_ENTRYPOINT`** as a second session marker beside `CLAUDECODE` (`.claude/scripts/humanonly.py`):
+- **`CLAUDE_CODE_ENTRYPOINT`** as a second session marker beside `CLAUDECODE` (`scripts/humanonly.py`):
   assumed to be set in a Claude Code session; a human-only script refuses when either is present, even empty.
   A process can unset both, so this is a tripwire, not a boundary.
 - **CLI flags** used outside the driver launch line: `--plugin-dir` (the real-binary plugin check,

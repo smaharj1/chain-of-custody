@@ -5,7 +5,7 @@
 **Authored by**: Tech Lead
 **Date**: 2026-07-08
 **Iteration**: 1
-**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md` (default 2). There is no tool-call budget (`.claude/context/engineer-protocol.md` section 4)
+**Retry cap**: `max_retries_per_item` from `.claude/loop.config.md` (default 2). There is no tool-call budget (`context/engineer-protocol.md` section 4)
 **Report path**: `docs/features/csv-export/reports/backend.md`
 
 > *Illustrative example for the fictional TaskFlow project — see [`examples/README.md`](../../../README.md). The files this brief points the engineer at are invented; no engineer was ever dispatched against it.*
@@ -14,7 +14,7 @@
 
 ## Required Reading (in order)
 
-1. `.claude/context/engineer-protocol.md` (the shared rulebook — read first)
+1. `context/engineer-protocol.md` (the shared rulebook — read first)
 2. `.claude/context/backend.md` (your primer)
 3. `docs/features/csv-export/requirements.md`
 4. `docs/features/csv-export/technical-design.md` — API Surface + Cross-Cutting Concerns sections in full

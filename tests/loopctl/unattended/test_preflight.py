@@ -11,7 +11,7 @@ from ..fault_injection import render_config
 
 from guards import g_exec, g_halt
 from guards.invoke import analyze
-from kitlib import config as kconfig, loopctl_table
+from kitlib import config as kconfig, kitpaths, loopctl_table
 from loopctl import cli, unattended
 
 from . import EVIDENCE, UNATTENDED_CFG, UnattendedRepo
@@ -191,7 +191,7 @@ class Cli(unittest.TestCase):
 
 
 def inv(args):
-    ana = analyze("python3 .claude/scripts/loopctl " + " ".join(args), "/tmp")
+    ana = analyze(kitpaths.script_cmd("loopctl", *args), "/tmp")        # the command the kit prints: the plugin's absolute path
     return [i for i in ana.invs if i.name.startswith("python")][0]
 
 

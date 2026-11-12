@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import unittest
@@ -17,7 +18,7 @@ from tests.bootstrap import plain_env, session_env
 from tests.helpers import BaseTestCase, inproc
 
 CLI = os.path.join(SCRIPTS_DIR, "bootstrap_config.py")
-REAL_CONFIG = os.path.join(REPO_ROOT, ".claude", "loop.config.md")
+REAL_CONFIG = os.path.join(REPO_ROOT, "seed", ".claude", "loop.config.md")
 REG = registry.load_registry()
 
 
@@ -64,7 +65,7 @@ class Plan(Base):
         self.assertIs(plan["set"]["solo_maintainer"], True)
         self.assertIn("H6", p.stdout)
         self.assertIn("command: run later", p.stdout)
-        self.assertIn("bootstrap_config.py apply .claude/bootstrap/config-plan.json", p.stdout)
+        self.assertIn("python3 %s apply .claude/bootstrap/config-plan.json" % shlex.quote(os.path.join(SCRIPTS_DIR, "bootstrap_config.py")), p.stdout)
 
     def test_refusals(self):
         root = self.root()

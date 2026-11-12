@@ -219,7 +219,7 @@ class ExamplePlan(LoopTestCase):
 
 class Template(unittest.TestCase):
     def test_the_plan_item_template_is_a_valid_item(self):
-        with open(os.path.join(REPO_ROOT, ".claude", "templates", "plan-item.json")) as fh:
+        with open(os.path.join(REPO_ROOT, "templates", "plan-item.json")) as fh:
             it = json.load(fh)
         lp = plan.LoadedPlan("t")
         lp.plan = {"schema": plan.PLAN_SCHEMA, "name": "t", "goal": "g"}

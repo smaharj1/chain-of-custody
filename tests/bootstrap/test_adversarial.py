@@ -136,26 +136,26 @@ class RunAllowlist(BaseTestCase):
             fh.write("{}")
         os.symlink(outside, os.path.join(self.root, "fx.json"))
         os.symlink(os.path.dirname(outside), os.path.join(self.root, "dir"))
-        self.refused(["python3", ".claude/scripts/doctor.py", "--gh-fixture", "fx.json"])
-        self.refused(["python3", ".claude/scripts/ci_lint.py", "dir"])
-        self.refused(["python3", ".claude/scripts/doctor.py", "--repo", "dir"])
+        self.refused(["python3", self.kit + "/doctor.py", "--gh-fixture", "fx.json"])
+        self.refused(["python3", self.kit + "/ci_lint.py", "dir"])
+        self.refused(["python3", self.kit + "/doctor.py", "--repo", "dir"])
 
     def test_interpreter_options_and_other_entry_points(self):
-        for argv in (["python3", "-c", "import os"], ["python3", "-m", "http.server"], ["python3", "-", ".claude/scripts/doctor.py"], ["python3", "-I", ".claude/scripts/doctor.py"],
-                     ["python3", ".claude/scripts/doctor.py", "-c", "x"], ["python3", ".claude/scripts/doctor.py\0", "--json"], ["python3", "--version"],
-                     ["python3", ".claude/scripts/doctor.py", "--level", "L9"], ["python3", ".claude/scripts/doctor.py", "--level", "L1;id"],
-                     ["python3", ".claude/scripts/probe_run.py", "--go=abc"], ["python3", ".claude/scripts/probe_run.py", "--cmd"], ["python3", ".claude/scripts/loopctl"],
-                     ["python3", ".claude/scripts/loopctl", "run"], ["python3", ".claude/scripts/loopctl", "approve"], ["python3", ".claude/scripts/loopctl", "doctor", "--live"],
-                     ["python3", ".claude/scripts/guards/wiring.py", "--write"], ["python3", ".claude/scripts/guards/wiring.py", "--print"]):
+        for argv in (["python3", "-c", "import os"], ["python3", "-m", "http.server"], ["python3", "-", self.kit + "/doctor.py"], ["python3", "-I", self.kit + "/doctor.py"],
+                     ["python3", self.kit + "/doctor.py", "-c", "x"], ["python3", self.kit + "/doctor.py\0", "--json"], ["python3", "--version"],
+                     ["python3", self.kit + "/doctor.py", "--level", "L9"], ["python3", self.kit + "/doctor.py", "--level", "L1;id"],
+                     ["python3", self.kit + "/probe_run.py", "--go=abc"], ["python3", self.kit + "/probe_run.py", "--cmd"], ["python3", self.kit + "/loopctl"],
+                     ["python3", self.kit + "/loopctl", "run"], ["python3", self.kit + "/loopctl", "approve"], ["python3", self.kit + "/loopctl", "doctor", "--live"],
+                     ["python3", self.kit + "/guards/wiring.py", "--write"], ["python3", self.kit + "/guards/wiring.py", "--print"]):
             with self.subTest(argv):
                 self.refused(argv)
 
     def test_the_child_inherits_no_credentials_even_when_passed_in(self):
-        with open(os.path.join(self.root, ".claude", "scripts", "ci_lint.py"), "w") as fh:
+        with open(os.path.join(self.kit, "ci_lint.py"), "w") as fh:
             fh.write("import os\nprint(','.join(sorted(k for k in os.environ if k not in ('PATH','HOME','LANG','LC_ALL','PYTHONDONTWRITEBYTECODE','GIT_TERMINAL_PROMPT','TMPDIR','TZ') and not k.startswith('GIT_CONFIG') and not k.startswith('__CF') and not k.startswith('LC_'))))\n")
         env = plain_env(self.root, {"GITHUB_TOKEN": "x", "AWS_SESSION_TOKEN": "y", "NPM_TOKEN": "z", "SSH_AUTH_SOCK": "/s", "PYTHONPATH": "/evil", "PYTHONSTARTUP": "/evil.py",
                                     "LD_PRELOAD": "/evil.so", "DYLD_INSERT_LIBRARIES": "/evil.dylib", "BASH_ENV": "/evil", "ENV": "/evil"})
-        e = br.run_and_record(self.root, "r", "t", ["python3", ".claude/scripts/ci_lint.py"], env)
+        e = br.run_and_record(self.root, "r", "t", ["python3", self.kit + "/ci_lint.py"], env)
         self.assertEqual(e["_output"].decode().strip(), "")
 
 

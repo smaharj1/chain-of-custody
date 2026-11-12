@@ -100,7 +100,7 @@ class KitVersionFile(unittest.TestCase):
 
     def test_the_committed_kit_version_parses(self):
         from tests import REPO_ROOT
-        with open(os.path.join(REPO_ROOT, ".claude", "KIT_VERSION")) as fh:
+        with open(os.path.join(REPO_ROOT, "KIT_VERSION")) as fh:
             self.assertIsNotNone(semver.parse_kit_version_file(fh.read())["version"])
 
 

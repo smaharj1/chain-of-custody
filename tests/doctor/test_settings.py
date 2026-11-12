@@ -153,7 +153,7 @@ class Sandbox(SettingsCase):
 
     def test_deny_paths_cover_the_credential_dirs_and_git_dirs(self):
         import os as _os
-        with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", ".claude", "templates", "security", "sandbox.settings.json")) as fh:
+        with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "..", "templates", "security", "sandbox.settings.json")) as fh:
             tmpl = json.load(fh)
         ctx, res = self.with_settings(tmpl)
         r = self.by_id(res, "sandbox.deny-paths")[0]
@@ -233,7 +233,7 @@ class ManagedSettings(SettingsCase):
             json.dump(data, fh)
 
     def test_the_shipped_example_passes(self):
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "templates", "security", "managed-settings.example.json")) as fh:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "templates", "security", "managed-settings.example.json")) as fh:
             self.managed(json.load(fh))
         self.assertClean(self.results(self.ctx(self.kit_repo())), "managed.settings")
 
@@ -242,6 +242,26 @@ class ManagedSettings(SettingsCase):
         msg = self.assertFails(self.results(self.ctx(self.kit_repo())), "managed.settings")[0].message
         self.assertIn("allowManagedHooksOnly", msg)
         self.assertIn("disableBypassPermissionsMode", msg)
+
+    def test_managed_hooks_only_without_the_guards_fails(self):
+        # the pre-2.0 example: only the canary is wired, and allowManagedHooksOnly turns the plugin's guards off
+        self.managed({"allowManagedHooksOnly": True, "permissions": {"disableBypassPermissionsMode": "disable"},
+                      "hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "python3 /opt/chain-of-custody/scripts/session_start.py"}]}]}})
+        r = self.assertFails(self.results(self.ctx(self.kit_repo())), "managed.settings")[0]
+        self.assertEqual(r.severity, "error")
+        for gid in ("pre-bash", "pre-edit", "pre-mcp", "pre-dispatch"):
+            self.assertIn(gid, r.message)
+        # one guard missing is named on its own
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "templates", "security", "managed-settings.example.json")) as fh:
+            ex = json.load(fh)
+        ex["hooks"]["PreToolUse"] = [g for g in ex["hooks"]["PreToolUse"] if "--id pre-edit" not in g["hooks"][0]["command"]]
+        self.managed(ex)
+        msg = self.assertFails(self.results(self.ctx(self.kit_repo())), "managed.settings")[0].message
+        self.assertIn("pre-edit", msg)
+        self.assertNotIn("pre-bash", msg)
+        # without allowManagedHooksOnly the plugin's hooks still run, so a managed file without guards is not this error
+        self.managed({"allowManagedHooksOnly": False, "permissions": {"disableBypassPermissionsMode": "disable"}})
+        self.assertNotIn("no guard runs", self.assertFails(self.results(self.ctx(self.kit_repo())), "managed.settings")[0].message)
 
     def test_nothing_visible_is_unknown_not_a_pass(self):
         self.assertEqual(self.by_id(self.results(self.ctx(self.kit_repo())), "managed.settings")[0].status, "unknown")
@@ -259,7 +279,7 @@ class Devcontainer(SettingsCase):
         return self.results(self.ctx(repo))
 
     def test_shipped_template_is_clean(self):
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".claude", "templates", "security", "devcontainer", "devcontainer.json")) as fh:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "templates", "security", "devcontainer", "devcontainer.json")) as fh:
             text = fh.read()
         res = self.dc(None, text=text)
         self.assertClean(res, "devcontainer.lint")

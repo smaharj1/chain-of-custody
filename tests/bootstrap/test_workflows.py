@@ -13,7 +13,7 @@ import ci_lint
 
 from tests import REPO_ROOT
 
-WF_DIR = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows")
+WF_DIR = os.path.join(REPO_ROOT, "templates", "github", "workflows")
 OPS = ("intake.yml", "dependency-check.yml", "smoke.yml")
 
 
@@ -159,21 +159,21 @@ class DependencyCheck(unittest.TestCase):
 
     def test_it_calls_the_script_with_a_cap_and_dedupes_against_open_issues(self):
         text = code("dependency-check.yml")
-        self.assertIn("python3 .claude/scripts/dependency_report.py", text)
+        self.assertIn('python3 "$RUNNER_TEMP/kit/scripts/dependency_report.py"', text)
         self.assertIn("--max-issues 10", text)
         self.assertIn("gh issue list --label factory:deps --state open", text)
         self.assertIn("--label factory:deps", text)
 
     def test_the_script_exists(self):
-        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, ".claude", "scripts", "dependency_report.py")))
-        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, ".claude", "scripts", "intake_validate.py")))
+        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "scripts", "dependency_report.py")))
+        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "scripts", "intake_validate.py")))
 
 
 class Smoke(unittest.TestCase):
     def test_project_code_runs_in_a_job_that_cannot_write(self):
         jobs = job_blocks("smoke.yml")
         self.assertNotIn("issues: write", jobs["smoke"])
-        self.assertIn("verify.py --only smoke", jobs["smoke"])
+        self.assertIn('python3 "$RUNNER_TEMP/kit/scripts/verify.py" --repo "$GITHUB_WORKSPACE" --only smoke', jobs["smoke"])
         self.assertIn("issues: write", jobs["report"])
         self.assertNotIn("checkout", jobs["report"])
         self.assertNotIn("run: python", jobs["report"])

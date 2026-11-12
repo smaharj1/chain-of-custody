@@ -8,8 +8,10 @@ import hashlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from tests import REPO_ROOT, SCRIPTS_DIR
@@ -37,15 +39,42 @@ class Generate(unittest.TestCase):
                                config_plan=".claude/bootstrap/config-plan.json", description="A widget app"))
         self.assertEqual(a, b)
         for want in ("gh repo create acme/widgets --private --source . --remote origin --description 'A widget app'", "git push -u origin main",
-                     "kit_apply sh .claude/scripts/github/apply-boundary.sh --repo acme/widgets --variant solo",
-                     "kit_apply sh .claude/scripts/github/apply-labels.sh --repo acme/widgets",
+                     "kit_apply sh %s --repo acme/widgets --variant solo" % shlex.quote(os.path.join(SCRIPTS_DIR, "github", "apply-boundary.sh")),
+                     "kit_apply sh %s --repo acme/widgets" % shlex.quote(os.path.join(SCRIPTS_DIR, "github", "apply-labels.sh")),
                      "gh variable set FACTORY_APPROVERS --repo acme/widgets --body alice,bob",
-                     "kit_write python3 .claude/scripts/bootstrap_config.py apply .claude/bootstrap/config-plan.json",
-                     "copy_new .claude/templates/github/workflows/intake.yml .github/workflows/intake.yml"):
+                     "kit_write python3 %s apply .claude/bootstrap/config-plan.json" % shlex.quote(os.path.join(SCRIPTS_DIR, "bootstrap_config.py")),
+                     "render_new %s .github/workflows/intake.yml" % shlex.quote(os.path.join(REPO_ROOT, "templates", "github", "workflows", "intake.yml")),
+                     "KIT_REF=%s\n" % shlex.quote(rs.kit_ref()), "KIT_SHA=''\n"):
             self.assertIn(want, a)
+        self.assertNotIn(".claude/scripts", a)
+        self.assertNotIn(".claude/templates", a)
         minimal = rs.generate(params())
-        for absent in ("gh repo create", "git push", "apply-boundary", "apply-labels", "FACTORY_APPROVERS", "bootstrap_config.py apply", "copy_new .claude"):
+        for absent in ("gh repo create", "git push", "apply-boundary", "apply-labels", "FACTORY_APPROVERS", "bootstrap_config.py apply", "render_new /"):
             self.assertNotIn(absent, minimal)
+        self.assertIn("KIT_REF=''\n", minimal)   # nothing to pin without a workflow
+
+    def test_a_given_kit_sha_is_baked_in_and_a_bad_one_is_refused(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        text = rs.generate(params(workflows=["intake"], kit_sha=sha))
+        self.assertIn("KIT_SHA=%s\n" % sha, text)
+        for bad in ("0123", sha.upper(), sha + "0", "$(id)" + sha[5:], sha[:-1] + "g", "v2.0.0"):
+            with self.subTest(bad):
+                with self.assertRaises(rs.ScriptError):
+                    params(workflows=["intake"], kit_sha=bad)
+
+    def test_the_kit_ref_is_the_release_tag_and_an_unsafe_version_is_refused(self):
+        from kitlib import semver
+        with open(os.path.join(REPO_ROOT, "KIT_VERSION")) as fh:
+            self.assertEqual(rs.kit_ref(), "v" + semver.parse_kit_version_file(fh.read())["version"])
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        for text in ("2.0.0/../x (2026-01-01)\n", "2.0.0;id (2026-01-01)\n", ""):
+            with self.subTest(text):
+                path = os.path.join(root, "KIT_VERSION")
+                with open(path, "w") as fh:
+                    fh.write(text)
+                with self.assertRaises(rs.ScriptError):
+                    rs.kit_ref(path)
 
     def test_the_script_never_contains_a_merge_a_secret_or_a_remote_fetch(self):
         text = rs.generate(params(create_repo=True, boundary=True, labels_=True, approvers=["alice"], workflows=list(rs.WORKFLOWS)))
@@ -186,9 +215,7 @@ class RunTheScript(BaseTestCase):
         BaseTestCase.setUp(self)
         self.repo_, self.bare_ = self.repo_with_remote()
         self.root = self.repo_.path
-        os.makedirs(os.path.join(self.root, ".claude"), exist_ok=True)
-        for sub in ("scripts", "templates"):
-            os.symlink(os.path.join(REPO_ROOT, ".claude", sub), os.path.join(self.root, ".claude", sub))
+        os.makedirs(os.path.join(self.root, ".claude"), exist_ok=True)   # the kit itself stays where it is: the script names it by path
         self.bindir = self.tmpdir()
         install_fake_gh(self.bindir, ANY)
         self.marker = os.path.join(self.tmpdir(), "marker")
@@ -286,17 +313,24 @@ class RunTheScript(BaseTestCase):
         with open(os.path.join(wf, "smoke.yml"), "w") as fh:
             fh.write("mine\n")
         # a config for the plan to edit
-        with open(os.path.join(REPO_ROOT, ".claude", "loop.config.md")) as fh:
+        with open(os.path.join(REPO_ROOT, "seed", ".claude", "loop.config.md")) as fh:
             cfg = fh.read()
         with open(os.path.join(self.root, ".claude", "loop.config.md"), "w") as fh:
             fh.write(cfg)
         planp = subprocess.run([sys.executable, os.path.join(SCRIPTS_DIR, "bootstrap_config.py"), "--repo", self.root, "plan", "--set", "solo_maintainer=true"],
                                env=self.env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(planp.returncode, 0, planp.stderr)
-        script = self.make(workflows="intake,smoke", config_plan=".claude/bootstrap/config-plan.json")
+        sha = "0123456789abcdef0123456789abcdef01234567"   # given, so the local phase never asks the network for it
+        script = self.make(workflows="intake,smoke", config_plan=".claude/bootstrap/config-plan.json", kit_sha=sha)
         p = self.run_script(script, "local", "--apply")
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertTrue(os.path.isfile(os.path.join(wf, "intake.yml")))
+        self.assertNotIn("ls-remote", p.stdout)
+        with open(os.path.join(wf, "intake.yml")) as fh:
+            intake = fh.read()
+        self.assertNotIn("{{KIT_", intake)
+        self.assertIn('KIT_REF: "%s"' % rs.kit_ref(), intake)
+        self.assertIn('KIT_SHA: "%s"' % sha, intake)
+        self.assertFalse(os.path.exists(os.path.join(wf, "intake.yml.part")))
         with open(os.path.join(wf, "smoke.yml")) as fh:
             self.assertEqual(fh.read(), "mine\n")
         with open(os.path.join(self.root, ".claude", "loop.config.md")) as fh:

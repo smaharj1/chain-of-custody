@@ -1,0 +1,72 @@
+# g10-product: the CI half of G10, product checks (report section 9 G10, CO-25; IMP-1: OPT-IN, EXPERIMENTAL, evidence-gated). Copy to
+# .github/workflows/g10-product.yml. It does nothing until a human sets `gates.g10: on` (or `report`) in loop.config AND commits
+# docs/baseline/evidence.json: the job reads both AT THE BASE SHA, so a pull request cannot switch the gate on or supply its own evidence.
+#
+# The kit bundles no product-check tool. `g10_a11y_cmd`, `g10_perf_cmd`, `g10_pii_cmd` and `g10_observability_cmd` in loop.config are your own
+# programs (run without a shell); each gets the changed non-test files in LOOPCTL_G10_SCOPE and prints one line,
+# {"schema": "g10.v1", "check": "<its name>", "checked": N, "violations": N}. A check that changed in the pull request is refused.
+# Install what they need in the toolchain step below, with install scripts off. This job runs the pull request's code, so it holds no secret, no
+# OIDC token and contents: read only (RC-3). Contract tests against api-contract.md are design-only (the kit's spec/loopctl-extras.md).
+#
+# Actions are referenced by tag; pin each to a commit SHA before you rely on this (ci_lint warns).
+name: g10-product
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: g10-product-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  g10:
+    name: g10
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the kit at its pinned release (never from the pull request)
+        env:
+          KIT_REPO: https://github.com/smaharj1/chain-of-custody.git
+          KIT_REF: "{{KIT_REF}}"
+          KIT_SHA: "{{KIT_SHA}}"
+        run: |
+          set -eu
+          case "$KIT_SHA" in
+            *[!0-9a-f]*|"") echo "::error::KIT_SHA is not a commit. Copy this file with the bootstrap setup script, which pins the kit release."; exit 1 ;;
+          esac
+          git init -q "$RUNNER_TEMP/kit"
+          git -C "$RUNNER_TEMP/kit" fetch -q --depth 1 --no-tags "$KIT_REPO" "refs/tags/$KIT_REF"
+          git -C "$RUNNER_TEMP/kit" -c advice.detachedHead=false checkout -q FETCH_HEAD
+          got="$(git -C "$RUNNER_TEMP/kit" rev-parse HEAD)"
+          if [ "$got" != "$KIT_SHA" ]; then
+            echo "::error::The kit tag $KIT_REF is at $got, not the pinned $KIT_SHA. A moved tag is not run: check the release, then pin it again."
+            exit 1
+          fi
+
+      # TOOLCHAIN and PRODUCT-CHECK TOOLS (project-specific; pin them like the rest of the toolchain):
+      # - uses: actions/setup-node@v4 # pin to a commit SHA
+      #   with:
+      #     node-version-file: .nvmrc
+      # - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Product checks (G10)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          KIT_SCRIPTS: ${{ runner.temp }}/kit/scripts
+        run: |
+          set -eu
+          if ! git cat-file -e "$BASE_SHA:.claude/loop.config.md" 2>/dev/null; then
+            echo "::notice::The base branch has no .claude/loop.config.md yet; nothing to run."
+            exit 0
+          fi
+          PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci g10 --repo "$GITHUB_WORKSPACE" --base "$BASE_SHA" --head-ref "$HEAD_REF"

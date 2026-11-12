@@ -14,7 +14,7 @@ from kitlib import config, registry
 
 from . import REPO_ROOT
 
-WF_DIR = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows")
+WF_DIR = os.path.join(REPO_ROOT, "templates", "github", "workflows")
 
 
 def read(name):
@@ -55,8 +55,10 @@ class Workflows(unittest.TestCase):
         self.assertIn("contents: read", text)
         self.assertIn("persist-credentials: false", text)
         self.assertRegex(text, r"(?m)^  verify:\n    name: verify$")
-        # the kit comes from the base sha, not from the pull request
-        self.assertIn("git archive \"$BASE_SHA\" .claude/scripts", text)
+        # the kit comes from its own repository at the pinned release, never from the pull request
+        self.assertIn('git -C "$RUNNER_TEMP/kit" rev-parse HEAD', text)
+        self.assertIn('if [ "$got" != "$KIT_SHA" ]', text)
+        self.assertIn('python3 "$RUNNER_TEMP/kit/scripts/verify.py"', text)
         self.assertIn("--base \"$BASE_SHA\"", text)
         self.assertIn("--apply-gate", text)
         self.assertNotIn("python3 .claude/scripts/verify.py", text)
@@ -98,8 +100,8 @@ class Mutations(unittest.TestCase):
         self.assertIn("ci.oidc-with-pr-code", errors(lint(bad)))
 
     def test_a_secret_in_verify(self):
-        bad = read("verify.yml").replace("        env:\n          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n        run: |\n          set +e",
-                                         "        env:\n          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n          TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n        run: |\n          set +e", 1)
+        bad = read("verify.yml").replace("        env:\n          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n        run: |\n",
+                                         "        env:\n          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n          TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n        run: |\n", 1)
         self.assertNotEqual(bad, read("verify.yml"))
         self.assertIn("ci.secrets-in-pr-job", errors(lint(bad)))
 
@@ -144,12 +146,14 @@ class ConfigKeys(unittest.TestCase):
                 self.assertTrue(key.h6_protected)
                 self.assertFalse(key.evidence_gated)
         self.assertEqual(reg.get("delivery").choices, ("local", "push-branch", "draft-pr"))
-        self.assertEqual(reg.get("git_autonomy").choices, ("none", "branch", "branch+commit"))
+        self.assertEqual(reg.get("git_autonomy").choices, ("none", "branch", "branch+commit", "branch+commit+push"))
+        # a project that leaves the keys out keeps v1 behaviour; the starter config opts in to pushing a feature branch
+        self.assertEqual((reg.get("delivery").seed, reg.get("git_autonomy").seed), ("push-branch", "branch+commit+push"))
 
-    def test_the_generated_kit_config_loads_clean_with_v1_behaviour_by_default(self):
-        cfg = config.load_file(os.path.join(REPO_ROOT, ".claude", "loop.config.md"))
+    def test_the_starter_config_loads_clean_and_pushes_feature_branches(self):
+        cfg = config.load_file(os.path.join(REPO_ROOT, "seed", ".claude", "loop.config.md"))
         self.assertEqual(cfg.errors, [])
-        self.assertEqual((cfg.get_str("delivery"), cfg.get_str("git_autonomy")), ("local", "none"))
+        self.assertEqual((cfg.get_str("delivery"), cfg.get_str("git_autonomy")), ("push-branch", "branch+commit+push"))
         self.assertTrue(cfg.is_placeholder("verify_build"))
         self.assertEqual(cfg.evidence_gated_violations(), [])
 

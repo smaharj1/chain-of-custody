@@ -17,7 +17,7 @@ from . import ACCEPTANCE_OK, IMPL, PKG, GateCase, g3_item
 
 from loopctl.gates import _ci
 
-WF_DIR = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows")
+WF_DIR = os.path.join(REPO_ROOT, "templates", "github", "workflows")
 NAMES = ("heldout.yml", "heldout-sync.yml", "mutation.yml")
 
 
@@ -55,10 +55,13 @@ class Templates(unittest.TestCase):
         names = [(re.search(r"name: (.*)", s) or re.search(r"uses: (.*)", s)).group(1) for s in steps]
         self.assertEqual(len(steps), 4, names)
         self.assertIn("checkout", steps[0])
-        self.assertIn("Take the kit from the base sha", steps[1])
+        self.assertIn("Fetch the kit at its pinned release", steps[1])
         self.assertIn("actions/cache/restore", steps[2])
         self.assertIn("loopctl.gates._ci heldout", steps[3])
-        self.assertIn('git archive "$BASE_SHA" .claude/scripts', steps[1])
+        self.assertIn('git -C "$RUNNER_TEMP/kit" fetch', steps[1])            # the kit is the pinned plugin release, never the pull request's
+        self.assertIn('"$got" != "$KIT_SHA"', steps[1])                        # a moved tag is refused
+        self.assertIn('PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci heldout', steps[3])
+        self.assertIn("KIT_SCRIPTS: ${{ runner.temp }}/kit/scripts", steps[3])
         self.assertIn("--base \"$BASE_SHA\"", steps[3])
 
     def test_untrusted_text_reaches_the_shell_only_through_env(self):
@@ -83,8 +86,9 @@ class Templates(unittest.TestCase):
         text = code("mutation.yml")
         for banned in ("secrets.", "id-token", "pull_request_target", "contents: write"):
             self.assertNotIn(banned, text, banned)
-        self.assertIn("loopctl.gates._ci mutation", text)
-        self.assertIn('git archive "$BASE_SHA" .claude/scripts', text)
+        self.assertIn('PYTHONPATH="$KIT_SCRIPTS" python3 -m loopctl.gates._ci mutation', text)
+        self.assertIn('git -C "$RUNNER_TEMP/kit" fetch', text)
+        self.assertIn('"$got" != "$KIT_SHA"', text)
 
     def test_ci_lint_still_catches_a_secret_added_while_adapting_heldout(self):
         bad = read("heldout.yml").replace("path: ${{ runner.temp }}/heldout", "path: ${{ runner.temp }}/heldout\n          # t\n").replace(

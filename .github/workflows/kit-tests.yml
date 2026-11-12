@@ -13,7 +13,7 @@ permissions:
 jobs:
   test:
     name: python ${{ matrix.python }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # ubuntu-latest (26.04) has no Python 3.9 build
     timeout-minutes: 10
     strategy:
       fail-fast: false

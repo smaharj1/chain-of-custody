@@ -5,7 +5,8 @@ temp HOME and the fake `claude` (`tests/helpers/fake_claude.py`, via `KIT_CLAUDE
 network, or sleeps for real: the driver's waits are shortened through `KIT_DRIVER_TEST_TIMING` (honoured only when the binary is the
 fake) and the backoff sleep is replaced.
 
-`DriverRepo` is the 4a `LoopRepo` plus: the kit's agent files committed at the base sha, `runner: driver` and a budget in the config,
+`DriverRepo` is the 4a `LoopRepo` plus: `runner: driver` and a budget in the config (the agents are the kit's own, `agents/<role>.md`
+in this checkout, unless a test commits `.claude/agents/<role>.md` overrides with `agents=`),
 a fake `claude` whose scenario can be changed between runs, stub gates (the real ones are Phase 4b's), and helpers that write the
 reports and reviews a child would produce.
 """
@@ -17,6 +18,7 @@ import io
 import json
 import os
 import shutil
+import tempfile
 import time
 import types
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -30,6 +32,7 @@ from loopctl import common, driver, gates, launch
 from loopctl.gates import GateResult
 
 AGENT_NAMES = ("backend-engineer", "database-engineer", "app-engineer", "infra-engineer", "code-reviewer", "security-reviewer", "design-critic")
+REAL_STUB_STAGE_WANTED = driver.Driver.stub_stage_wanted
 TIMING = {"poll_s": 0.03, "stall_s": 6.0, "canary_wait_s": 12.0, "term_grace_s": 0.5, "beat_s": 0.1}      # generous: a healthy child is never mistaken for a stalled one on a loaded machine
 BASE_CFG = {"loopctl_tier2": "true", "delivery": "local", "runner": "driver", "run_budget_usd": "10", "verify_tests": "python3 -m unittest",
             "security_review": "off", "max_retries_per_item": "2"}
@@ -60,8 +63,9 @@ def read_text(path: str) -> str:
 
 
 def agent_file(role: str) -> str:
-    """The kit's own agent file for a role (so the frontmatter parser meets the real thing), else a minimal one."""
-    path = os.path.join(REPO_ROOT, ".claude", "agents", "%s.md" % role)
+    """The kit's own agent file for a role (so the frontmatter parser meets the real thing), else a minimal one. Committed as an
+    override it is what a project's `.claude/agents/<role>.md` would be."""
+    path = os.path.join(REPO_ROOT, "agents", "%s.md" % role)
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as fh:
             return fh.read()
@@ -114,7 +118,7 @@ class GateStubs(object):
 
 class DriverRepo(LoopRepo):
     def __init__(self, items: Optional[List[Dict[str, Any]]] = None, cfg: Optional[Dict[str, Any]] = None, scenario: Optional[Dict[str, Any]] = None,
-                 agents: Sequence[str] = AGENT_NAMES, milestones: Optional[List[str]] = None, timing: Optional[Dict[str, float]] = None) -> None:
+                 agents: Sequence[str] = (), milestones: Optional[List[str]] = None, timing: Optional[Dict[str, float]] = None) -> None:
         super(DriverRepo, self).__init__(items=items, tier2=True, milestones=milestones, commit=False)       # one commit for everything, below
         self.cfg_text = render_config(cfg)
         self.write_plan(self.items)
@@ -122,7 +126,7 @@ class DriverRepo(LoopRepo):
         self.repo.write(".gitignore", "")
         for a in agents:
             self.repo.write(".claude/agents/%s.md" % a, agent_file(a))
-        self.commit_all("plan, config and agents")
+        self.commit_all("plan, config and overrides")
         self.base = self.repo.head()
         self.rs = runstate.RunState(self.repo.common_dir())
         self.claude = bins.install_fake_claude(os.path.join(self.home, "bin"), {})
@@ -206,7 +210,7 @@ class DriverRepo(LoopRepo):
         return {n: "off" for n in gates.KNOWN_GATES}
 
     def spawn_run(self, procs: Any, *extra: str, env: Optional[Dict[str, str]] = None) -> Any:
-        """`python3 .claude/scripts/loopctl run` as a real process (own session), for the tests that kill it. No gate is registered in
+        """`python3 <kit>/scripts/loopctl run` as a real process (own session), for the tests that kill it. No gate is registered in
         another process, and the real ones (Phase 4b) must not run here: use `cfg={"gates": lr.gates_off()}`."""
         import sys
         full = dict(self.env)
@@ -231,8 +235,12 @@ class DriverTestCase(LoopTestCase):
 
     def setUp(self) -> None:
         super(DriverTestCase, self).setUp()
-        self._saved = (driver.SLEEP, driver.Driver.compute_level)
+        self._saved = (driver.SLEEP, driver.Driver.compute_level, driver.Driver.stub_stage_wanted)
         driver.Driver.compute_level = False
+        # The kit always ships acceptance-author, so a real run with G2 on has a stubbing stage. These cases judge the rest of the
+        # driver and their scenarios have no acceptance-author: the stage is off here, and the tests that want it put back
+        # REAL_STUB_STAGE_WANTED.
+        driver.Driver.stub_stage_wanted = lambda self: False
         self.slept = []  # type: List[float]
         self.skew = 0.0
 
@@ -247,9 +255,20 @@ class DriverTestCase(LoopTestCase):
 
     def _restore(self) -> None:
         common.set_clock(None)
-        driver.SLEEP, driver.Driver.compute_level = self._saved
+        driver.SLEEP, driver.Driver.compute_level, driver.Driver.stub_stage_wanted = self._saved
         for n in list(gates._registered):
             gates.unregister(n)
+
+    def kit_version(self, text: str) -> None:
+        """Point the driver's version check at a KIT_VERSION with `text` (the kit's real one says what this checkout says)."""
+        d = tempfile.mkdtemp(prefix="kit-version-")
+        self.addCleanup(shutil.rmtree, d, True)
+        path = os.path.join(d, "KIT_VERSION")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        orig = launch._kit_version_file
+        launch._kit_version_file = lambda: path
+        self.addCleanup(setattr, launch, "_kit_version_file", orig)
 
     def dr(self, **kw: Any) -> DriverRepo:
         r = DriverRepo(**kw)
