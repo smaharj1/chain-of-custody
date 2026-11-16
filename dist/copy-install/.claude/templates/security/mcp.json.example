@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "docs": {
-      "type": "http",
-      "url": "https://docs.example.invalid/mcp"
-    }
-  }
-}

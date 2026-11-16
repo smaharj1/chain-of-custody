@@ -13,6 +13,7 @@ import shlex
 import types
 import unittest
 
+from kitlib import kitpaths
 from loopctl import cli, gates, lgit, launch, startrun, state as sm, unattended
 from loopctl.common import Refused, UsageError
 
@@ -131,7 +132,7 @@ class ApproveAssertsTheHead(Base):
         pend = lr.ctl("status", "--pending-human", "--json").json["pending"]
         step = [p for p in pend if p["kind"] == "approve-item"][0]["human_step"]
         self.assertTrue(step.endswith("approve item A --by <you> --head %s" % head[:12]), step)
-        self.assertIn("HUMAN STEP: python3 .claude/scripts/loopctl approve item A --by <you> --head %s" % head[:12], lr.ctl("status", "--pending-human").out)
+        self.assertIn("HUMAN STEP: " + kitpaths.script_cmd("loopctl", "approve", "item", "A", "--by", "<you>", "--head", head[:12]), lr.ctl("status", "--pending-human").out)
 
 
 class MergeCommitHoldsExactlyTheJudgedHead(Base):
@@ -399,7 +400,7 @@ class ProseMatchesCode(unittest.TestCase):
 
     def test_no_relay_form_offers_checkpoint_reject(self):
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        for rel in (".claude/skills/orchestrate/SKILL.md", ".claude/skills/orchestrate/loop.md"):
+        for rel in ("skills/orchestrate/SKILL.md", "skills/orchestrate/loop.md"):
             with open(os.path.join(root, rel), encoding="utf-8") as fh:
                 text = fh.read()
             with self.subTest(rel):

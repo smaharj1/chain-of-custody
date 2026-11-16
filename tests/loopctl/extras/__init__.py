@@ -10,7 +10,7 @@ import os
 import shutil
 from typing import Any, Dict, Optional
 
-from ... import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (puts .claude/scripts on sys.path)
+from ... import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (puts the kit's scripts/ on sys.path)
 from ...helpers import TempRepo, make_bare_remote
 
 EVIDENCE = {"schema": "evidence.v1", "fixture_runs": [{"id": "r1", "clean": True}, {"id": "r2", "clean": True}, {"id": "r3", "clean": True}],

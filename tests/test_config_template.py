@@ -1,6 +1,6 @@
 """The committed config templates are generated from the registry (IMP-11).
 
-* `.claude/loop.config.md` and `examples/loop.config.md` match what `tools/gen-config.py`
+* `seed/.claude/loop.config.md` and `examples/loop.config.md` match what `tools/gen-config.py`
   would write
 * v1 round trip: the 16 v1 keys, their defaults and every human comment survive. The frozen
   v1 files in `tests/data/v1/` are the reference; only the column of a few continuation-comment
@@ -63,7 +63,7 @@ class GeneratedFilesInSync(unittest.TestCase):
 
     def test_full_config_in_sync(self):
         want = configgen.render(self.reg, example=False)
-        got = read(os.path.join(REPO_ROOT, ".claude", "loop.config.md"))
+        got = read(os.path.join(REPO_ROOT, "seed", ".claude", "loop.config.md"))
         self.assertEqual(got, want, "run: python3 tools/gen-config.py --write")
 
     def test_example_config_in_sync(self):
@@ -72,7 +72,7 @@ class GeneratedFilesInSync(unittest.TestCase):
         self.assertEqual(got, want, "run: python3 tools/gen-config.py --write")
 
     def test_generated_files_load_clean(self):
-        for rel in (os.path.join(".claude", "loop.config.md"), os.path.join("examples", "loop.config.md")):
+        for rel in (os.path.join("seed", ".claude", "loop.config.md"), os.path.join("examples", "loop.config.md")):
             cfg = config.load_file(os.path.join(REPO_ROOT, rel), self.reg)
             self.assertEqual(cfg.issues, [], rel)
 

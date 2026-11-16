@@ -1,4 +1,4 @@
-"""hooks.manifest.json, wiring.py, settings.v2.json and the §7.2 templates (report §7.1 handler hygiene, §7.2, IMP-13, IMP-16)."""
+"""hooks.manifest.json, wiring.py, the plugin's hooks/hooks.json and the §7.2 templates (report §7.1 handler hygiene, §7.2, IMP-13, IMP-16)."""
 from __future__ import annotations
 
 import json
@@ -14,8 +14,11 @@ from guards.engine import GUARDS
 from tests import REPO_ROOT
 from tests.helpers import BaseTestCase
 
-SETTINGS_V2 = os.path.join(REPO_ROOT, ".claude", "settings.v2.json")
-TEMPLATES = os.path.join(REPO_ROOT, ".claude", "templates", "settings")
+WIRING = os.path.join(REPO_ROOT, "scripts", "guards", "wiring.py")
+TEMPLATES = os.path.join(REPO_ROOT, "templates", "settings")
+HOOKS_JSON = os.path.join(REPO_ROOT, "hooks", "hooks.json")
+COPY_INSTALL_HOOK = {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",
+                                                                    "command": 'exec python3 "$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py" PreToolUse --id pre-bash'}]}]}
 EXTRA_GUARDS = {"injection", "telemetry", "selftest"}
 
 
@@ -30,8 +33,7 @@ class ManifestTests(unittest.TestCase):
         cls.manifest = wiring.load_manifest()
 
     def test_generated_files_match_the_manifest(self) -> None:
-        proc = subprocess.run([sys.executable, os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "wiring.py"), "--check"], stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE)
+        proc = subprocess.run([sys.executable, WIRING, "--check"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertEqual(proc.returncode, 0, proc.stderr.decode())
 
     def test_every_guard_named_in_the_manifest_exists(self) -> None:
@@ -44,7 +46,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         for e in self.manifest["entries"]:
             if e.get("script"):
-                self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, ".claude", "scripts", e["script"])), e["script"])
+                self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "scripts", e["script"])), e["script"])
 
     def test_blocking_events_are_blocking_entries(self) -> None:
         for e in self.manifest["entries"]:
@@ -76,8 +78,9 @@ class ManifestTests(unittest.TestCase):
                 for h in g["hooks"]:
                     self.assertGreater(h["timeout"], 0)
                     self.assertLessEqual(h["timeout"], 30)
-                    self.assertIn('"$CLAUDE_PROJECT_DIR/', h["command"])
-                    self.assertNotRegex(h["command"], r"(?<!\")\$CLAUDE_PROJECT_DIR")
+                    self.assertIn('"${CLAUDE_PLUGIN_ROOT}/scripts/', h["command"])
+                    self.assertNotRegex(h["command"], r"(?<!\")\$\{CLAUDE_PLUGIN_ROOT\}")
+                    self.assertNotIn("CLAUDE_PROJECT_DIR", h["command"])
                     self.assertNotIn("http", h["command"].replace("hookSpecificOutput", ""))
 
     def test_on_failure_block_on_every_blocking_capable_handler(self) -> None:
@@ -91,23 +94,33 @@ class ManifestTests(unittest.TestCase):
                 for h in g["hooks"]:
                     self.assertNotIn("onFailure", h, "no effect on non-blocking events [docs]; not set")
 
+    def test_every_handler_runs_python_without_writing_bytecode(self) -> None:
+        # the plugin's folder is an installed copy: a hook must not leave __pycache__ in it
+        for event, groups in wiring.build_hooks(self.manifest).items():
+            for g in groups:
+                for h in g["hooks"]:
+                    runs = re.findall(r"exec python3( -B)? ", h["command"])
+                    self.assertTrue(runs and all(runs), (event, h["command"]))
+
     def test_session_start_runs_the_canary_and_the_selftest(self) -> None:
         cmds = [h["command"] for g in wiring.build_hooks(self.manifest)["SessionStart"] for h in g["hooks"]]
         self.assertTrue(any("session_start.py" in c for c in cmds))
         self.assertTrue(any("session-start-selftest" in c for c in cmds))
 
-    def test_settings_v2_has_the_live_files_shape(self) -> None:
-        v2 = load(SETTINGS_V2)
-        live = load(os.path.join(REPO_ROOT, ".claude", "settings.json"))
-        self.assertEqual(set(v2), {"permissions", "hooks"})
-        self.assertEqual(v2["permissions"], live["permissions"])
-        self.assertEqual(v2["hooks"], wiring.build_hooks(self.manifest))
+    def test_hooks_json_is_the_generated_plugin_wiring(self) -> None:
+        self.assertEqual(load(HOOKS_JSON), wiring.build_plugin_hooks(self.manifest))
+        self.assertEqual(wiring.build_plugin_hooks(self.manifest), {"hooks": wiring.build_hooks(self.manifest)})
 
-    def test_live_settings_are_the_activated_v2_wiring(self) -> None:
-        # Not `wiring.py --check`: an adopter edits settings.json, so only this repo's copy must match exactly.
+    def test_every_script_a_hook_runs_exists(self) -> None:
+        self.assertEqual(wiring.hook_scripts(self.manifest)[0], "guards/run.py")
+        for rel in wiring.hook_scripts(self.manifest):
+            self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "scripts", rel)), rel)
+
+    def test_this_checkouts_settings_do_not_wire_the_guards(self) -> None:
+        # the kit checkout switches its own plugin off for kit development; it must never carry a hooks block of its own
         live = load(os.path.join(REPO_ROOT, ".claude", "settings.json"))
-        self.assertEqual(live["hooks"], wiring.build_hooks(self.manifest))
-        self.assertEqual(live["permissions"]["allow"], [])
+        self.assertNotIn("hooks", live)
+        self.assertNotIn("double-wired", [k for k, _ in wiring.project_problems(REPO_ROOT, self.manifest)])
 
     def test_plugin_form_uses_the_plugin_root(self) -> None:
         doc = wiring.build_plugin_hooks(self.manifest)
@@ -115,12 +128,76 @@ class ManifestTests(unittest.TestCase):
         self.assertTrue(all("${CLAUDE_PLUGIN_ROOT}/scripts/" in c for c in cmds))
         self.assertFalse(any("CLAUDE_PROJECT_DIR" in c for c in cmds))
 
+    def test_print_emits_the_plugin_hooks(self) -> None:
+        proc = subprocess.run([sys.executable, WIRING, "--print"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(proc.returncode, 0, proc.stderr.decode())
+        self.assertEqual(json.loads(proc.stdout.decode()), wiring.build_plugin_hooks(self.manifest))
+
+
+class ProjectSettingsTests(BaseTestCase):
+    """A project's settings can switch the plugin's guards off, or wire kit scripts a second time: `project_problems` and `--check --project`."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.manifest = wiring.load_manifest()
+
+    def project(self, settings=None, local=None):
+        d = self.tmpdir()
+        os.makedirs(os.path.join(d, ".claude"))
+        for name, data in (("settings.json", settings), ("settings.local.json", local)):
+            if data is not None:
+                with open(os.path.join(d, ".claude", name), "w", encoding="utf-8") as fh:
+                    json.dump(data, fh)
+        return d
+
+    def kinds(self, d):
+        return sorted(k for k, _ in wiring.project_problems(d, self.manifest))
+
+    def check(self, d):
+        proc = subprocess.run([sys.executable, WIRING, "--check", "--project", d], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return proc.returncode, proc.stderr.decode()
+
+    def test_a_clean_project(self) -> None:
+        d = self.project(settings={"permissions": {"allow": []}, "enabledPlugins": {"chain-of-custody@chain-of-custody": True}})
+        self.assertEqual(self.kinds(d), [])
+        self.assertEqual(self.kinds(self.project()), [])
+
+    def test_disable_all_hooks(self) -> None:
+        d = self.project(local={"disableAllHooks": True})
+        self.assertEqual(self.kinds(d), ["disable-all-hooks"])
+        self.assertEqual(self.kinds(self.project(settings={"disableAllHooks": False})), [])
+
+    def test_the_plugin_set_to_false(self) -> None:
+        d = self.project(settings={"enabledPlugins": {"chain-of-custody@chain-of-custody": False, "chain-of-custody@mirror": False, "other@x": False}})
+        self.assertEqual(self.kinds(d), ["plugin-disabled", "plugin-disabled"])
+
+    def test_a_copy_install_hooks_block(self) -> None:
+        d = self.project(settings={"hooks": COPY_INSTALL_HOOK})
+        self.assertEqual(self.kinds(d), ["double-wired"])
+        plugin_form = {"SessionStart": [{"hooks": [{"type": "command", "command": 'python3 "/x/plugins/cache/k/scripts/session_start.py"'}]}]}
+        self.assertEqual(self.kinds(self.project(local={"hooks": plugin_form})), ["double-wired"])
+
+    def test_a_projects_own_hooks_are_fine(self) -> None:
+        own = {"PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "python3 tools/run.py --fmt && ./session_start.py"}]}]}
+        self.assertEqual(self.kinds(self.project(settings={"hooks": own})), [])
+
+    def test_unreadable_settings(self) -> None:
+        d = self.project()
+        with open(os.path.join(d, ".claude", "settings.json"), "w") as fh:
+            fh.write("{not json")
+        self.assertEqual(self.kinds(d), ["unreadable"])
+
+    def test_check_with_a_project_fails_on_a_switch(self) -> None:
+        rc, err = self.check(self.project(settings={"enabledPlugins": {"chain-of-custody@chain-of-custody": False}}))
+        self.assertEqual(rc, 1)
+        self.assertIn("enabledPlugins", err)
+
 
 class GeneratedCommandTests(BaseTestCase):
     """Run the wired command string itself, through sh, the way the platform does."""
 
     def sh(self, command, payload, env_extra=None, path=None):
-        env = {"CLAUDE_PROJECT_DIR": REPO_ROOT, "PATH": path if path is not None else os.environ.get("PATH", ""), "HOME": self.tmpdir(), "LC_ALL": "C"}
+        env = {"CLAUDE_PLUGIN_ROOT": REPO_ROOT, "PATH": path if path is not None else os.environ.get("PATH", ""), "HOME": self.tmpdir(), "LC_ALL": "C"}
         env.update(env_extra or {})
         proc = subprocess.run(["/bin/sh", "-c", command], input=json.dumps(payload).encode(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                               cwd=self.tmpdir())
@@ -159,16 +236,22 @@ class GeneratedCommandTests(BaseTestCase):
         rc, out, err = self.sh(self.cmd("post-telemetry"), {"x": 1}, path="/nonexistent")
         self.assertEqual((rc, out), (0, ""))
 
-    def test_unset_project_dir_fails_closed(self) -> None:
-        env = {"CLAUDE_PROJECT_DIR": ""}
+    def test_unset_plugin_root_fails_closed(self) -> None:
+        env = {"CLAUDE_PLUGIN_ROOT": ""}
         rc, out, err = self.sh(self.cmd("pre-bash"), {"session_id": "s1", "tool_name": "Bash", "tool_input": {"command": "ls"}}, env_extra=env)
-        self.assertNotEqual(rc, 0, "python cannot open /.claude/scripts/guards/run.py: exit 2, a block")
+        self.assertNotEqual(rc, 0, "python cannot open /scripts/guards/run.py: exit 2, a block")
         self.assertEqual(rc, 2)
 
 
 class TemplateTests(unittest.TestCase):
+    """The generated templates (that the files on disk are these is test_generated_files_match_the_manifest)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.templates = wiring.build_templates(wiring.load_manifest())
+
     def tmpl(self, name):
-        return load(os.path.join(TEMPLATES, name))
+        return json.loads(wiring.dumps(self.templates[name]))
 
     def test_workflow_is_denied_headlessly_and_never_allowed(self) -> None:
         for name in ("headless-child.settings.json", "critic.settings.json", "interactive.settings.json", "deny-baseline.json"):
@@ -183,7 +266,8 @@ class TemplateTests(unittest.TestCase):
         self.assertTrue(h["permissions"]["allow"], "an explicit allowedTools list")
         self.assertNotIn("Bash", h["permissions"]["allow"], "no blanket Bash")
         self.assertFalse([a for a in h["permissions"]["allow"] if re.match(r"^Bash\((npm|git|pnpm|yarn|python3?):\*\)$", a)], "named scripts, not Bash(npm:*)")
-        self.assertEqual(h["hooks"], wiring.build_hooks(wiring.load_manifest()), "the child passes the kit hooks explicitly (V5)")
+        self.assertNotIn("hooks", h, "the guards come from the plugin in a headless child too")
+        self.assertNotIn("hooks", self.tmpl("critic.settings.json"))
         self.assertIn("env", h)
 
     def test_sandbox_profile_is_fail_closed(self) -> None:
@@ -240,28 +324,18 @@ class DoctorAcceptsTheTemplates(BaseTestCase):
         self.assertTrue(all(r.status == "pass" for r in res), res)
 
 
-def _kit_major():
-    try:
-        with open(os.path.join(REPO_ROOT, ".claude", "KIT_VERSION"), "r", encoding="utf-8") as fh:
-            m = re.match(r"^(\d+)\.", fh.readline().strip())
-        return int(m.group(1)) if m else 0
-    except OSError:
-        return 0
-
-
-@unittest.skipUnless(_kit_major() >= 2, "the v1 hooks are removed by the release stage; until KIT_VERSION is 2.x they are still live and still shipped")
 class V1HooksDoNotShip(unittest.TestCase):
-    """D10 (GD-7): once the release stage has activated the v2 wiring, neither the live settings, the repository, `dist/` nor `plugin/` may carry a v1 hook."""
+    """D10 (GD-7): neither the live settings nor the kit may carry a v1 hook."""
 
     def test_no_v1_hook_script_or_reference_remains(self) -> None:
         import glob
-        for root in (REPO_ROOT, os.path.join(REPO_ROOT, "dist", "copy-install"), os.path.join(REPO_ROOT, "plugin")):
-            found = glob.glob(os.path.join(root, ".claude", "hooks", "*.sh")) + glob.glob(os.path.join(root, "hooks", "*.sh"))
-            self.assertEqual(found, [], "v1 hook scripts shipped under %s" % root)
-        with open(os.path.join(REPO_ROOT, ".claude", "settings.json"), encoding="utf-8") as fh:
-            text = fh.read()
-        self.assertNotIn("guard-git.sh", text)
-        self.assertNotIn("guard-main-edit.sh", text)
+        found = glob.glob(os.path.join(REPO_ROOT, ".claude", "hooks", "*.sh")) + glob.glob(os.path.join(REPO_ROOT, "hooks", "*.sh"))
+        self.assertEqual(found, [], "v1 hook scripts shipped")
+        for path in (os.path.join(REPO_ROOT, ".claude", "settings.json"), HOOKS_JSON):
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            self.assertNotIn("guard-git.sh", text)
+            self.assertNotIn("guard-main-edit.sh", text)
 
 
 if __name__ == "__main__":

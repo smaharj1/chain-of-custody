@@ -25,7 +25,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(REPO, ".claude", "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import run_local  # noqa: E402

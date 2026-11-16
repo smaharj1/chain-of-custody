@@ -25,7 +25,7 @@ def filled_codeowners():
     global FILLED_CODEOWNERS
     if FILLED_CODEOWNERS is None:
         from tests import REPO_ROOT
-        with open(os.path.join(REPO_ROOT, ".claude", "templates", "security", "CODEOWNERS.template"), "r", encoding="utf-8") as fh:
+        with open(os.path.join(REPO_ROOT, "templates", "security", "CODEOWNERS.template"), "r", encoding="utf-8") as fh:
             t = fh.read()
         FILLED_CODEOWNERS = t.replace("@PLACEHOLDER-owner", "@alice").replace("@PLACEHOLDER-guardrail-owners", "@alice").replace("@PLACEHOLDER-infra-owners", "@alice") \
             .replace("@PLACEHOLDER-data-owners", "@alice").replace("@PLACEHOLDER-security-owners", "@alice")
@@ -39,25 +39,24 @@ EVIDENCE = {"schema": "evidence.v1", "fixture_runs": [{"id": "r1", "clean": True
 def template_filesystem():
     """The deny lists of the shipped sandbox template: what an L4/L5 install merges (D1: the whole H6 write set plus the session registry)."""
     from tests import REPO_ROOT
-    with open(os.path.join(REPO_ROOT, ".claude", "templates", "security", "sandbox.settings.json"), "r", encoding="utf-8") as fh:
+    with open(os.path.join(REPO_ROOT, "templates", "security", "sandbox.settings.json"), "r", encoding="utf-8") as fh:
         fs = json.load(fh)["sandbox"]["filesystem"]
     return {"denyRead": fs["denyRead"], "denyWrite": fs["denyWrite"]}
 
 
 def guard_manifest():
     from tests import REPO_ROOT
-    with open(os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "hooks.manifest.json"), "r", encoding="utf-8") as fh:
+    with open(os.path.join(REPO_ROOT, "scripts", "guards", "hooks.manifest.json"), "r", encoding="utf-8") as fh:
         return fh.read()
 
 
-# the v2 guards are wired (guards.wiring passes), as they must be for L2 and above
+# the project's settings as /init writes them: permissions and the sandbox, no hooks (the plugin's hooks/hooks.json wires the guards)
 GUARD_MANIFEST = guard_manifest()
-WIRED = wiring.build_settings(json.loads(GUARD_MANIFEST))
+WIRED = wiring.build_templates(json.loads(GUARD_MANIFEST))["interactive.settings.json"]
 SANDBOX_BASE = {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False, "excludedCommands": []}
 SETTINGS = {"sandbox": dict(SANDBOX_BASE, filesystem=template_filesystem()),
             "permissions": {"allow": WIRED["permissions"]["allow"],
-                            "deny": ["WebFetch", "WebSearch", "Workflow", "mcp__*__run_script", "mcp__*deploy*"]},
-            "hooks": WIRED["hooks"]}
+                            "deny": ["WebFetch", "WebSearch", "Workflow", "mcp__*__run_script", "mcp__*deploy*"]}}
 
 BASE_CONFIG = {"autonomy_level": "L5", "bot": {"kind": "github-app", "login": "acme-bot[bot]", "id": "123"},
                "sandbox_verified": "2026-10-26", "managed_settings_verified": "2026-10-26", "promotion_attested": "2026-10-26",
@@ -69,11 +68,9 @@ BASE_CONFIG = {"autonomy_level": "L5", "bot": {"kind": "github-app", "login": "a
 class Ready(BoundaryCase):
     def ready(self, config_edit=None, files_edit=None, gh_fx=None, evidence=True, loopctl=True, nonce=True, kit_version=KIT_VERSION_V2, claude="2.1.305",
               origin="https://github.com/acme/widgets.git", reach=False, watchdog=True):
-        files = {".claude/settings.json": json.dumps(SETTINGS), ".github/CODEOWNERS": filled_codeowners(), ".gitignore": ".env*\n!.env.example\n",
-                 ".claude/scripts/guards/hooks.manifest.json": GUARD_MANIFEST,
-                 ".claude/scripts/loopctl/__main__.py": "" if loopctl else None}
-        if not loopctl:
-            del files[".claude/scripts/loopctl/__main__.py"]
+        files = {".claude/settings.json": json.dumps(SETTINGS), ".github/CODEOWNERS": filled_codeowners(), ".gitignore": ".env*\n!.env.example\n"}
+        if not loopctl:                                                     # a plugin folder without loopctl
+            os.unlink(os.path.join(self.kit_dir, "scripts", "loopctl"))
         if evidence:
             files["docs/baseline/evidence.json"] = json.dumps(EVIDENCE)
         files.update(files_edit or {})
@@ -432,7 +429,6 @@ class ConfigRef(Ready):
 
     def test_missing_config_is_reported_not_fatal(self):
         repo = self.repo()
-        repo.write(".claude/KIT_VERSION", KIT_VERSION_V2)
         ctx = self.ctx(repo)
         res = run_checks(ctx)
         self.assertFails(res, "config.load")

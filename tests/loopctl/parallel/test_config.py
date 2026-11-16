@@ -11,7 +11,7 @@ from doctorlib import parallel as doctor_parallel  # noqa: F401  (registers the 
 
 from guards import g_exec
 from guards.invoke import analyze
-from kitlib import loopctl_table, registry
+from kitlib import kitpaths, loopctl_table, registry
 
 from loopctl import cli
 
@@ -21,7 +21,7 @@ from ...doctor.helpers import BoundaryCase
 
 
 def inv(args):
-    ana = analyze("python3 .claude/scripts/loopctl " + " ".join(args), "/tmp")
+    ana = analyze(kitpaths.script_cmd("loopctl", *args), "/tmp")        # the command the kit prints: the plugin's absolute path
     return [i for i in ana.invs if i.name.startswith("python")][0]
 
 
@@ -109,13 +109,13 @@ class Classification(unittest.TestCase):
 
 class Templates(unittest.TestCase):
     def test_the_hook_snippet_and_the_include_template(self):
-        doc = json.loads(read(os.path.join(REPO_ROOT, ".claude", "templates", "parallel", "worktree-hooks.settings.json")))
+        doc = json.loads(read(os.path.join(REPO_ROOT, "templates", "parallel", "worktree-hooks.settings.json")))
         for event, verb in (("WorktreeCreate", "create"), ("WorktreeRemove", "remove")):
             cmd = doc["hooks"][event][0]["hooks"][0]["command"]
             self.assertTrue(cmd.endswith("worktree_hook.py\" %s" % verb), cmd)
         self.assertNotIn("WorktreeCreate", read(os.path.join(SCRIPTS_DIR, "guards", "hooks.manifest.json")))          # not wired by the kit: a human merges the snippet
         from loopctl.parallel import worktrees
-        text = read(os.path.join(REPO_ROOT, ".claude", "templates", "worktreeinclude"))
+        text = read(os.path.join(REPO_ROOT, "templates", "worktreeinclude"))
         self.assertEqual(worktrees.parse_include(text), ([".env.local", ".env.test"], []))
 
 

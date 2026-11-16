@@ -242,7 +242,8 @@ class Overlay(unittest.TestCase):
         keys = ("db_ephemeral", "verify_run", "verify_tests")
         changed = []
         for i, (a, b) in enumerate(zip(base, mine)):
-            if a != b:
+            # v1 named kit files `.claude/context/...`; the plugin names them `${CLAUDE_PLUGIN_ROOT}/context/...`: that rename is not a change
+            if a != b and b.replace("${CLAUDE_PLUGIN_ROOT}/", ".claude/") != a:
                 # a changed line is one of the three keys, or the comment line under verify_run
                 owner = a if not a.startswith(" ") else base[i - 1]
                 changed.append(owner.split(":")[0])

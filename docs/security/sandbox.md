@@ -4,7 +4,7 @@ The OS sandbox is what makes the agent's shell unable to do the things the crede
 
 ## The sandbox profile
 
-`.claude/templates/security/sandbox.settings.json` is a snippet to merge into your project (or, better, managed) settings:
+`templates/security/sandbox.settings.json` is a snippet to merge into your project (or, better, managed) settings:
 
 | Setting | Value | Why |
 |---|---|---|
@@ -14,11 +14,11 @@ The OS sandbox is what makes the agent's shell unable to do the things the crede
 | `sandbox.excludedCommands` | empty | in particular, **docker and podman are not excluded**: a container escapes the sandbox |
 | network | allowlist of the registries and hosts the loop needs; deny 169.254.0.0/16 and cloud control-plane endpoints | no metadata credentials, no free egress |
 | `denyRead` | `~/.aws`, `~/.ssh`, `~/.config/gh`, `~/.config/gcloud`, `~/.azure`, `~/.kube`, `~/.docker`, `.netrc`, `.git-credentials`, `.npmrc`, `.env.production*`, `*.pem`, `*.key` (and held-out tests under the git common dir) | credentials and held-out tests |
-| `denyWrite` | the whole H6 write set: `.git/hooks`, `.git/config`, `.git/info`, `.git/loopctl/sessions`; `.claude/settings.json`, `settings.local.json`, `settings.v2.json`, `.claude/hooks`, `scripts`, `agents`, `skills`, `commands`, `rules`, `workflows`, `templates`, `loop.config.md`; `.claude-plugin`, `plugin`; `.mcp.json`; `.github`, other CI definitions; `CODEOWNERS` | git and guardrail self-modification (H6). The list is `SANDBOX_DENY_WRITE` in `guards/paths.py`; `tests/guards/test_sandbox_template.py` fails if an H6 path is missing |
+| `denyWrite` | the whole H6 write set: `.git/hooks`, `.git/config`, `.git/info`, `.git/loopctl/sessions`; `.claude/settings.json`, `settings.local.json`, `.claude/hooks`, `scripts`, `agents`, `skills`, `commands`, `rules`, `workflows`, `loop.config.md`; `.claude-plugin`; `.mcp.json`; `.github`, other CI definitions; `CODEOWNERS` | git and guardrail self-modification (H6). The list is `SANDBOX_DENY_WRITE` in `guards/paths.py`; `tests/guards/test_sandbox_template.py` fails if an H6 path is missing |
 
 The snippet also repeats the file rules as `Read(...)` / `Edit(...)` deny rules in `permissions.deny`, because Claude Code derives sandbox filesystem limits from permission rules. The report names `denyRead` and `denyWrite` lists, and the exact key names for the network and filesystem blocks are **unverified (V19)** against the Claude Code version you run. The doctor accepts either form (`sandbox.filesystem.denyRead`, `sandbox.denyRead`, or the permission rules). Check the snippet against `claude`'s settings reference before relying on it.
 
-**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a human edits the kit's own `.claude/scripts/**` (kit development) does not use it, because it would deny exactly those edits; how such a session runs is in [guards.md](guards.md#developing-the-kit-with-agents).
+**Who this template is for.** Adopter loops: the agent edits product code and the guardrails are somebody else's. A session in which a person edits the kit itself (kit development, in a checkout of this repository) does not use it, because it would deny exactly those edits; how such a session runs is in [guards.md](guards.md#developing-the-kit-with-agents).
 
 **Not denied on purpose.** `.claude/context/**` (primers are editable on main), `.claude/pr/`, and `.git/loopctl/run.json`, `lock`, `HALT` and `nonces/`: the conductor legitimately writes the run record and the lock heartbeat and may need `loopctl halt`. Treat those four as writable by the agent; they are not protected by the sandbox, and the guards and the evidence checks do not rely on them for authority.
 
@@ -27,7 +27,7 @@ The snippet also repeats the file rules as `Read(...)` / `Edit(...)` deny rules 
 For a linked git worktree the common git directory is outside the worktree path (`.git` is a file there), so the relative `.git/...` entries do not reach it. Add the absolute paths for `hooks`, `config`, `info` and `loopctl/sessions`. The command prints the lines for this checkout and writes nothing; paste them into `.claude/settings.local.json`:
 
 ```
-python3 .claude/scripts/guards/wiring.py --sandbox-snippet
+python3 "$KIT/scripts/guards/wiring.py" --sandbox-snippet
 ```
 
 In a linked worktree the snippet also names the `.git` pointer file itself (`<worktree>/.git`, a file inside the project directory that reads `gitdir: <common>/worktrees/x`). Without that entry a sandboxed command can rewrite it, and every hook then computes a different git directory, with a session registry the agent wrote. It cannot be in the static template: in a plain checkout `.git` is a directory, and denying the directory would break git. The doctor row `sandbox.git-pointer` warns when `.git` is a file that is not denied (a warning, not a level cap) and is skipped in a plain checkout.
@@ -47,18 +47,18 @@ Until then the sandbox cap holds the level at **L1**. A devcontainer, container 
 
 ## Containers and separate OS users
 
-The sandbox is not the only way. A credential-free container, or a separate OS user that has none of your credentials, achieves B2 and B3 together (see [credentials.md](credentials.md)). `.claude/templates/security/devcontainer/devcontainer.json` drops all capabilities, forwards no credentials, mounts nothing and runs as an unprivileged user. `devcontainer.lint` flags credential mounts, privileged flags, host namespaces, a docker daemon, `${localEnv:...}` forwarding of credential variables and root.
+The sandbox is not the only way. A credential-free container, or a separate OS user that has none of your credentials, achieves B2 and B3 together (see [credentials.md](credentials.md)). `templates/security/devcontainer/devcontainer.json` drops all capabilities, forwards no credentials, mounts nothing and runs as an unprivileged user. `devcontainer.lint` flags credential mounts, privileged flags, host namespaces, a docker daemon, `${localEnv:...}` forwarding of credential variables and root.
 
 ## Managed settings (L3 and above)
 
 Project settings are writable by the agent. Managed settings are not, if you install them as another user (V21 is the open question of whether the same OS user could override them: assume it can, so use a separate OS user or a container for L3).
 
-`.claude/templates/security/managed-settings.example.json` has the recipe:
+`templates/security/managed-settings.example.json` has the recipe:
 
-- `allowManagedHooksOnly: true`: only the hooks in the managed file run.
+- `allowManagedHooksOnly: true`: only the hooks in the managed file run. That turns off user, project **and plugin** hooks, including the plugin's `hooks/hooks.json`, so the managed file carries the whole guard wiring itself: every entry of `scripts/guards/hooks.manifest.json` (the PreToolUse, PostToolUse, ConfigChange, SubagentStart/Stop, PermissionDenied and SessionStart handlers), generated by `scripts/guards/wiring.py --write` and kept equal to the manifest by `wiring.py --check`. A managed file that sets `allowManagedHooksOnly` but lacks a blocking guard entry fails `managed.settings` as an error: no guard would run while the canary still looked healthy.
 - `permissions.disableBypassPermissionsMode: "disable"`. This key is valid in any settings file; **only the managed copy survives a child's `--settings`**, so a child launched with `--settings '{"disableAllHooks":true}'` cannot undo it (RC-31).
 - `enableAllProjectMcpServers: false` and a deny list for `Workflow`, `mcp__*__run_script` and `mcp__*deploy*`.
-- The kit's hooks installed as managed hooks. The example's SessionStart command points at `/opt/chain-of-custody/scripts/session_start.py`: **copy `.claude/scripts/` to a directory the agent's user cannot write** and point the managed hooks there. A managed hook that runs a script from the repository runs whatever the agent put there.
+- The kit's hooks installed as managed hooks. The example's commands point at `/opt/chain-of-custody/scripts/...`: **copy the whole plugin folder (the guards read `scripts/`, the manifest, `KIT_VERSION` and `.claude-plugin/plugin.json`) to a directory the agent's user cannot write**, and replace `/opt/chain-of-custody` if you put it elsewhere. A managed hook that runs a script from the repository, or from a folder the agent can write, runs whatever the agent put there. Copy it again, and re-check the hooks block against the new example, when you update the plugin.
 
 Where managed settings live: `/Library/Application Support/ClaudeCode/managed-settings.json` on macOS, `/etc/claude-code/managed-settings.json` on Linux. `managed.settings` reads them if it can see them; otherwise set `managed_settings_verified` (or `agent_isolation: container`).
 
@@ -66,19 +66,19 @@ Where managed settings live: `/Library/Application Support/ClaudeCode/managed-se
 
 Hooks are guardrails, and a guardrail that did not load is worse than none because everything looks fine. In untrusted `-p` contexts (a fresh clone, CI, cloud) project `permissions.allow` and subagent frontmatter hooks are not applied.
 
-`.claude/scripts/session_start.py` is the SessionStart hook that proves hooks load. It:
+`scripts/session_start.py` is the SessionStart hook that proves hooks load. It:
 
 1. writes a random nonce for the session to `<git-common-dir>/loopctl/nonces/<session_id>` (through `kitlib.runstate`) and returns it in the session context as `canary session=<id> nonce=<hex>`;
-2. compares `claude --version` with `claude_code_min` and `claude_code_tested_max` in `.claude/KIT_VERSION` ([version-policy.md](version-policy.md)): a loud banner at L0 to L2, and a **refusal at L3 and above** (no nonce is written);
+2. compares `claude --version` with `claude_code_min` and `claude_code_tested_max` in the kit's `KIT_VERSION` ([version-policy.md](version-policy.md)): a loud banner at L0 to L2, and a **refusal at L3 and above** (no nonce is written);
 3. announces a HALT and keeps the returned context under 1 KiB.
 
 It is advisory and never blocks: every path exits 0. In the prose loop the conductor checks that the context line is there and the file matches; with no nonce it does not dispatch. With `loopctl` (`begin`, the driver) loopctl enforces the same. The nonce file is writable by the agent's user unless the sandbox denies it, so the canary proves "the hook ran", not "the agent is honest".
 
-Wiring: `.claude/settings.json` carries it as the `session-start-canary` entry of the guard wiring (generated from `.claude/scripts/guards/hooks.manifest.json`, [guards.md](guards.md)); the plugin form has the same entry. The hook command is:
+Wiring: the plugin's `hooks/hooks.json` carries it as the `session-start-canary` entry of the guard wiring (generated from `scripts/guards/hooks.manifest.json`, [guards.md](guards.md)). The hook command, without the fallback that reports a missing `python3`, is:
 
 ```
-"SessionStart": [{"hooks": [{"type": "command", "timeout": 10,
-    "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/session_start.py\""}]}]
+"SessionStart": [{"matcher": "startup|resume|clear|compact", "hooks": [{"type": "command", "timeout": 10,
+    "command": "exec python3 -B \"${CLAUDE_PLUGIN_ROOT}/scripts/session_start.py\""}]}]
 ```
 
 `onFailure: block` on blocking-capable hooks, and the guards' own fail-closed handling, are part of the guard suite ([guards.md](guards.md)). `onFailure` has no effect on Stop, SubagentStop, TaskCompleted, TeammateIdle or async hooks, so those stay advisory and the loop re-validates them.

@@ -1,6 +1,6 @@
-"""init_project.py: the project settings a plugin cannot ship (Phase 9, IMP-3, report P19).
+"""init_project.py: the starter files and project settings a plugin cannot ship (Phase 9, IMP-3, report P19).
 
-Run against the generated plugin/ (the plugin layout) and .claude/ (the copy layout). In-process; no git.
+The kit is this repository (the plugin root). In-process; git only where a test says so.
 """
 from __future__ import annotations
 
@@ -13,13 +13,12 @@ import unittest
 from tests import REPO_ROOT
 from tests.dist import call
 
-import init_project  # noqa: E402  (tests/__init__ puts .claude/scripts on sys.path)
+import init_project  # noqa: E402  (tests/__init__ puts scripts/ on sys.path)
 
-PLUGIN = os.path.join(REPO_ROOT, "plugin")
-COPY = os.path.join(REPO_ROOT, ".claude")
+KIT = REPO_ROOT
 
 
-def run(project, *args, env=None, kit=PLUGIN):
+def run(project, *args, env=None, kit=KIT):
     return call(lambda argv, e: init_project.main(argv, e, kit), ["--repo", project] + list(args), env if env is not None else {})
 
 
@@ -113,9 +112,47 @@ class InitProject(unittest.TestCase):
         self.assertIn("H6 keys", out)
 
     def test_the_environment_variables_claude_code_sets_are_read(self):
-        rc, out, err = run(self.p, env={"CLAUDE_PLUGIN_OPTION_INTEGRATION_BRANCH": "dev"}, kit=PLUGIN)
+        rc, out, err = run(self.p, env={"CLAUDE_PLUGIN_OPTION_INTEGRATION_BRANCH": "dev"})
         self.assertEqual(rc, 0, err)
         self.assertIn("integration_branch", out)
+
+    def test_the_printed_apply_command_carries_the_choices_from_the_environment(self):
+        rc, out, err = run(self.p, env={"CLAUDE_PLUGIN_OPTION_INTEGRATION_BRANCH": "dev"})
+        self.assertEqual(rc, 0, err)
+        self.assertIn("%s --repo %s --option integration_branch=dev --apply" % (os.path.join(KIT, "scripts", "init_project.py"),
+                                                                                os.path.realpath(self.p)), out)
+
+    def test_a_choice_the_config_already_has_is_not_written_again(self):
+        run(self.p, "--option", "integration_branch=dev", "--apply")
+        rc, out, err = run(self.p, "--option", "integration_branch=dev")
+        self.assertEqual(rc, 0, err)
+        self.assertNotIn("keys set from your choices", out)
+        self.assertNotIn("--- .claude/loop.config.md", out)
+
+    def test_the_settings_turn_the_plugin_on_for_teammates(self):
+        rc, out, err = run(self.p, "--apply")
+        self.assertEqual(rc, 0, err)
+        s = json.loads(read(self.p, ".claude/settings.json"))
+        self.assertIs(s["enabledPlugins"]["chain-of-custody@chain-of-custody"], True)
+        self.assertEqual(s["extraKnownMarketplaces"]["chain-of-custody"]["source"], {"source": "github", "repo": "smaharj1/chain-of-custody"})
+        os.makedirs(os.path.join(self.p, "sub"))
+        with open(os.path.join(self.p, ".claude", "settings.json"), "w") as fh:
+            json.dump(dict(s, enabledPlugins={"chain-of-custody@chain-of-custody": False}), fh)
+        rc, out, err = run(self.p)
+        self.assertEqual(rc, 0, err)
+        self.assertFalse(json.loads(read(self.p, ".claude/settings.json"))["enabledPlugins"]["chain-of-custody@chain-of-custody"])
+        self.assertIn("yours kept", out, "a project that turned the plugin off keeps it off")
+
+    def test_a_subfolder_of_a_git_repository_means_the_repository_root(self):
+        import subprocess
+        subprocess.run(["git", "init", "-q", self.p], check=True)
+        sub = os.path.join(self.p, "pkg")
+        os.makedirs(sub)
+        rc, out, err = run(sub, "--apply")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("works on the repository root", out)
+        self.assertTrue(os.path.isfile(os.path.join(self.p, ".claude", "CLAUDE.md")))
+        self.assertFalse(os.path.exists(os.path.join(sub, ".claude")))
 
     def test_defaults_and_unknown_options(self):
         rc, out, err = run(self.p, "--option", "protected_branches=main,master")
@@ -127,13 +164,56 @@ class InitProject(unittest.TestCase):
         rc, out, err = run(self.p, "--option", "nonsense")
         self.assertEqual(rc, 2)
 
-    def test_a_copy_install_gets_settings_and_gitignore_only(self):
-        rc, out, err = run(self.p, kit=COPY)
+    def test_an_old_copy_install_is_refused_untouched(self):
+        for rel, text in ((".claude/scripts/doctor.py", ""), (".claude/KIT_MANIFEST", "{}"), (".claude/KIT_VERSION", "1.2.0\n"),
+                          (".claude/settings.json", json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+                              {"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git.sh"}]}]}}))):
+            p = tempfile.mkdtemp(prefix="kit-init-copy-")
+            self.addCleanup(shutil.rmtree, p, True)
+            os.makedirs(os.path.dirname(os.path.join(p, rel)), exist_ok=True)
+            with open(os.path.join(p, rel), "w") as fh:
+                fh.write(text)
+            before = sorted(os.listdir(os.path.join(p, ".claude")))
+            for args in ((), ("--apply",)):
+                rc, out, err = run(p, *args)
+                self.assertEqual(rc, 2, rel)
+                self.assertIn("old copy install", err)
+                self.assertIn("/chain-of-custody:migrate", err)
+            self.assertEqual(sorted(os.listdir(os.path.join(p, ".claude"))), before, rel)
+            self.assertFalse(os.path.exists(os.path.join(p, ".gitignore")))
+
+    def test_the_kit_checkout_is_refused(self):
+        rc, out, err = run(REPO_ROOT)
+        self.assertEqual(rc, 2)
+        self.assertIn("the kit's own checkout", err)
+
+    def test_the_summary_names_the_kit_folder_and_the_full_path_hint(self):
+        rc, out, err = run(self.p)
         self.assertEqual(rc, 0, err)
-        self.assertIn("copy install", out)
-        self.assertNotIn("--- .claude/CLAUDE.md", out, "a copy install already has its seed files")
-        self.assertIn("--- .claude/settings.json", out)
-        self.assertIn("activating the v2 guards", out)
+        lines = out.split("\n")
+        self.assertEqual(lines[1], "kit: %s" % KIT)
+        self.assertIn("full path", lines[2])
+        self.assertIn("note: the guard hooks come from the plugin's hooks/hooks.json", out)
+
+    def test_copied_and_kept_starter_files_are_listed(self):
+        os.makedirs(os.path.join(self.p, ".claude", "context"))
+        with open(os.path.join(self.p, ".claude/context/backend.md"), "w") as fh:
+            fh.write("ours\n")
+        rc, out, err = run(self.p, "--apply")
+        self.assertEqual(rc, 0, err)
+        copied = [ln for ln in out.split("\n") if ln.startswith("starter files copied")][0]
+        kept = [ln for ln in out.split("\n") if ln.startswith("starter files you already have")][0]
+        self.assertIn(".claude/CLAUDE.md", copied)
+        self.assertNotIn("backend.md", copied)
+        self.assertIn(".claude/context/backend.md", kept)
+        self.assertEqual(read(self.p, ".claude/context/backend.md"), "ours\n")
+        seed = os.path.join(KIT, "seed")
+        for dirpath, _, files in os.walk(seed):
+            for fn in files:
+                rel = os.path.relpath(os.path.join(dirpath, fn), seed)
+                self.assertTrue(os.path.isfile(os.path.join(self.p, rel)), rel)
+        self.assertFalse(os.path.exists(os.path.join(self.p, ".claude", "scripts")), "no kit script is copied")
+        self.assertFalse(os.path.exists(os.path.join(self.p, ".claude", "agents")), "no kit agent is copied")
 
     def test_existing_seed_files_are_not_overwritten(self):
         os.makedirs(os.path.join(self.p, ".claude"))

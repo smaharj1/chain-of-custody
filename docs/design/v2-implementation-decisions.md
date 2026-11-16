@@ -9,7 +9,7 @@
 **Hard constraints (restated, non-negotiable, every implementer reads them):**
 
 - H4: infrastructure apply, deploy and destroy are never automated. A human approves every apply. Nothing built here may apply, deploy or destroy anything.
-- Agents never push, never change GitHub or account settings, never create tags on a remote. `.claude/hooks/guard-git.sh` blocks `git push`. All work is committed locally; the human pushes at the end. GitHub-side configuration is delivered as files plus scripts and instructions the human runs.
+- Agents never push, never change GitHub or account settings, never create tags on a remote. `.claude/hooks/guard-git.sh` blocks `git push`. All work is committed locally; the human pushes at the end. GitHub-side configuration is delivered as files plus scripts and instructions the human runs. *(Superseded in 2.0.0 for pushing: at `git_autonomy: branch+commit+push` the conductor may push its own feature branch, never a protected one; merging stays human. The rest holds.)*
 - No real-project names anywhere in the repo, in commits or in test fixtures. The two real installs are "Install A" and "Install B" only. Implementers must not read or copy from the sibling project directories that appear among the session's additional working directories.
 - Agents never launch `claude` (CS-2), not even `claude --version`. All tests use a fake binary (IMP-14).
 - Agents never run a command with real cloud, GitHub or SSH credentials, and never run `doctor --live` on the host.

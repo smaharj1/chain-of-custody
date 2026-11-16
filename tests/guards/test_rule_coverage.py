@@ -11,7 +11,7 @@ from guards import g_git, paths
 
 from tests import REPO_ROOT
 
-GUARDS_DIR = os.path.join(REPO_ROOT, ".claude", "scripts", "guards")
+GUARDS_DIR = os.path.join(REPO_ROOT, "scripts", "guards")
 CORPUS = os.path.join(REPO_ROOT, "tests", "guards", "corpus")
 DOC = os.path.join(REPO_ROOT, "docs", "security", "guards.md")
 

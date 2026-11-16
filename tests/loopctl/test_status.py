@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
+from kitlib import kitpaths
 from loopctl import gates, render, status
 
 from . import LoopTestCase, item_doc
@@ -68,9 +69,9 @@ class Status(LoopTestCase):
         head = lr.item("A")["headSha"]
         pend = lr.ctl("status", "--pending-human", "--json").json["pending"]
         item = [p for p in pend if p["kind"] == "approve-item"][0]
-        self.assertEqual(item["human_step"], "HUMAN STEP: python3 .claude/scripts/loopctl approve item A --by <you> --head %s" % head[:12])
+        self.assertEqual(item["human_step"], "HUMAN STEP: " + kitpaths.script_cmd("loopctl", "approve", "item", "A", "--by", "<you>", "--head", head[:12]))
         out = lr.ctl("status", "--pending-human").out
-        self.assertIn("HUMAN STEP: python3 .claude/scripts/loopctl approve item A --by <you> --head %s" % head[:12], out)
+        self.assertIn("HUMAN STEP: " + kitpaths.script_cmd("loopctl", "approve", "item", "A", "--by", "<you>", "--head", head[:12]), out)
         # every command it prints that is human-only is what the shared table calls human
         from kitlib import loopctl_table
         for p in pend:

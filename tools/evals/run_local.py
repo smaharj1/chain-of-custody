@@ -38,7 +38,7 @@ import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.join(REPO, ".claude", "scripts"))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
 
 ENGINEER_STATUS = ("APPROVED", "PARTIAL", "NEEDS_CLARIFICATION", "CONTRACT_DEVIATION", "CONTRACT_INCONSISTENCY", "DESIGN_DEVIATION", "ESCALATION_NEEDED")
 VERDICTS = {"code-review": ("CODE_REVIEW_APPROVED", "CHANGES_REQUESTED"), "design-critic": ("DESIGN_APPROVED", "DESIGN_NEEDS_REVISION")}

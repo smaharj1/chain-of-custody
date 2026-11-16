@@ -20,7 +20,7 @@ from tests import REPO_ROOT
 from tests.helpers import BaseTestCase
 from tests.helpers.fakehome import clean_env
 
-RUN = os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "run.py")
+RUN = os.path.join(REPO_ROOT, "scripts", "guards", "run.py")
 
 
 def run_hook(event: str, payload, cwd: str, entry: str = None, raw: str = None, python: str = sys.executable, env=None):
@@ -254,6 +254,23 @@ class StateCommands(BaseTestCase):
         out = proc.stdout.decode()
         self.assertIn("rule: guard-git:no-verify", out)
         self.assertIn("caller: engineer", out)
+
+    def test_explain_reads_the_repository_config(self) -> None:
+        # explain answers with the loop.config.md the hook would read, not the defaults
+        repo = self.repo()
+        repo.git("checkout", "-q", "-b", "feat/x")
+        repo.commit_file(".claude/loop.config.md", "# Loop Config\n\n```yaml\ngit_autonomy: branch+commit\n```\n")
+        argv = [sys.executable, RUN, "explain", "git", "commit", "-m", "x"]
+        proc = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=repo.path, env=clean_env(repo.path))
+        out = proc.stdout.decode()
+        self.assertIn("config: %s (git_autonomy branch+commit" % os.path.join(repo.path, ".claude", "loop.config.md"), out)
+        self.assertNotIn("git_autonomy is 'none'", out)
+        self.assertIn("decision: allow", out)
+        plain = self.tmpdir()
+        proc = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=plain, env=clean_env(plain))
+        out = proc.stdout.decode()
+        self.assertIn("using the defaults (git_autonomy none)", out)
+        self.assertNotIn("decision: allow", out)
 
 
 @unittest.skipUnless(os.path.exists("/usr/local/bin/python3.9") or shutil.which("python3.9"), "no Python 3.9 on this machine")

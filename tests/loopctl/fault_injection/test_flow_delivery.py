@@ -35,13 +35,13 @@ class Delivery(DriverTestCase):
         lr.approve()
         r = lr.run()
         self.assertEqual(r.rc, 0, r)
-        self.assertIn("a human pushes the branch", r.out)
+        self.assertIn("the driver does not push the branch", r.out)
         self.assertEqual(lr.item("A")["status"], "awaiting_human")
         self.assertEqual(lr.ctl("approve", "item", "A", "--by", "Pat").rc, 0)
         r = lr.run()
         self.assertEqual(r.rc, 0, r)
         self.assertIn("delivery is push-branch", r.out)
-        self.assertEqual(lr.item("A")["status"], "awaiting_human")                           # still unmerged: the human pushes and `reconcile` records it
+        self.assertEqual(lr.item("A")["status"], "awaiting_human")                           # still unmerged: the driver never pushes; `reconcile` records the merge
         self.assertEqual(lr.repo.git("log", "--merges", "--format=%H", "main"), "")
         self.assertEqual(lr.repo.git("branch", "--show-current"), "main")
 

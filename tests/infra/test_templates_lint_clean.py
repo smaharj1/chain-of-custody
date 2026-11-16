@@ -13,8 +13,8 @@ import ci_lint
 
 from tests import REPO_ROOT
 
-TEMPLATE_DIRS = [os.path.join(REPO_ROOT, ".claude", "templates", "infra", "workflows"),
-                 os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows")]
+TEMPLATE_DIRS = [os.path.join(REPO_ROOT, "templates", "infra", "workflows"),
+                 os.path.join(REPO_ROOT, "templates", "github", "workflows")]
 
 # file -> the rules that may warn there. Anything else, or any error, is a failure.
 EXPECTED_WARNINGS = {

@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import os
 import stat
 import sys
@@ -287,14 +288,23 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.fake.calls(), [])
 
     def test_the_settings_snippet_runs_only_the_script_with_a_fixed_command(self):
-        path = os.path.join(REPO_ROOT, ".claude", "templates", "notify", "notify-hooks.settings.json")
+        path = os.path.join(REPO_ROOT, "templates", "notify", "notify-hooks.settings.json")
         with open(path) as fh:
             doc = json.load(fh)
         self.assertEqual(sorted(doc["hooks"]), ["Notification", "PermissionRequest", "StopFailure"])
         for entries in doc["hooks"].values():
             for e in entries:
                 for h in e["hooks"]:
-                    self.assertEqual(h["command"], 'python3 "$CLAUDE_PROJECT_DIR/.claude/scripts/notify.py" --hook')
+                    # the kit's notify.py (a project has no .claude/scripts: the kit is the plugin), with a fixed argument and nothing else; it fails
+                    # open, since a stale path after a plugin update would otherwise exit 2, and exit 2 on PermissionRequest denies the prompt
+                    m = re.match(r'^\[ -f "([^"$;&|`]*/scripts/notify\.py)" \] && python3 -B "([^"$;&|`]*/scripts/notify\.py)" --hook; exit 0$', h["command"])
+                    self.assertTrue(m, h["command"])
+                    self.assertEqual(m.group(1), m.group(2))
+                    import subprocess
+                    stale = h["command"].replace("/ABSOLUTE/PATH/TO/KIT", os.path.join(tempfile.gettempdir(), "no-such-kit-1.0.0"))
+                    p = subprocess.run(["sh", "-c", stale], input=b"{}", stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                    self.assertEqual(p.returncode, 0, "a stale kit path must not deny a permission prompt")
+                    self.assertNotIn(".claude/scripts", h["command"])
                     self.assertLessEqual(h["timeout"], 60)
 
     def test_the_script_is_executable_as_a_program(self):

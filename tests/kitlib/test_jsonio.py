@@ -134,7 +134,7 @@ class ExclusiveCreate(BaseTestCase):
             "while not os.path.exists(%r):\n"
             "    time.sleep(0.001)\n"
             "print('WIN' if jsonio.try_create_exclusive(%r, sys.argv[1].encode()) else 'LOSE')\n"
-        ) % (os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".claude", "scripts"), go, p)
+        ) % (os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scripts"), go, p)
         procs = [self.procs.spawn([sys.executable, "-c", code, str(i)]) for i in range(6)]
         open(go, "w").close()
         outs = [pr.communicate(timeout=30)[0].decode().strip() for pr in procs]

@@ -22,7 +22,7 @@ from tests import REPO_ROOT
 from .helpers import TEMPLATES
 
 WF = os.path.join(TEMPLATES, "workflows")
-GH_WF = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows")
+GH_WF = os.path.join(REPO_ROOT, "templates", "github", "workflows")
 # a generous bound: the cases below take well under a second when linear, and minutes when not
 BOUND = 6.0
 
@@ -235,9 +235,9 @@ class EveryGateCommandIsRealOrNothing(unittest.TestCase):
     ENV = read("infra-apply.environment.yml")
     DIS = read("infra-apply.dispatch.yml")
 
-    APPROVAL = 'python3 .claude/scripts/infra/gate.py require-run-approval --approvals-json approvals.json --environment production --approvers "$APPROVERS" --bot "$BOT_LOGIN"'
-    HASH = 'run: python3 .claude/scripts/infra/gate.py verify-hash --file "$TF_ROOT/tfplan" --sha256 "$EXPECTED"'
-    BASE = 'python3 .claude/scripts/infra/gate.py base-is-main --planned-sha "$PLANNED_SHA" --main-sha "$main_sha"'
+    APPROVAL = 'python3 $RUNNER_TEMP/kit/scripts/infra/gate.py require-run-approval --approvals-json approvals.json --environment production --approvers "$APPROVERS" --bot "$BOT_LOGIN"'
+    HASH = 'run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py verify-hash --file "$TF_ROOT/tfplan" --sha256 "$EXPECTED"'
+    BASE = 'python3 $RUNNER_TEMP/kit/scripts/infra/gate.py base-is-main --planned-sha "$PLANNED_SHA" --main-sha "$main_sha"'
 
     def test_the_shipped_templates_are_clean(self):
         self.assertEqual(errors(lint(self.ENV)), [])
@@ -285,17 +285,17 @@ class EveryGateCommandIsRealOrNothing(unittest.TestCase):
     def test_a_gate_after_an_exit_or_inside_a_condition_does_not_count(self):
         for pre in ("exit 0\n          ", 'if [ "$X" = y ]; then\n            ', "[ -n \"$X\" ] &&\n          "):
             with self.subTest(pre):
-                text = mutate(self.ENV, "          python3 .claude/scripts/infra/gate.py require-run-approval", "          " + pre + "python3 .claude/scripts/infra/gate.py require-run-approval")
+                text = mutate(self.ENV, "          python3 $RUNNER_TEMP/kit/scripts/infra/gate.py require-run-approval", "          " + pre + "python3 $RUNNER_TEMP/kit/scripts/infra/gate.py require-run-approval")
                 self.assertIn("infra.environment-approval-unverified", errors(lint(text)))
 
     def test_the_plan_digest_must_be_run_too(self):
-        text = mutate(self.DIS, 'actual="$(python3 .claude/scripts/infra/gate.py plan-digest --plan-json "$TF_ROOT/applied.json")"', "actual=\"$(echo gate.py plan-digest)\"")
+        text = mutate(self.DIS, 'actual="$(python3 $RUNNER_TEMP/kit/scripts/infra/gate.py plan-digest --plan-json "$TF_ROOT/applied.json")"', "actual=\"$(echo gate.py plan-digest)\"")
         # the dispatch variant has no Environment, so the digest check is what ties the apply to the plan a human read
         self.assertIn("infra.apply-digest-unchecked", errors(lint(text)))
 
     def test_a_main_ref_check_in_a_step_if_or_an_echo_does_not_count(self):
         no_job_if = mutate(self.DIS, "    if: ${{ github.ref == 'refs/heads/main' }}\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n", "    runs-on: ubuntu-latest\n    timeout-minutes: 5\n")
-        step = 'run: python3 .claude/scripts/infra/gate.py require-main-ref --ref "$GITHUB_REF"'
+        step = 'run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py require-main-ref --ref "$GITHUB_REF"'
         self.assertEqual(errors(lint(no_job_if)), [])
         self.assertIn("infra.dispatch-ref-unchecked", errors(lint(mutate(no_job_if, step, "run: echo gate.py require-main-ref"))))
         # a job-level if that is widened with || is not a main-ref check
@@ -605,7 +605,8 @@ class ReviewPostIsRedacted(unittest.TestCase):
     def test_the_redactor_one_liner_redacts(self):
         line = [l for l in self.script().split("\n") if "kitlib import redact" in l][0].strip()
         code = line.split("python3 -I -c '", 1)[1].rsplit("'", 1)[0]
-        p = subprocess.run([sys.executable, "-I", "-c", code], input="key AKIAABCDEFGHIJKLMNOP and password=hunter2hunter2\n", cwd=REPO_ROOT,
+        # the workflow passes the fetched kit's scripts/ as argv[1]; here that is this checkout's
+        p = subprocess.run([sys.executable, "-I", "-c", code, os.path.join(REPO_ROOT, "scripts")], input="key AKIAABCDEFGHIJKLMNOP and password=hunter2hunter2\n", cwd=REPO_ROOT,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=30)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertNotIn("AKIAABCDEFGHIJKLMNOP", p.stdout)
@@ -615,7 +616,7 @@ class ReviewPostIsRedacted(unittest.TestCase):
 
 class PlanReadonlyPolicyNarrowed(unittest.TestCase):
     def setUp(self):
-        path = os.path.join(REPO_ROOT, ".claude", "templates", "security", "iam", "plan-readonly.policy.json")
+        path = os.path.join(REPO_ROOT, "templates", "security", "iam", "plan-readonly.policy.json")
         with open(path, "r", encoding="utf-8") as fh:
             self.doc = json.load(fh)
 

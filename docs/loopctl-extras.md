@@ -10,7 +10,7 @@ Five small features that sit next to the loop. Three are opt-in and stay off unt
 | G10 product checks | `gates.g10`, `g10_*_cmd` | yes (`gates.g10: off`), evidence-gated | accessibility, performance, PII, observability, with your own tools |
 | L5 question | `loopctl merge-class ITEM` | `merge_policy: human` | would this item be low-risk enough, if auto-merge existed |
 
-The design is in [.claude/spec/loopctl-extras.md](../.claude/spec/loopctl-extras.md). The keys are in `loop.config` under "Loopctl extras" and are read from the base sha, never from the branch under judgement.
+The design is in [spec/loopctl-extras.md](../spec/loopctl-extras.md). The keys are in `loop.config` under "Loopctl extras" and are read from the base sha, never from the branch under judgement.
 
 ## Remote lock: one run per plan, across machines
 
@@ -27,18 +27,18 @@ These four are **human-only**: you run them in a plain terminal (or with `!` in 
 By hand, for the prose conductor (`runner: sequential`) or to look:
 
 ```
-python3 .claude/scripts/loopctl remote-lock status          # who has it, how old; never the token
-python3 .claude/scripts/loopctl remote-lock acquire         # take it (this machine keeps the proof of holding it)
-python3 .claude/scripts/loopctl remote-lock renew           # a long sequential session should do this now and then
-python3 .claude/scripts/loopctl remote-lock release
+python3 "$KIT/scripts/loopctl" remote-lock status          # who has it, how old; never the token
+python3 "$KIT/scripts/loopctl" remote-lock acquire         # take it (this machine keeps the proof of holding it)
+python3 "$KIT/scripts/loopctl" remote-lock renew           # a long sequential session should do this now and then
+python3 "$KIT/scripts/loopctl" remote-lock release
 ```
 
 **A stuck lock.** A lock is stale when its heartbeat is older than `lock_stale_min` (default 60) **and** its owner is gone: a dead process on this machine, or, for another machine, you saying so:
 
 ```
-python3 .claude/scripts/loopctl remote-lock steal                  # this machine's own dead run
-python3 .claude/scripts/loopctl remote-lock steal --host-dead      # you know the other machine is gone
-python3 .claude/scripts/loopctl remote-lock steal --corrupt        # the ref is not a lock record at all; look at it first
+python3 "$KIT/scripts/loopctl" remote-lock steal                  # this machine's own dead run
+python3 "$KIT/scripts/loopctl" remote-lock steal --host-dead      # you know the other machine is gone
+python3 "$KIT/scripts/loopctl" remote-lock steal --corrupt        # the ref is not a lock record at all; look at it first
 ```
 
 A lock whose heartbeat lapsed but whose process is alive on the same machine is not stolen: a slow gate is not a dead run. If a lock names this machine and a process id that now belongs to something else, no command will take it (the same rule as the local lock); delete the ref yourself with `git push <remote> :refs/loopctl/lock/<plan>` after you have looked. Agents cannot: the guards deny every push of `refs/loopctl/*` to them.
@@ -50,9 +50,9 @@ A lock whose heartbeat lapsed but whose process is alive on the same machine is 
 Before you start an item by hand, or want the loop to leave it alone:
 
 ```
-python3 .claude/scripts/loopctl claim take F2 --by alice --note "doing the schema first"
-python3 .claude/scripts/loopctl claim list
-python3 .claude/scripts/loopctl claim release F2 --by alice
+python3 "$KIT/scripts/loopctl" claim take F2 --by alice --note "doing the schema first"
+python3 "$KIT/scripts/loopctl" claim list
+python3 "$KIT/scripts/loopctl" claim release F2 --by alice
 ```
 
 The first claim wins. Someone else asking gets your name back and no claim. Claiming again under the same name renews it. A claim lapses after `claim_ttl_h` hours (default 72); then anyone can take it, and the new claim names the old holder. `--override` replaces a live claim (it is recorded as an override). The driver never takes a claim; it skips an item that someone else claimed and, when nothing else can run, stops and says which items wait on whom.
@@ -62,10 +62,10 @@ Names are labels you type (`--by`, or `LOOPCTL_USER`, or your OS user). A driver
 ## The reproducibility manifest
 
 ```
-python3 .claude/scripts/loopctl manifest write F1       # one item (omit F1 for the whole plan)
-python3 .claude/scripts/loopctl manifest show
-python3 .claude/scripts/loopctl manifest verify         # latest; or NAME, or --file PATH
-python3 .claude/scripts/loopctl manifest verify --expect-hash <hash from the PR's audit block>
+python3 "$KIT/scripts/loopctl" manifest write F1       # one item (omit F1 for the whole plan)
+python3 "$KIT/scripts/loopctl" manifest show
+python3 "$KIT/scripts/loopctl" manifest verify         # latest; or NAME, or --file PATH
+python3 "$KIT/scripts/loopctl" manifest verify --expect-hash <hash from the PR's audit block>
 ```
 
 It records, sealed with a hash: the base and head commits, the kit version, the hash of `loop.config` at the base and every gate's mode, the plan and item digests, the toolchain pins and lockfile object ids at the head, the kit-owned verify commands, the evidence file, what the state recorded for the gates, and the machine's Python and platform. `verify` checks the seal (any edit, including to the recorded hash, breaks it) and then re-reads everything git can re-derive at the recorded commits, so a manifest that was edited and re-sealed still cannot claim a config or a lockfile those commits do not hold. The parts git cannot re-derive (the gate results, the environment) are protected by the seal, and, if you pass `--expect-hash` from somewhere the writer cannot edit (the PR's audit block), by that. It is not a signature: it answers "what was this run on?", not "who says so?". `loopctl audit render ITEM` puts the stored hash on a `Manifest:` line in the PR's audit block, so the hash lives where the manifest's writer cannot edit it; `loopctl audit check` fails (`audit.manifest-broken`) when the stored manifest does not verify (see [delivery.md](delivery.md)).
@@ -90,20 +90,20 @@ Each is split into a program and arguments and run **without a shell**: semicolo
 {"schema": "g10.v1", "check": "a11y", "checked": 12, "violations": 0}
 ```
 
-The gate decides: `checked` at least 1 (a check that looked at nothing proves nothing) and `violations` 0. Optional `details` (a short list of strings) is shown, not trusted. A result for another check, a missing line, a count that is not a whole number or any extra field is a failure. `.claude/templates/github/workflows/g10-product.yml` is the CI half; it runs the kit from the base sha in a job with no secrets. Contract tests against `api-contract.md` are design-only; see the spec.
+The gate decides: `checked` at least 1 (a check that looked at nothing proves nothing) and `violations` 0. Optional `details` (a short list of strings) is shown, not trusted. A result for another check, a missing line, a count that is not a whole number or any extra field is a failure. `templates/github/workflows/g10-product.yml` is the CI half; it runs the kit from the base sha in a job with no secrets. Contract tests against `api-contract.md` are design-only; see the spec.
 
 ## The L5 question: `loopctl merge-class`
 
 ```
-python3 .claude/scripts/loopctl merge-class F1
-python3 .claude/scripts/loopctl merge-class F1 --paths docs/guide.md      # what if the change were only this
+python3 "$KIT/scripts/loopctl" merge-class F1
+python3 "$KIT/scripts/loopctl" merge-class F1 --paths docs/guide.md      # what if the change were only this
 ```
 
 It prints, rule by rule, whether item F1 would be eligible for a low-risk lane **if auto-merge existed and were switched on**, and exits 0 for yes, 1 for no. It merges nothing, opens nothing and never runs `gh`. `merge_policy` is `human` by default and `human` is the only value that does anything: a person merges every pull request. `auto-low-risk` is an opt-in the registry and the doctor refuse until the evidence gate, the promotion bar (`promotion_attested`), mutation testing (`gates.g4: on`) and B5 all hold, and even then this build merges nothing; enabling is design-only.
 
 The rules: the policy is `auto-low-risk`; the level is L5 and the doctor agrees; the evidence gate passed; the promotion bar is attested; G4 is on; **no ungated deploy** (a repo that deploys on merge to main without an Environment approval is never eligible, because there even a docs merge is a production deploy); every changed file is low-risk (documents, plus the globs you list in `low_risk_paths`, and never anything in `always_human_paths`, migrations, infra, auth, payments, lockfiles, CI or test config, `.github/`, `.claude/`, or a symlink); the item is `riskClass: low` with no migration, schema, dependency or sensitive-domain footprint; every gate that is on passed for this head; no CI-fix commit; and anything user-visible names a feature flag in `ext.featureFlag`.
 
-`python3 .claude/scripts/doctor.py` shows the same thing from the other side: `l5.merge-policy` and `l5.b5`, plus the two new L4 prerequisites (a working `notify_command` and an external watchdog that has checked in) and `lock.remote`, `g10.config` and `fork.env` (a probe assumption: V18).
+`python3 "$KIT/scripts/doctor.py"` shows the same thing from the other side: `l5.merge-policy` and `l5.b5`, plus the two new L4 prerequisites (a working `notify_command` and an external watchdog that has checked in) and `lock.remote`, `g10.config` and `fork.env` (a probe assumption: V18).
 
 ## When something looks wrong
 

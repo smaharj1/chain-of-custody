@@ -152,10 +152,16 @@ class Detect(BaseTestCase):
         r = self.repo_with({".claude/scripts/x.py": "", ".claude/CLAUDE.md": "# Your Project Name\n<!-- e.g., React -->\n",
                             ".claude/loop.config.md": "```yaml\nverify_tests: <command>\n```\n"})
         k = self.detect(r)["kit"]
-        self.assertEqual((k["installed"], k["claude_md"], k["loop_config"]), (True, "template", "default"))
+        self.assertEqual((k["copy_install"], k["claude_md"], k["loop_config"]), (True, "template", "default"))   # a v1 copy is still there
+        with open(os.path.join(REPO_ROOT, "KIT_VERSION")) as fh:
+            self.assertEqual(k["version"], fh.read().split()[0])   # the plugin's version, whatever the project holds
         r2 = self.repo_with({".claude/scripts/x.py": "", ".claude/CLAUDE.md": "# Acme\nreal text\n", ".claude/loop.config.md": "```yaml\nverify_tests: pnpm test\n```\n"})
         k = self.detect(r2)["kit"]
         self.assertEqual((k["claude_md"], k["loop_config"]), ("filled", "customised"))
+        r5 = self.repo_with({".claude/KIT_VERSION": "9.9.9 (2026-01-01)\n", ".claude/loop.config.md": "```yaml\nverify_tests: pnpm test\n```\n"})
+        k = self.detect(r5)["kit"]
+        self.assertFalse(k["copy_install"])
+        self.assertNotEqual(k["version"], "9.9.9")
         r3 = self.repo_with({".claude/loop.config.md": "```yaml\nnot_a_key: 1\n```\n"})
         self.assertEqual(self.detect(r3)["kit"]["loop_config"], "default")
         r4 = self.repo_with({".claude/loop.config.md": "no yaml here\n"})

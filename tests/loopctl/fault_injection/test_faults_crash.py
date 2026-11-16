@@ -1,6 +1,6 @@
 """A driver that dies (FI-01 crash mid-item, FI-15 signals, FI-20 a crash between the merge and its record).
 
-The driver is a real process here (`python3 .claude/scripts/loopctl run`), killed the way it would be killed: SIGKILL leaves its child
+The driver is a real process here (`python3 <kit>/scripts/loopctl run`), killed the way it would be killed: SIGKILL leaves its child
 running in its own session and its lock behind; SIGTERM must take the child down with it. The next `loopctl run` has to recover from
 both without a human touching the state.
 """

@@ -26,7 +26,7 @@ import unittest
 from . import REPO_ROOT
 
 PROSE_SUFFIXES = (".md", ".mdc", ".json")
-EXCLUDE_DIRS = {".git", "docs/design", "changelog.d", "tests", ".claude/worktrees", "plugin", "dist", ".claude/scripts/kitlib/schema/templates"}
+EXCLUDE_DIRS = {".git", "docs/design", "changelog.d", "tests", ".claude/worktrees", "scripts/kitlib/schema/templates"}
 EXCLUDE_FILES = {"CHANGELOG.md"}
 
 # pattern name -> regex
@@ -69,8 +69,8 @@ def prose_files():
 
 def skill_text(name):
     """SKILL.md plus the reference files next to it (the long modes are split into progressive-disclosure files)."""
-    d = os.path.join(REPO_ROOT, ".claude", "skills", name)
-    return "\n".join(read(".claude/skills/%s/%s" % (name, f)) for f in sorted(os.listdir(d)) if f.endswith(".md"))
+    d = os.path.join(REPO_ROOT, "skills", name)
+    return "\n".join(read("skills/%s/%s" % (name, f)) for f in sorted(os.listdir(d)) if f.endswith(".md"))
 
 
 def read(rel):
@@ -99,12 +99,12 @@ class NoStaleReferences(unittest.TestCase):
                                     "%s no longer has this; remove it from PENDING_RELEASE" % rel)
 
     def test_infra_engineer_uses_needs_clarification_not_ask_the_user(self):
-        text = read(".claude/agents/infra-engineer.md")
+        text = read("agents/infra-engineer.md")
         self.assertIn("NEEDS_CLARIFICATION", text)
         self.assertNotRegex(text, r"(?i)stop and ask the user|escalate to the user")
 
     def test_engineer_protocol_has_one_vocabulary_and_one_cap_name(self):
-        text = read(".claude/context/engineer-protocol.md")
+        text = read("context/engineer-protocol.md")
         for word in ("NEEDS_CLARIFICATION", "ESCALATION_NEEDED", "max_retries_per_item", "Doc Delta", "agent_id"):
             self.assertIn(word, text)
         for word in ("tool-call budget table", "Nominal budget"):
@@ -119,14 +119,14 @@ class NoStaleReferences(unittest.TestCase):
         self.assertIn("max_design_rounds", skill_text("orchestrate"))
         self.assertIn("max_design_rounds", skill_text("architect"))
         self.assertIn("quick_lane_max_loc", skill_text("tech-lead"))
-        self.assertIn("model_profile", read(".claude/context/model-profiles.md"))
+        self.assertIn("model_profile", read("context/model-profiles.md"))
 
     def test_telemetry_section_records_facts_only(self):
         text = skill_text("tech-lead")
         self.assertIn("Do not record the model used or a tool-call count", text)
 
 
-ORCHESTRATE = [os.path.join(REPO_ROOT, ".claude", "skills", "orchestrate", n) for n in ("SKILL.md", "loop.md", "preamble.md")]
+ORCHESTRATE = [os.path.join(REPO_ROOT, "skills", "orchestrate", n) for n in ("SKILL.md", "loop.md", "preamble.md")]
 # commands only a human runs (kitlib/loopctl_table.py): the orchestrate prose may only PRINT them, on a line that says HUMAN STEP
 HUMAN_CMD = re.compile(r"loopctl (approve (plan|env|breaker|cost|demotion)\b|resume\b|reconcile --live|remote-lock (acquire|renew|release|steal)\b|claim (take|release)\b|"
                        r"migrate-plan --write --force|parallel \S+ --apply)")
@@ -164,8 +164,10 @@ class HumanStepsInProse(unittest.TestCase):
 
     def test_remote_lock_and_claims_are_printed_for_the_human_never_run(self):
         text = "".join(ln for _f, _n, ln in self.lines())
-        self.assertIn("HUMAN STEP: in a plain terminal run: python3 .claude/scripts/loopctl remote-lock acquire", text)
-        self.assertIn("you never push", text)
+        self.assertIn("HUMAN STEP: in a plain terminal run: python3 ${CLAUDE_PLUGIN_ROOT}/scripts/loopctl remote-lock acquire", text)
+        self.assertIn("you never push the lock", text)
+        # the push tier: the conductor pushes only its own item branch, never a protected one
+        self.assertIn("push to main or any other protected branch", text)
 
 
 class ReadinessGrepContract(unittest.TestCase):
@@ -176,9 +178,10 @@ class ReadinessGrepContract(unittest.TestCase):
         m = re.search(r"\(skip the generic kit-rule files — (.+?) — they quote", orch)
         self.assertIsNotNone(m, "skip list sentence moved; update this test with it")
         skipped = set(re.findall(r"`([a-z0-9-]+\.md)`", m.group(1)))
-        ctx = os.path.join(REPO_ROOT, ".claude", "context")
+        # the kit's own context files (a project that migrated from a copy install may still hold copies of them in .claude/context)
+        ctx = os.path.join(REPO_ROOT, "context")
         carrying = {f for f in os.listdir(ctx) if f.endswith(".md")
-                    and any(s in read(".claude/context/" + f) for s in SENTINELS)}
+                    and any(s in read("context/" + f) for s in SENTINELS)}
         unexplained = carrying - skipped - PROJECT_PRIMERS
         self.assertEqual(unexplained, set(), "a kit-rule file quotes sentinels but is not on the skip list: "
                                              "it would pin every run to per-feature")
@@ -189,7 +192,7 @@ class ReadinessGrepContract(unittest.TestCase):
     def test_project_primers_still_start_as_templates(self):
         for f in PROJECT_PRIMERS:
             with self.subTest(f):
-                self.assertIn("<!--", read(".claude/context/" + f))
+                self.assertIn("<!--", read("seed/.claude/context/" + f))
 
 
 if __name__ == "__main__":

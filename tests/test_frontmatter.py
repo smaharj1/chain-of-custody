@@ -18,8 +18,8 @@ import unittest
 
 from . import REPO_ROOT
 
-AGENTS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "agents", "*.md")))
-SKILLS = sorted(glob.glob(os.path.join(REPO_ROOT, ".claude", "skills", "*", "SKILL.md")))
+AGENTS = sorted(glob.glob(os.path.join(REPO_ROOT, "agents", "*.md")))
+SKILLS = sorted(glob.glob(os.path.join(REPO_ROOT, "skills", "*", "SKILL.md")))
 
 ENGINEERS = {"database-engineer", "backend-engineer", "app-engineer", "admin-app-engineer", "infra-engineer"}
 AUTHORS = {"acceptance-author"}     # Phase 4b: writes the tests the engineers are graded by; engineer-class tools, never the implementation
@@ -121,7 +121,7 @@ class AgentFrontmatter(unittest.TestCase):
                 self.assertEqual(fm["model"], "opus")  # the `quality` profile; others are passed per invocation
 
     def test_security_reviewer_can_fetch_advisories(self):
-        tools = csv(split_frontmatter(os.path.join(REPO_ROOT, ".claude", "agents", "security-reviewer.md"))[0]["tools"])
+        tools = csv(split_frontmatter(os.path.join(REPO_ROOT, "agents", "security-reviewer.md"))[0]["tools"])
         self.assertIn("WebFetch", tools)
         self.assertIn("Bash", tools)  # scanner commands
 
@@ -134,7 +134,7 @@ class AgentFrontmatter(unittest.TestCase):
                 self.assertNotIn("Skill instead", desc)
         # engineers say how they are dispatched, so they are not picked for ad-hoc delegation
         for name in ENGINEERS | AUTHORS:
-            desc = split_frontmatter(os.path.join(REPO_ROOT, ".claude", "agents", name + ".md"))[0]["description"]
+            desc = split_frontmatter(os.path.join(REPO_ROOT, "agents", name + ".md"))[0]["description"]
             self.assertIn("brief path", desc, name)
 
     def test_agents_never_ask_the_user(self):
@@ -164,7 +164,7 @@ class SkillFrontmatter(unittest.TestCase):
     RESERVED = {"loop", "code-review"}                    # bundled commands
 
     def test_the_skill_set(self):
-        self.assertFalse(os.path.isdir(os.path.join(REPO_ROOT, ".claude", "commands")), "IMP-3: the commands are removed, no thin aliases")
+        self.assertFalse(os.path.isdir(os.path.join(REPO_ROOT, "commands")), "IMP-3: the commands are removed, no thin aliases")
         names = {os.path.basename(os.path.dirname(p)) for p in SKILLS}
         self.assertEqual(names, self.CORE | self.LATER)
         self.assertFalse(names & self.RESERVED)
@@ -198,7 +198,7 @@ class SkillFrontmatter(unittest.TestCase):
                 self.assertTrue(os.path.exists(os.path.join(d, target)), "%s links to missing %s" % (os.path.basename(d), target))
 
     def test_tech_lead_description_names_the_agent_reviewer(self):
-        fm, _ = split_frontmatter(os.path.join(REPO_ROOT, ".claude", "skills", "tech-lead", "SKILL.md"))
+        fm, _ = split_frontmatter(os.path.join(REPO_ROOT, "skills", "tech-lead", "SKILL.md"))
         self.assertIn("code-reviewer", fm["description"])
         self.assertNotIn("skill", fm["description"].lower())
 

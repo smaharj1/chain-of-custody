@@ -17,7 +17,7 @@ v2.1.302 is the floor because the last row changes how dispatch waits and how he
 
 ## The declared range
 
-`.claude/KIT_VERSION` carries it:
+The kit's `KIT_VERSION` (at the plugin's root) carries it:
 
 ```
 2.0.0-rc.1 (2026-10-26)

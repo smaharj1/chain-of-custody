@@ -252,8 +252,6 @@ class Cred(BoundaryCase):
             os.mkfifo(p)
         os.unlink(os.path.join(repo.path, ".claude", "loop.config.md"))
         os.mkfifo(os.path.join(repo.path, ".claude", "loop.config.md"))
-        os.unlink(os.path.join(repo.path, ".claude", "KIT_VERSION"))
-        os.mkfifo(os.path.join(repo.path, ".claude", "KIT_VERSION"))
         rc, out, err = run_doctor(["--json", "--repo", repo.path, "--home", self.fake_home.path, "--claude-version", "2.1.305"], self.fake_home.env(), timeout=40)
         self.assertIn(rc, (0, 1), err)
         doc = json.loads(out)

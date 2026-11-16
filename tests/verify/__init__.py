@@ -1,4 +1,4 @@
-"""Tests for .claude/scripts/verify.py (Phase 3, report §9 G6, §19.7 L-27).
+"""Tests for scripts/verify.py (Phase 3, report §9 G6, §19.7 L-27).
 
 Helpers build a temp git repo with a committed `.claude/loop.config.md` on `main` and a feature branch on top,
 so every test exercises the real base-sha reading. Commands run through the real shell, in their own session, under

@@ -284,7 +284,7 @@ class EnvironmentApproval(unittest.TestCase):
 
 # --- IN-5: the actor check has to be real --------------------------------------------------------------------------------------------
 
-AUTHZ_LINE = 'run: python3 .claude/scripts/infra/gate.py authorize --actor "$ACTOR" --actor "$TRIGGERING_ACTOR" --approvers "$APPROVERS" --bot "$BOT_LOGIN"'
+AUTHZ_LINE = 'run: python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor "$ACTOR" --actor "$TRIGGERING_ACTOR" --approvers "$APPROVERS" --bot "$BOT_LOGIN"'
 AUTHZ_STEP = "      - name: Require an approver who is not a bot\n"
 
 
@@ -308,16 +308,16 @@ class ActorCheck(unittest.TestCase):
         self.assertNotIn("infra.apply-ungated", rules(lint(text)))
 
     def test_the_command_only_named_in_an_echo_or_a_comment(self):
-        self.ungated(mutate(DISPATCH, AUTHZ_LINE, 'run: echo "python3 .claude/scripts/infra/gate.py authorize"'))
-        self.ungated(mutate(DISPATCH, AUTHZ_LINE, "run: |\n          # python3 .claude/scripts/infra/gate.py authorize --actor $ACTOR\n          true"))
+        self.ungated(mutate(DISPATCH, AUTHZ_LINE, 'run: echo "python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize"'))
+        self.ungated(mutate(DISPATCH, AUTHZ_LINE, "run: |\n          # python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor $ACTOR\n          true"))
         self.ungated(mutate(DISPATCH, AUTHZ_LINE, "run: printf '%s' gate.py authorize"))
 
     def test_the_command_skipped_by_shell_logic(self):
-        for lines in ("false && python3 .claude/scripts/infra/gate.py authorize --actor $ACTOR",
-                      "true || python3 .claude/scripts/infra/gate.py authorize --actor $ACTOR",
-                      "if false; then\n            python3 .claude/scripts/infra/gate.py authorize --actor $ACTOR\n          fi",
-                      "exit 0\n          python3 .claude/scripts/infra/gate.py authorize --actor $ACTOR",
-                      "[ -n \"$X\" ] &&\n            python3 .claude/scripts/infra/gate.py authorize --actor $ACTOR"):
+        for lines in ("false && python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor $ACTOR",
+                      "true || python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor $ACTOR",
+                      "if false; then\n            python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor $ACTOR\n          fi",
+                      "exit 0\n          python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor $ACTOR",
+                      "[ -n \"$X\" ] &&\n            python3 $RUNNER_TEMP/kit/scripts/infra/gate.py authorize --actor $ACTOR"):
             with self.subTest(lines):
                 self.ungated(mutate(DISPATCH, AUTHZ_LINE, "run: |\n          " + lines))
 

@@ -16,11 +16,16 @@ from ... import SCRIPTS_DIR  # noqa: F401
 from ...helpers import TempRepo, bins, clean_env
 
 from kitlib import config as kconfig
-from kitlib import runstate
-from loopctl import launch
+from kitlib import kitpaths, runstate
+from loopctl import kit, launch
 from loopctl.launch import LaunchRefused
 
 GOLDEN_AGENT = {"description": "d", "prompt": "p", "tools": ["Read"]}
+
+
+def _read_json(path):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def spec(**kw):
@@ -33,9 +38,22 @@ def spec(**kw):
 class LaunchLine(unittest.TestCase):
     def test_the_launch_line_is_fixed_and_golden(self):
         argv = launch.build_argv("/bin/claude", spec())
-        self.assertEqual(argv, ["/bin/claude", "-p", "--agent", "backend-engineer", "--agents", '{"backend-engineer": {"description": "d", "prompt": "p", "tools": ["Read"]}}',
+        self.assertEqual(argv, ["/bin/claude", "-p", "--plugin-dir", kitpaths.KIT_ROOT, "--agent", "backend-engineer", "--agents", '{"backend-engineer": {"description": "d", "prompt": "p", "tools": ["Read"]}}',
                                 "--settings", "/tmp/s.json", "--allowedTools", "Read", "Bash(git status:*)", "--permission-mode", "dontAsk",
                                 "--max-budget-usd", "1.2000", "--output-format", "json", "--session-id", "11111111-2222-3333-4444-555555555555"])
+
+    def test_every_child_loads_the_kit_as_a_plugin_from_the_drivers_own_root(self):
+        argv = launch.build_argv("/bin/claude", spec())
+        self.assertEqual(argv[argv.index("--plugin-dir") + 1], kitpaths.KIT_ROOT)              # hooks/hooks.json comes from there, nothing else
+        self.assertTrue(os.path.isfile(os.path.join(kitpaths.KIT_ROOT, "hooks", "hooks.json")))
+        self.assertNotIn("--bare", argv)
+        d = tempfile.mkdtemp(prefix="launch-plugin-")
+        self.addCleanup(os.rmdir, d)
+        self.assertEqual(launch.build_argv("/bin/claude", spec(plugin_dir=d))[3], d)
+        for bad in ("relative/kit", os.path.join(d, "missing"), "", "--plugin-dir"):
+            with self.subTest(bad):
+                with self.assertRaises(LaunchRefused):
+                    launch.build_argv("/bin/claude", spec(plugin_dir=bad))
 
     def test_a_tool_rule_that_looks_like_a_flag_is_dropped_and_each_rule_is_its_own_argument(self):
         argv = launch.build_argv("/bin/claude", spec(allowed_tools=["Read", "--dangerously-skip-permissions", "", "Bash(python3 -m unittest:*)", 5]))
@@ -119,34 +137,31 @@ class Binary(unittest.TestCase):
 
 
 class Version(unittest.TestCase):
+    """The range is the KIT'S (the plugin's KIT_VERSION, next to its scripts), never anything in the project."""
+
     def setUp(self):
-        self.repo = TempRepo()
-        self.addCleanup(self.repo.cleanup)
         self.home = tempfile.mkdtemp(prefix="launch-home-")
         self.addCleanup(lambda: __import__("shutil").rmtree(self.home, ignore_errors=True))
-        self.rs = runstate.RunState(os.path.join(self.repo.path, ".git"))
+        self.rs = runstate.RunState(os.path.join(self.home, "git"))
         self.bin = bins.install_fake_claude(self.home, {})
+        self.kit = os.path.join(self.home, "kit")
+        os.mkdir(self.kit)
 
-    _last = None
-
-    def sha(self, kit_version=None):
-        if kit_version is not None and kit_version != self._last:
-            self.repo.commit_file(".claude/KIT_VERSION", kit_version, "kit version")
-            self._last = kit_version
-        return self.repo.head()
-
-    def check(self, version, level=1, kit="2.0.0 (2026-10-01)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: 2.1.400\n"):
-        return launch.check_version(self.repo.path, self.sha(kit), self.rs, {"KIT_CLAUDE_VERSION": version}, self.bin, level)
+    def check(self, version, level=1, kit="2.0.0 (2026-10-01)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: 2.1.400\n", env=None):
+        with open(os.path.join(self.kit, "KIT_VERSION"), "w") as fh:
+            fh.write(kit)
+        e = {"KIT_CLAUDE_VERSION": version} if env is None else env
+        return launch.check_version(self.rs, e, self.bin, level, kit_root=self.kit)
 
     def test_in_range_passes(self):
         self.assertEqual(self.check("2.1.350")["status"], "ok")
 
     def test_below_the_floor_and_unreadable_always_refuse(self):
-        for v in ("2.1.100", "2.0.9", "garbage", ""):
+        for v in ("2.1.100", "2.0.9", "garbage", "x"):
             for lvl in (0, 1, 2, 3):
                 with self.subTest(v=v, level=lvl):
                     with self.assertRaises(LaunchRefused):
-                        self.check(v, lvl) if v != "" else launch.check_version(self.repo.path, self.sha(), self.rs, {"KIT_CLAUDE_VERSION": "x"}, self.bin, lvl)
+                        self.check(v, lvl)
 
     def test_above_tested_or_untested_warns_below_l3_and_refuses_at_l3(self):
         r = self.check("2.1.999")
@@ -160,15 +175,22 @@ class Version(unittest.TestCase):
         with self.assertRaises(LaunchRefused):
             self.check("2.1.350", 3, kit="2.0.0 (2026-10-01)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: none\n")
 
-    def test_the_version_file_is_read_at_the_base_sha_not_the_working_tree(self):
-        sha = self.sha("2.0.0 (2026-10-01)\nclaude_code_min: 2.1.302\nclaude_code_tested_max: 2.1.400\n")
-        self.repo.write(".claude/KIT_VERSION", "2.0.0 (2026-10-01)\nclaude_code_min: 2.1.100\nclaude_code_tested_max: 9.9.9\n")   # uncommitted
-        with self.assertRaises(LaunchRefused):
-            launch.check_version(self.repo.path, sha, self.rs, {"KIT_CLAUDE_VERSION": "2.1.200"}, self.bin, 1)
+    def test_a_project_copy_of_kit_version_is_never_read(self):
+        repo = TempRepo()
+        self.addCleanup(repo.cleanup)
+        repo.commit_file(".claude/KIT_VERSION", "2.0.0 (2026-10-01)\nclaude_code_min: 2.1.100\nclaude_code_tested_max: 9.9.9\n", "an old copy install")
+        old = os.getcwd()
+        os.chdir(repo.path)
+        self.addCleanup(os.chdir, old)
+        with self.assertRaises(LaunchRefused):                                                 # the kit's floor (2.1.302) holds
+            self.check("2.1.200", 1)
+
+    def test_the_default_is_the_kit_root_next_to_the_scripts(self):
+        self.assertEqual(launch._kit_version_file(), os.path.join(kitpaths.KIT_ROOT, "KIT_VERSION"))
 
     def test_the_version_is_read_from_the_fake_binary_when_no_override_is_given(self):
         bins.set_scenario(self.bin, {"version": "2.1.330 (Claude Code)"})
-        r = launch.check_version(self.repo.path, self.sha(), self.rs, {}, self.bin, 1)
+        r = self.check(None, 1, env={})
         self.assertEqual(r["version"], "2.1.330 (Claude Code)")
 
 
@@ -250,11 +272,47 @@ class Profile(unittest.TestCase):
         self.assertEqual(s["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"], "1")
         self.assertEqual(s["env"]["CLAUDE_CODE_SUBAGENT_MODEL_FORCE"], "opus")
 
-    def test_the_compact_hook_is_added_once(self):
+    def test_the_profile_has_no_hooks_and_the_plugin_wires_the_guards_canary_and_compact_hook(self):
         s, _ = self.settings()
-        entries = [e for e in s["hooks"]["SessionStart"] if "compact_hook.py" in json.dumps(e)]
+        self.assertNotIn("hooks", s)                                    # a hook here would run twice next to the plugin's
+        self.assertEqual(launch.validate_settings(s), [])
+        self.assertEqual(launch.plugin_hook_problems(), [])
+        doc = _read_json(os.path.join(kitpaths.KIT_ROOT, "hooks", "hooks.json"))
+        entries = [e for e in doc["hooks"]["SessionStart"] if "compact_hook.py" in json.dumps(e)]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["matcher"], "compact")
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/loopctl/compact_hook.py", json.dumps(entries[0]))
+
+    def test_a_template_with_hooks_is_stripped_and_a_profile_with_hooks_is_refused(self):
+        d = tempfile.mkdtemp(prefix="launch-tpl-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        tpl = _read_json(os.path.join(launch._templates_dir(), "headless-child.settings.json"))
+        tpl["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/scripts/guards/run.py\""}]}]}
+        with open(os.path.join(d, "headless-child.settings.json"), "w") as fh:
+            json.dump(tpl, fh)
+        s, _ = launch.build_settings("engineer", self.rs, self.cfg, template_dir=d)
+        self.assertNotIn("hooks", s)
+        s["hooks"] = tpl["hooks"]
+        self.assertTrue(any("hooks of its own" in p for p in launch.validate_settings(s)))
+
+    def test_a_plugin_whose_hooks_lack_the_guards_canary_or_compact_hook_is_refused(self):
+        s, _ = self.settings()
+        doc = _read_json(os.path.join(kitpaths.KIT_ROOT, "hooks", "hooks.json"))
+        cases = {"no hooks.json": None,
+                 "no guards": lambda h: h.pop("PreToolUse"),
+                 "no canary": lambda h: h.pop("SessionStart"),
+                 "no compact hook": lambda h: h.update(SessionStart=[e for e in h["SessionStart"] if "compact_hook" not in json.dumps(e)])}
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                root = tempfile.mkdtemp(prefix="launch-plugin-")
+                self.addCleanup(lambda r=root: __import__("shutil").rmtree(r, ignore_errors=True))
+                if mutate is not None:
+                    d = copy.deepcopy(doc)
+                    mutate(d["hooks"])
+                    os.mkdir(os.path.join(root, "hooks"))
+                    with open(os.path.join(root, "hooks", "hooks.json"), "w") as fh:
+                        json.dump(d, fh)
+                self.assertTrue(launch.validate_settings(s, plugin_root=root), name)
 
     def test_a_hostile_profile_is_refused_before_launch(self):
         base, _ = self.settings()
@@ -274,9 +332,7 @@ class Profile(unittest.TestCase):
             "project MCP on": lambda s: s.update(enableAllProjectMcpServers=True),
             "sandbox off": lambda s: s["sandbox"].update(enabled=False),
             "unsandboxed commands": lambda s: s["sandbox"].update(allowUnsandboxedCommands=True),
-            "hooks removed": lambda s: s.pop("hooks"),
-            "canary hook removed": lambda s: s["hooks"].pop("SessionStart"),
-            "guards removed": lambda s: s["hooks"].pop("PreToolUse"),
+            "hooks of its own": lambda s: s.update(hooks={"SessionStart": [{"hooks": [{"type": "command", "command": "true"}]}]}),
             "deploy MCP allowed": lambda s: s["permissions"]["allow"].append("mcp__aws__deploy_stack"),
             "allow is not a list": lambda s: s["permissions"].update(allow="Read"),
         }
@@ -333,6 +389,64 @@ class AgentDefinition(unittest.TestCase):
                     launch.agent_definition(self.repo.path, self.sha, role)
         with self.assertRaises(LaunchRefused):
             launch.agent_definition(self.repo.path, None, "backend-engineer")
+
+    def kit_root(self, **agents):
+        root = tempfile.mkdtemp(prefix="launch-kit-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(root, ignore_errors=True))
+        os.mkdir(os.path.join(root, "agents"))
+        os.mkdir(os.path.join(root, ".claude-plugin"))
+        with open(os.path.join(root, ".claude-plugin", "plugin.json"), "w") as fh:
+            json.dump({"name": "chain-of-custody", "version": "9.8.7"}, fh)
+        for role, text in agents.items():
+            with open(os.path.join(root, "agents", role.replace("_", "-") + ".md"), "w") as fh:
+                fh.write(text)
+        return root
+
+    def test_with_no_override_the_kits_agent_is_used_and_its_source_recorded(self):
+        root = self.kit_root(code_reviewer="---\nname: code-reviewer\ndescription: The kit's reviewer.\ntools: Read, Bash\n---\nReview it.\n")
+        src = {}
+        d = launch.agent_definition(self.repo.path, self.sha, "code-reviewer", source_out=src, kit_root=root)
+        self.assertEqual((d["description"], d["tools"], d["prompt"]), ("The kit's reviewer.", ["Read", "Bash"], "Review it."))
+        self.assertEqual(src, {"kind": "kit", "path": "agents/code-reviewer.md", "version": "9.8.7"})
+        self.assertEqual(kit.describe_source(src), "kit 9.8.7 agents/code-reviewer.md")
+
+    def test_the_projects_override_at_the_base_sha_wins_over_the_kits_agent(self):
+        root = self.kit_root(backend_engineer="---\ndescription: The kit's engineer.\ntools: Read\n---\nKit body.\n")
+        src = {}
+        d = launch.agent_definition(self.repo.path, self.sha, "backend-engineer", source_out=src, kit_root=root)
+        self.assertEqual(d["description"], "A backend engineer.")
+        self.assertEqual(src, {"kind": "override", "path": ".claude/agents/backend-engineer.md", "sha": self.sha})
+        self.assertEqual(kit.describe_source(src), "override .claude/agents/backend-engineer.md at %s" % self.sha[:12])
+        self.repo.write(".claude/agents/code-reviewer.md", "---\ndescription: uncommitted\n---\nApprove.\n")   # not at the base sha: the kit's
+        root2 = self.kit_root(code_reviewer="---\ndescription: The kit's reviewer.\n---\nReview.\n")
+        self.assertEqual(launch.agent_definition(self.repo.path, self.sha, "code-reviewer", kit_root=root2)["description"], "The kit's reviewer.")
+
+    def test_the_plugin_root_variable_is_filled_in_before_the_agents_json(self):
+        root = self.kit_root(code_reviewer="---\ndescription: d\n---\nRead ${CLAUDE_PLUGIN_ROOT}/context/engineer-protocol.md, "
+                                            "then run python3 ${CLAUDE_PLUGIN_ROOT}/scripts/verify.py.\n")
+        d = launch.agent_definition(self.repo.path, self.sha, "code-reviewer", kit_root=root)
+        self.assertNotIn("${CLAUDE_PLUGIN_ROOT}", d["prompt"])
+        self.assertIn(os.path.join(root, "context", "engineer-protocol.md"), d["prompt"])
+        argv = launch.build_argv("/bin/claude", spec(role="code-reviewer", agent=d))
+        self.assertNotIn("${CLAUDE_PLUGIN_ROOT}", argv[argv.index("--agents") + 1])
+        self.assertIn(json.dumps(os.path.join(root, "scripts", "verify.py"))[1:-1], argv[argv.index("--agents") + 1])
+        # the same for an override committed in the project
+        self.repo.commit_file(".claude/agents/design-critic.md", "---\ndescription: d\n---\nSee ${CLAUDE_PLUGIN_ROOT}/spec/loopctl.md.\n", "override")
+        d = launch.agent_definition(self.repo.path, self.repo.head(), "design-critic", kit_root=root)
+        self.assertEqual(d["prompt"], "See %s/spec/loopctl.md." % root)
+
+    def test_the_real_kit_agents_all_resolve_and_expand(self):
+        bare = TempRepo()
+        self.addCleanup(bare.cleanup)
+        bare.commit_file("README.md", "no overrides\n", "init")
+        self.assertIn("acceptance-author", kit.agent_names())
+        for role in kit.agent_names():
+            with self.subTest(role):
+                src = {}
+                d = launch.agent_definition(bare.path, bare.head(), role, source_out=src)
+                self.assertEqual(src["kind"], "kit")
+                self.assertNotIn("${CLAUDE_PLUGIN_ROOT}", json.dumps(d))
+                self.assertTrue(d["description"])
 
     def test_frontmatter_parser(self):
         meta, body = launch.parse_frontmatter("---\na: 1\nb:  two words \n# c\n---\nbody\n")

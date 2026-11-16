@@ -254,7 +254,7 @@ from tests.doctor.helpers import BoundaryCase  # noqa: E402
 
 
 def _template() -> dict:
-    return load_json(os.path.join(REPO_ROOT, ".claude", "templates", "security", "sandbox.settings.json"))
+    return load_json(os.path.join(REPO_ROOT, "templates", "security", "sandbox.settings.json"))
 
 
 def _settings_with_write(entries):
@@ -373,56 +373,34 @@ class SandboxRegistryPath(BoundaryCase):
 
 
 class V1Residue(BoundaryCase):
-    """`guards.v1-residue` (D10, GD-7): the v1 shell hooks must not survive the activation of the v2 wiring."""
+    """`guards.v1-residue` (D10, GD-7): no v1 shell hook may be wired or left in the project next to the plugin's guards."""
     GROUPS = {"settings"}
     V1_LIVE = {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git.sh"}]},
                                         {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-main-edit.sh"}]}]}}
+    USER_HOOK = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "say done"}]}]}}
 
-    def repo(self, live=None, v1_files=False, version="1.2.0 (2026-07-30)\n"):
-        from guards import wiring
-        with open(os.path.join(REPO_ROOT, ".claude", "scripts", "guards", "hooks.manifest.json")) as fh:
-            manifest_text = fh.read()
-        files = {".claude/scripts/guards/hooks.manifest.json": manifest_text}
+    def repo(self, live=None, v1_files=False):
+        files = {}
         if live is not None:
             files[".claude/settings.json"] = json.dumps(live)
         if v1_files:
             files[".claude/hooks/guard-git.sh"] = "#!/bin/sh\n"
             files[".claude/hooks/guard-main-edit.sh"] = "#!/bin/sh\n"
-        return self.kit_repo(files=files, kit_version=version), wiring.build_settings(json.loads(manifest_text))
+        return self.kit_repo(files=files)
 
     def row(self, repo):
         return self.by_id(self.results(self.ctx(repo)), "guards.v1-residue")[0]
 
     def test_clean_install_passes(self):
-        repo, v2 = self.repo(live=None)
-        self.assertEqual(self.row(repo).status, "pass")
-        repo, v2 = self.repo(live=v2)
-        self.assertEqual(self.row(repo).status, "pass")
+        self.assertEqual(self.row(self.repo(live=None)).status, "pass")
+        self.assertEqual(self.row(self.repo(live=self.USER_HOOK)).status, "pass")
 
-    def test_before_activation_it_is_a_warning_that_names_the_release_stage(self):
-        repo, _ = self.repo(live=self.V1_LIVE, v1_files=True)
-        r = self.row(repo)
-        self.assertEqual((r.status, r.severity), ("fail", "warn"))
-        self.assertIn("release stage", r.message)
-        self.assertIn("guard-git.sh", r.message)
-
-    def test_v2_active_with_a_v1_hook_still_wired_is_an_error(self):
-        _, v2 = self.repo()
-        live = json.loads(json.dumps(v2))
-        live["hooks"]["PreToolUse"].append(self.V1_LIVE["hooks"]["PreToolUse"][0])
-        repo, _ = self.repo(live=live)
-        r = self.row(repo)
+    def test_a_v1_hook_still_wired_is_an_error(self):
+        r = self.row(self.repo(live=self.V1_LIVE))
         self.assertEqual((r.status, r.severity), ("fail", "error"))
         self.assertIn("guard-git.sh", r.message)
 
-    def test_v2_active_with_the_v1_files_left_behind_is_an_error(self):
-        _, v2 = self.repo()
-        repo, _ = self.repo(live=v2, v1_files=True)
-        r = self.row(repo)
+    def test_the_v1_files_left_behind_are_an_error(self):
+        r = self.row(self.repo(live=self.USER_HOOK, v1_files=True))
         self.assertEqual((r.status, r.severity), ("fail", "error"))
         self.assertIn("still exist", r.message)
-
-    def test_a_2x_install_must_not_ship_the_v1_hooks_even_when_the_wiring_is_not_merged(self):
-        repo, _ = self.repo(live={"permissions": {"allow": []}}, v1_files=True, version="2.0.0 (2026-11-01)\n")
-        r = self.row(repo)
-        self.assertEqual((r.status, r.severity), ("fail", "error"))

@@ -94,7 +94,7 @@ def run_module(module: str) -> tuple:
 
 def precompile(root: str) -> None:
     # quiet=2: a fixture that is deliberately not valid Python is not an error here
-    for sub in (os.path.join(".claude", "scripts"), "tests", "tools"):
+    for sub in ("scripts", "tests", "tools"):
         path = os.path.join(root, sub)
         if os.path.isdir(path):
             compileall.compile_dir(path, quiet=2)

@@ -241,8 +241,8 @@ class Assumptions(unittest.TestCase):
 
     def test_v1_points_at_the_real_caller_module(self):
         part = self.text[self.text.index("### V1."):self.text.index("### V2.")]
-        self.assertIn(".claude/scripts/kitlib/caller.py", part)
-        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, ".claude", "scripts", "kitlib", "caller.py")))
+        self.assertRegex(part, r"`(\$\{CLAUDE_PLUGIN_ROOT\}/)?scripts/kitlib/caller\.py`")
+        self.assertTrue(os.path.isfile(os.path.join(REPO_ROOT, "scripts", "kitlib", "caller.py")))
 
     def test_v9_records_that_the_field_is_unverified_and_not_depended_on(self):
         part = self.text[self.text.index("### V9."):self.text.index("### V10.")]
@@ -250,7 +250,9 @@ class Assumptions(unittest.TestCase):
         self.assertIn("nothing depends on them", part)
 
     def test_unbuilt_paths_are_marked_planned(self):
-        for m in re.finditer(r"`((?:\.claude|tests|tools|docs)/[^`\s]+)`( \*\(planned[^)]*\)\*)?", self.text):
+        # kit files are named from the repo root (the plugin root), bare or as ${CLAUDE_PLUGIN_ROOT}/...; a stale .claude/scripts/... is missing
+        for m in re.finditer(r"`(?:\$\{CLAUDE_PLUGIN_ROOT\}/)?((?:\.claude|scripts|agents|skills|templates|spec|hooks|tests|tools|docs)/[^`\s]+)`"
+                             r"( \*\(planned[^)]*\)\*)?", self.text):
             path, planned = m.group(1), m.group(2)
             if "<" in path or "*" in path:
                 continue

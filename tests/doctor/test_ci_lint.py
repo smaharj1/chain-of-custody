@@ -13,7 +13,7 @@ from tests import REPO_ROOT
 from tests.helpers import BaseTestCase
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CI_LINT = os.path.join(REPO_ROOT, ".claude", "scripts", "ci_lint.py")
+CI_LINT = os.path.join(REPO_ROOT, "scripts", "ci_lint.py")
 
 
 def read_fixture(name):
@@ -122,7 +122,7 @@ class SkillHooksInCi(unittest.TestCase):
         hit = [x for x in f if x.rule == "ci.skills-not-restored"]
         self.assertEqual(len(hit), 1)
         self.assertEqual(hit[0].severity, "error")
-        for p in (".claude", ".mcp.json", "plugin", ".claude-plugin"):
+        for p in (".claude", ".mcp.json", ".claude-plugin"):
             self.assertIn(p, hit[0].message)
 
     def test_safe_workflow_passes_every_error_rule(self):
@@ -301,9 +301,47 @@ class Unparsed(unittest.TestCase):
         self.assertEqual(rules(lint("name: t\non: push\ndefaults: &d\n  a: 1\njobs:\n  j:\n    runs-on: x\n")), ["ci.unparsed"])
 
 
+class KitPlaceholder(unittest.TestCase):
+    """A workflow written from a kit template with `{{KIT_REF}}` / `{{KIT_SHA}}` left in it fetches nothing: an error in .github/workflows."""
+    STEP = "    steps:\n      - run: echo \"$KIT_REF\"\n        env:\n          KIT_REF: \"%s\"\n"
+
+    def test_a_placeholder_in_a_repos_workflow_is_an_error(self):
+        text = wf("  push:\n    branches: [main]", "    permissions:\n      contents: read\n" + self.STEP % "{{KIT_REF}}")
+        for name in (".github/workflows/verify.yml", "/abs/repo/.github/workflows/verify.yml"):
+            with self.subTest(name=name):
+                f = [x for x in lint(text, name) if x.rule == "ci.kit-placeholder"]
+                self.assertEqual([x.severity for x in f], ["error"])
+                self.assertIn("line 14", f[0].message)
+                self.assertIn("v<KIT_VERSION>", f[0].message)
+
+    def test_a_filled_workflow_and_the_kit_templates_are_clean(self):
+        filled = wf("  push:\n    branches: [main]", "    permissions:\n      contents: read\n" + self.STEP % "v2.0.0")
+        self.assertNotIn("ci.kit-placeholder", rules(lint(filled, ".github/workflows/verify.yml")))
+        tmpl = os.path.join(REPO_ROOT, "templates", "github", "workflows")
+        self.assertNotIn("ci.kit-placeholder", rules(ci_lint.lint_paths([tmpl], repo=REPO_ROOT)))
+
+    def test_lint_repo_and_the_doctor_report_it(self):
+        import tempfile
+        import shutil
+        from doctorlib import ci as doctor_ci
+        from doctorlib.model import Context
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, ".github", "workflows"))
+            with open(os.path.join(REPO_ROOT, "templates", "github", "workflows", "verify.yml"), "r", encoding="utf-8") as fh:
+                text = fh.read()
+            with open(os.path.join(tmp, ".github", "workflows", "verify.yml"), "w", encoding="utf-8") as fh:
+                fh.write(text)
+            self.assertIn("ci.kit-placeholder", rules(ci_lint.lint_repo(tmp), "error"))
+            rows = doctor_ci.check_ci_lint(Context(tmp, tmp, {}))
+            self.assertIn(("ci.kit-placeholder", "fail"), [(r.id, r.status) for r in rows])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class Shipped(unittest.TestCase):
     def test_label_guard_template_has_no_findings(self):
-        p = os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows", "label-guard.yml")
+        p = os.path.join(REPO_ROOT, "templates", "github", "workflows", "label-guard.yml")
         f = ci_lint.lint_paths([p])
         self.assertEqual([str(x) for x in f], [])
 

@@ -17,7 +17,7 @@ from . import FAILING_TEST, PASSING_TEST, PY, UNITTEST, VerifyCase, config_text
 from .. import REPO_ROOT
 from ..helpers.procs import wait_for
 
-VERIFY_PY = os.path.join(REPO_ROOT, ".claude", "scripts", "verify.py")
+VERIFY_PY = os.path.join(REPO_ROOT, "scripts", "verify.py")
 
 
 def free_port() -> int:
@@ -437,11 +437,11 @@ class Hardening(VerifyCase):
 
     def test_a_branch_that_edits_the_gate_is_flagged(self):
         r = self.make_repo()
-        self.commit(r, {".claude/scripts/verify.py": "# tampered\n", ".github/workflows/ci.yml": "name: ci\n"})
+        self.commit(r, {".claude/agents/code-reviewer.md": "# tampered\n", ".github/workflows/ci.yml": "name: ci\n"})
         res = verify.verify(r.path, base=self.base, write_log=False)
         self.assertIn("verify.kit-modified", ids(res))
         msg = [f["message"] for f in res["findings"] if f["id"] == "verify.kit-modified"][0]
-        self.assertIn(".claude/scripts/verify.py", msg)
+        self.assertIn(".claude/agents/code-reviewer.md", msg)
         self.assertIn(".github/workflows/ci.yml", msg)
         self.assertEqual(res["status"], "pass")  # flagged for a human, not blocked: the base copy of the config still rules
 

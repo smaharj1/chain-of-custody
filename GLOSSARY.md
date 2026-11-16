@@ -6,7 +6,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **Agent / Subagent** — A specialized version of Claude with its own instructions and a focused job (e.g., "backend engineer"). The main Claude session can hand work to these and collect their results.
 
-**Mode** — A "hat" the main Claude session wears, switched with a slash command. `/pm`, `/architect`, and `/tech-lead` are modes. Each changes how Claude behaves. Each mode is a skill: a folder `.claude/skills/<mode>/SKILL.md`.
+**Mode** — A "hat" the main Claude session wears, switched with a slash command. `/pm`, `/architect`, and `/tech-lead` are modes. Each changes how Claude behaves. Each mode is a skill: a folder `skills/<mode>/SKILL.md` in the kit. In a plugin install the full name carries the plugin's name (`/chain-of-custody:pm`).
 
 **Slash command** — A command you type starting with `/` (like `/architect`). It tells Claude to switch modes or run a specific routine. The kit's slash commands are its modes, which are skills.
 
@@ -60,7 +60,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 ## loopctl: State, Approvals and Gates
 
-**loopctl** — The deterministic half of the loop: one Python program (`python3 .claude/scripts/loopctl`) that owns state changes, counters, caps, the run lock, gate execution, the spend ledger and reconciliation, so those no longer depend on a model counting correctly. The conductor keeps the judgement. It is opt-in; the prose loop is still the default.
+**loopctl** — The deterministic half of the loop: one Python program (`scripts/loopctl` in the kit; run it as `python3 "$KIT/scripts/loopctl"`) that owns state changes, counters, caps, the run lock, gate execution, the spend ledger and reconciliation, so those no longer depend on a model counting correctly. The conductor keeps the judgement. It is opt-in; the prose loop is still the default.
 
 **Tier 1 / Tier 2** — Tier 1 loopctl commands (reads, the lock, halt, plan migration) always work. Tier 2 commands change run state and work only when `loopctl_tier2: true` is set in `.claude/loop.config.md` at the base sha.
 
@@ -80,7 +80,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **Bypass log** — GitHub's record of when a ruleset was bypassed. `loopctl reconcile --rule-suites` can read a saved copy, so a bypass on a merged item shows up.
 
-**Human step** — An action only a person runs, from a plain terminal: most approvals (`approve plan`, `item`, `env`, `breaker`, `cost`, `demotion`), `resume`, `remote-lock acquire|renew|release|steal`, `claim take|release`, `--apply` on `parallel`, `migrate-plan --force` and `reconcile --live`. The guards deny these to every agent, the conductor included. The conductor prints each as `HUMAN STEP: <command>` and waits; `loopctl status --pending-human` lists what is open. The one table is `.claude/scripts/kitlib/loopctl_table.py`.
+**Human step** — An action only a person runs, from a plain terminal: most approvals (`approve plan`, `item`, `env`, `breaker`, `cost`, `demotion`), `resume`, `remote-lock acquire|renew|release|steal`, `claim take|release`, `--apply` on `parallel`, `migrate-plan --force` and `reconcile --live`. The guards deny these to every agent, the conductor included. The conductor prints each as `HUMAN STEP: <command>` and waits; `loopctl status --pending-human` lists what is open. The one table is `scripts/kitlib/loopctl_table.py`.
 
 **Relay** — The few approvals the conductor may record from your chat reply, because they only acknowledge or narrow what you already approved: a checkpoint answer, a reject or stop of an item, keep or replan of a blocked item.
 
@@ -184,15 +184,15 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **Branch** — A parallel line of work. The loop builds each item on its own branch (`feat/<name>`), keeping `main` — the primary branch — clean until the item passes.
 
-**Merge** — Folding a branch's commits into another branch. With `delivery: local` (the default) the loop merges each verified item into your *local* `main`; with `draft-pr` the work leaves as a draft pull request and a human merges it.
+**Merge** — Folding a branch's commits into another branch. With `delivery: local` (the default when the key is absent) the loop merges each verified item into your *local* `main`; with `draft-pr` the work leaves as a draft pull request and a human merges it.
 
-**Push** — Publishing your local commits to a shared remote (like GitHub). **No agent pushes: that is your job.** The guards block `git push` and `gh pr create` for every agent, the conductor included. Claude prepares the work and prints the commands (for example from `pr_prepare.py`), and you run them yourself in a terminal. If you're unsure how, ask Claude to explain the printed commands, then run them.
+**Push** — Publishing your local commits to a shared remote (like GitHub). **No agent pushes `main` or any other protected branch.** At `git_autonomy: branch+commit+push` (what `/chain-of-custody:init` sets) the Tech Lead or the conductor may push the feature branch it built, and open a draft pull request under `delivery: draft-pr`; engineers and reviewers never push. At any lower setting the guards block `git push` and `gh pr create` for every agent, Claude prints the commands (for example from `pr_prepare.py`), and you run them yourself in a terminal. Merging is always yours.
 
 ## Delivery (pull requests)
 
-**Draft PR (`delivery: draft-pr`)** — The setting under which a feature leaves your machine as a draft pull request with its audit trail inside it. You run the push and the `gh pr create --draft` command; CI runs; you merge.
+**Draft PR (`delivery: draft-pr`)** — The setting under which a feature leaves your machine as a draft pull request with its audit trail inside it. At `git_autonomy: branch+commit+push` the Tech Lead runs the push and the `gh pr create --draft` command; at a lower setting you run them. CI runs; you merge.
 
-**Audit block** — The structured record at the top of a PR body (template `.claude/templates/pr-body.md`): feature, lane, shas, design-critic verdict, the verify run, reviews, human-gated paths, CI-fix commits, an engineers table, the acceptance matrix, Doc Delta and Primer Delta, and notes (cost, gates, a `Manifest:` line). The PR body is the durable record, because a squash merge drops commit trailers.
+**Audit block** — The structured record at the top of a PR body (template `templates/pr-body.md`): feature, lane, shas, design-critic verdict, the verify run, reviews, human-gated paths, CI-fix commits, an engineers table, the acceptance matrix, Doc Delta and Primer Delta, and notes (cost, gates, a `Manifest:` line). The PR body is the durable record, because a squash merge drops commit trailers.
 
 **WIP commit** — A work-in-progress commit the Tech Lead makes after each engineer (`git_autonomy: branch+commit`) so the reviewer sees exactly that engineer's work.
 
@@ -227,7 +227,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **B1 to B5** — The five parts of the boundary: B1 identity (the agent acts as a bot, not you), B2 credentials (no mutating credential reachable by the agent's OS user), B3 an OS sandbox or container, B4 server-side policy (rulesets, CODEOWNERS, required checks, split CI), B5 the deployment surface (every path from a commit to a deploy is inventoried and gated). See `docs/security/README.md`.
 
-**Doctor** — `python3 .claude/scripts/doctor.py`. It checks the boundary and prints the autonomy level that is safe right now, with the reason for each cap.
+**Doctor** — `python3 "$KIT/scripts/doctor.py"` (`/chain-of-custody:bootstrap` runs it too). It checks the boundary and prints the autonomy level that is safe right now, with the reason for each cap.
 
 **Autonomy level (L0 to L5)** — How much the loop may do unsupervised, from L0 (assistant only) and L1 (a supervised local loop) through L2 (push-branch, with a bot identity and a sandbox) and L3 (draft-PR factory) to L4 (unattended runs) and L5 (low-risk auto-merge, design only). The bot-push half of L2 and L3 is not built; in this release a person pushes. Not to be confused with the autonomy dial, which sets how often the loop pauses. `docs/security/README.md` has the table.
 
@@ -245,7 +245,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **H6** — The class of configuration only a human changes, through a reviewed commit: caps, gates, delivery, verify commands, attestations. The doctor and loopctl read these keys at the base sha, so a feature branch cannot loosen its own rules.
 
-**Guard** — A hook that inspects a tool call before it runs and may deny it. They live in `.claude/scripts/guards/` and are on by default (`.claude/settings.json` wires `run.py`). The old v1 shell hooks were removed in 2.0.0.
+**Guard** — A hook that inspects a tool call before it runs and may deny it. They live in the kit's `scripts/guards/` and are on by default: the plugin's `hooks/hooks.json` wires `run.py`. The old v1 shell hooks were removed in 2.0.0.
 
 **Rule id** — The name a guard prints with a deny (`guard-git:no-verify`). The test corpus and telemetry use the same ids.
 
@@ -268,7 +268,7 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 **MCP (Model Context Protocol)** — The plug-in standard that gives Claude extra tools (browser preview, documentation lookup). Some kit features prefer an MCP tool and fall back to text if it's absent.
 
-**Plugin / Skill** — Packaged extensions for Claude Code. A *skill* is a reusable routine Claude can invoke: a folder with a `SKILL.md`. Every kit mode is a skill (`.claude/skills/<mode>/SKILL.md`). A *plugin* bundles skills, agents and hooks so they can be installed in many projects; the kit is available as one (see Plugin install below). The kit does not require any other plugin or skill; the README's Prerequisites section lists what is optional.
+**Plugin / Skill** — Packaged extensions for Claude Code. A *skill* is a reusable routine Claude can invoke: a folder with a `SKILL.md`. Every kit mode is a skill (`skills/<mode>/SKILL.md`). A *plugin* bundles skills, agents and hooks so they can be installed in many projects; the kit is one (see Plugin install below). The kit does not require any other plugin or skill; the README's Prerequisites section lists what is optional.
 
 ## Project Structure
 
@@ -312,17 +312,17 @@ Plain-language definitions of the terms used throughout Chain of Custody. If a w
 
 ## Install, Bootstrap and the Learning Loop
 
-**Plugin install** — The kit installed through Claude Code's plugin system (`/plugin install`). It gives you the modes, agents, guards, `verify.py` and `pr_prepare.py` in many projects. The driver, unattended and parallel runs need the copy install.
+**Plugin install** — The kit installed through Claude Code's plugin system (`/plugin install chain-of-custody@chain-of-custody`). It is the only way to install the kit: the modes, agents, guards and the whole loop run from the plugin, and your project's `.claude/` holds only your own files.
 
-**Copy install** — The kit copied into your project as a `.claude/` folder (from `dist/copy-install/`). It includes the whole loop.
+**`$KIT`** — In the docs, the folder the plugin is installed in. `/chain-of-custody:init` and `doctor.py` print it as `kit: <path>`; `export KIT=<that path>` once in your shell. Commands the kit prints for you already have the full path.
 
-**`KIT_MANIFEST`** — The list of every installed kit file with its SHA-256 and class, so an upgrade can tell your edits from the kit's.
+**Copy install** — How kit 1.x (and the 2.0 release candidates) were installed: the kit's files copied into the project's `.claude/`. `/migrate` moves such a project onto the plugin.
 
-**Base archive** — A copy of an older kit release (`.claude/migrate/v1.2.0.tar`, a `git archive` of the tag) shipped inside the kit, so `/migrate` can do a three-way comparison between the old kit, your files and the new kit without any git history.
+**Base archive** — A copy of an older kit release (`migrate/v1.2.0.tar`, a `git archive` of the tag) shipped inside the kit, so `/migrate` can tell the files you changed from the kit's own when it moves a copy install onto the plugin.
 
-**`/init`** — The mode that writes what a plugin cannot ship (the deny block, the sandbox profile, the gitignore lines, your starting config). It plans, shows a diff and a person applies it.
+**`/init`** — The mode that sets up a project: it writes the project's own files (`CLAUDE.md`, `loop.config.md`, the primers) and what a plugin cannot ship (the deny block, the sandbox profile, the gitignore lines). It plans and shows a diff before it writes.
 
-**`/migrate`** — The mode that upgrades an install to a newer kit without overwriting a file you changed. It plans first; a person applies it from a plain terminal.
+**`/migrate`** — The mode that moves a copy install onto the plugin without losing a file you changed. It plans first; a person applies it from a plain terminal.
 
 **Bootstrap receipt** — `.claude/bootstrap-receipt.json`: a chained record of what `/bootstrap` ran and what it only recorded. A record for the reviewer, not a gate.
 

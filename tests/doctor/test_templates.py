@@ -14,7 +14,7 @@ from tests import REPO_ROOT
 from . import ghfixtures as gf
 from .helpers import BoundaryCase
 
-SEC = os.path.join(REPO_ROOT, ".claude", "templates", "security")
+SEC = os.path.join(REPO_ROOT, "templates", "security")
 
 
 def load(*parts):
@@ -150,8 +150,16 @@ class GuardrailSnippets(BoundaryCase):
         self.assertIs(m["allowManagedHooksOnly"], True)
         self.assertEqual(m["permissions"]["disableBypassPermissionsMode"], "disable")
         self.assertIn("Workflow", m["permissions"]["deny"])
-        cmd = m["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-        self.assertTrue(cmd.startswith("python3 /opt/"), "managed hooks must point at a root-owned copy, not the repo")
+        cmds = [(ev, h["command"]) for ev, gs in m["hooks"].items() for g in gs for h in g["hooks"]]
+        for _ev, cmd in cmds:
+            self.assertIn('"/opt/chain-of-custody/scripts/', cmd, "managed hooks must point at a root-owned copy, not the repo")
+            self.assertNotIn("CLAUDE_PLUGIN_ROOT", cmd)
+        # allowManagedHooksOnly turns the plugin's hooks off, so every guard entry has to be here, not only the canary
+        from guards import wiring
+        man = wiring.load_manifest()
+        self.assertEqual(m, wiring.build_managed(man))
+        for e in man["entries"]:
+            self.assertTrue([c for ev, c in cmds if ev == e["event"] and ("--id %s" % e["id"] in c or e.get("script") and e["script"] in c)], e["id"])
 
     def test_mcp_lockdown_and_example(self):
         m = load("mcp-lockdown.settings.json")
@@ -183,7 +191,7 @@ class GuardrailSnippets(BoundaryCase):
 
 class LabelGuard(unittest.TestCase):
     def setUp(self):
-        with open(os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows", "label-guard.yml"), "r", encoding="utf-8") as fh:
+        with open(os.path.join(REPO_ROOT, "templates", "github", "workflows", "label-guard.yml"), "r", encoding="utf-8") as fh:
             self.text = fh.read()
 
     def test_least_privilege_and_no_checkout(self):
@@ -247,7 +255,7 @@ class CodeownersTemplate(unittest.TestCase):
     def test_names_the_paths_the_report_requires(self):
         with open(os.path.join(SEC, "CODEOWNERS.template"), "r", encoding="utf-8") as fh:
             text = fh.read()
-        for path in ("/.claude/", "/plugin/", "/.claude-plugin/", "/.mcp.json", "/scripts/", "/.github/", "*.tf", "/Dockerfile*", "/vercel.json", "/k8s/", "/helm/"):
+        for path in ("/.claude/", "/.claude-plugin/", "/.mcp.json", "/scripts/", "/.github/", "*.tf", "/Dockerfile*", "/vercel.json", "/k8s/", "/helm/"):
             self.assertRegex(text, r"(?m)^%s\s+@PLACEHOLDER" % re.escape(path))
         self.assertIn("never list the bot", text)
 

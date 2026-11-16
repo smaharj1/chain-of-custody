@@ -18,7 +18,7 @@ import labels  # noqa: E402
 
 GH_DIR = os.path.join(SCRIPTS_DIR, "github")
 APPLY_SH = os.path.join(GH_DIR, "apply-labels.sh")
-TEMPLATE = os.path.join(REPO_ROOT, ".claude", "templates", "github", "labels.json")
+TEMPLATE = os.path.join(REPO_ROOT, "templates", "github", "labels.json")
 
 
 class Recorder(object):
@@ -61,7 +61,7 @@ class Template(unittest.TestCase):
             self.assertIn(want, names)
 
     def test_approver_only_matches_what_label_guard_removes(self):
-        with open(os.path.join(REPO_ROOT, ".claude", "templates", "github", "workflows", "label-guard.yml")) as fh:
+        with open(os.path.join(REPO_ROOT, "templates", "github", "workflows", "label-guard.yml")) as fh:
             guard = fh.read()
         self.assertIn("factory:requested) exit 0", guard)
         for lab in labels.load_labels(TEMPLATE):

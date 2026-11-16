@@ -24,7 +24,7 @@
 {"id":"file-023","caller":"engineer","repo":"feat","path":"{FEAT}/.claude/workflows/review.js","expect":"deny","rule":"guard-file:workflows"},
 {"id":"file-024","caller":"engineer","repo":"feat","path":"{FEAT}/.mcp.json","expect":"deny","rule":"guard-file:mcp"},
 {"id":"file-025","caller":"engineer","repo":"feat","path":"{FEAT}/.claude-plugin/plugin.json","expect":"deny","rule":"guard-file:plugin"},
-{"id":"file-026","caller":"engineer","repo":"feat","path":"{FEAT}/plugin/hooks/hooks.json","expect":"deny","rule":"guard-file:plugin"},
+{"id":"file-026","caller":"engineer","repo":"feat","path":"{FEAT}/plugin/hooks/hooks.json","expect":"allow","why":"a project's plugin/ is ordinary code: the kit is an installed plugin outside the project"},
 {"id":"file-027","caller":"engineer","repo":"feat","path":"{FEAT}/.github/workflows/ci.yml","expect":"deny","rule":"guard-file:ci"},
 {"id":"file-028","caller":"engineer","repo":"feat","path":"{FEAT}/.github/workflows/deploy.yml","expect":"deny","rule":"guard-file:ci"},
 {"id":"file-029","caller":"engineer","repo":"feat","path":"{FEAT}/.github/CODEOWNERS","expect":"deny","rule":"guard-file:ci"},

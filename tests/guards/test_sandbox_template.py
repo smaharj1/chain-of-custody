@@ -15,7 +15,7 @@ from guards import paths, wiring
 
 from tests import REPO_ROOT
 
-TEMPLATE = os.path.join(REPO_ROOT, ".claude", "templates", "security", "sandbox.settings.json")
+TEMPLATE = os.path.join(REPO_ROOT, "templates", "security", "sandbox.settings.json")
 
 
 def _rep(pattern: str) -> str:
@@ -129,7 +129,7 @@ class McpDenyLists(unittest.TestCase):
     """IN-10: the lockdown snippet, the infra deploy-deny snippet and the shared deny block are one list."""
 
     def deny(self, *rel):
-        with open(os.path.join(REPO_ROOT, ".claude", "templates", *rel), "r", encoding="utf-8") as fh:
+        with open(os.path.join(REPO_ROOT, "templates", *rel), "r", encoding="utf-8") as fh:
             return json.load(fh)["permissions"]["deny"]
 
     def test_lockdown_and_infra_templates_and_the_deny_block_agree(self):

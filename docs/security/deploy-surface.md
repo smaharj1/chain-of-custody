@@ -2,7 +2,7 @@
 
 The bot is allowed to push branches and open pull requests. That must not become a deploy nobody approved. A repository can deploy on push, on a tag, on a release, on a `workflow_run`, on a comment, on a schedule, from a host that watches the repository, or from a release-automation bot. Any of these turns a push the bot is allowed to make into a production event.
 
-`python3 .claude/scripts/doctor.py --deploy-surface` inventories them and compares the result with what a human attested.
+`python3 "$KIT/scripts/doctor.py" --deploy-surface` inventories them and compares the result with what a human attested.
 
 ## What it scans
 

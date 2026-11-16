@@ -2,7 +2,7 @@
 
 Every test uses a temp git repo (`LoopRepo`), a temp HOME, no network and no real `claude`. Commands run in-process through
 `loopctl.cli.main` with an explicit environment, which is what makes the whole package testable in seconds; the entry point
-`python3 .claude/scripts/loopctl` is exercised by a few subprocess tests.
+`python3 scripts/loopctl` (the kit's own copy, this checkout) is exercised by a few subprocess tests.
 """
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ import tempfile
 import unittest
 from typing import Any, Dict, List, Optional, Sequence
 
-from .. import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (puts .claude/scripts on sys.path)
+from .. import REPO_ROOT, SCRIPTS_DIR  # noqa: F401  (puts the kit's scripts/ on sys.path)
 from ..helpers import TempRepo, clean_env
 from ..helpers import gitfast
 from ..helpers.gitrepo import copy_tree, git_test_env, scratch_root
 
-from loopctl import cli, common  # noqa: E402
+from loopctl import cli, common, kit  # noqa: E402
 
 _PLAN_TEMPLATES = {}  # (items, config, plan name, milestones) -> a directory holding that repo, built once per process
 
@@ -230,7 +230,7 @@ class LoopRepo(object):
         ctx.lock().acquire("run-1", self.session, ctx.repo, None, "rev")
         ctx.rs.register_session(self.session, "conductor", registered_by="test")
         ctx.rs.write_run({"runId": "run-1", "plan": self.plan_name, "baseSha": ctx.base_sha, "worktree": ctx.repo, "runner": "sequential",
-                          "conductor_session_id": self.session})
+                          "conductor_session_id": self.session, "kit": kit.identity()})
         return loop
 
     def item_branch(self, iid: str, file_content: str = "x\n") -> str:

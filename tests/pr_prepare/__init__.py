@@ -1,6 +1,6 @@
-"""Tests for .claude/scripts/pr_prepare.py (Phase 3, IMP-25, report §16.1 Phase 3, §19.7).
+"""Tests for scripts/pr_prepare.py (Phase 3, IMP-25, report §16.1 Phase 3, §19.7).
 
-`FeatureCase` builds a temp repo with `main` (config, template, gitignore) and a feature branch `feat/x` with one WIP commit,
+`FeatureCase` builds a temp repo with `main` (config, gitignore) and a feature branch `feat/x` with one WIP commit,
 an approved engineer report and a passing saved verify result. `good_body` renders a complete audit block for it.
 """
 from __future__ import annotations
@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from kitlib import miniyaml
 
-from .. import REPO_ROOT
 from ..helpers import BaseTestCase, TempRepo
 
 GOOD_REPORT = """# Backend Report — x
@@ -166,8 +165,6 @@ class FeatureCase(BaseTestCase):
         cfg.update(config or {})
         r.write(".claude/loop.config.md", config_text(cfg))
         r.write(".gitignore", ".claude/pr/\n")
-        os.makedirs(os.path.join(r.path, ".claude", "templates"), exist_ok=True)
-        shutil.copyfile(os.path.join(REPO_ROOT, ".claude", "templates", "pr-body.md"), os.path.join(r.path, ".claude", "templates", "pr-body.md"))
         r.write("README.md", "# x\n")
         for rel, text in (base_files or {}).items():
             r.write(rel, text)

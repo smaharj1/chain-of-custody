@@ -15,6 +15,7 @@ docs/tech_spec.md
 docs/features
 docs/features/*
 .claude/rules*
+scripts/go.sh
 
 # Historical CHANGELOG entries naming files that were moved or renamed since.
 docs/design/loop-engineering.md
@@ -65,3 +66,14 @@ docs/design/probe-results.md
 .claude/.migrate
 .claude/.migrate/*
 .claude/settings.json.pre-init
+
+# A v1 or 2.0-candidate copy install as it sits in a project: /init, /migrate, /bootstrap and the guard docs name these paths to detect it,
+# and /migrate's plan names the project-side folders it keeps or creates (.claude/agents overrides, .claude/kit-backup).
+.claude/scripts
+.claude/scripts/
+.claude/KIT_VERSION
+.claude/KIT_MANIFEST
+.claude/agents
+.claude/agents/
+.claude/skills
+.claude/kit-backup/

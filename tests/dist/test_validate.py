@@ -1,9 +1,10 @@
 """tools/validate-plugin.py: every structural check fires on a plugin broken in exactly that way (Phase 9, IMP-3).
 
-The unbroken plugin comes from the in-memory build; each case mutates a copy and expects a problem that names the defect.
+The unbroken plugin is this repository (its root is the plugin root); each case mutates a copy and expects a problem that names the defect.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -11,9 +12,16 @@ import sys
 import unittest
 
 from tests import REPO_ROOT
-from tests.dist import build_once
+from tests.dist import TOOLS_DIR
 
-from distlib import validate as V  # noqa: E402
+from pluginlib import validate as V  # noqa: E402
+
+
+def load_cli():
+    spec = importlib.util.spec_from_file_location("validate_plugin", os.path.join(TOOLS_DIR, "validate-plugin.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def setj(files, rel, fn):
@@ -25,9 +33,8 @@ def setj(files, rel, fn):
 class Validate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        d = build_once()
-        cls.plugin = d.plugin.files
-        cls.market = d.extra.files[".claude-plugin/marketplace.json"]
+        cls.plugin = load_cli().load_tree(REPO_ROOT)
+        cls.market = cls.plugin[".claude-plugin/marketplace.json"]
 
     def check(self, mutate, expect, market=None, parse=False):
         files = dict(self.plugin)
@@ -35,7 +42,7 @@ class Validate(unittest.TestCase):
         problems = V.validate(files, market if market is not None else self.market, parse_python=parse)    # parsing 150 scripts costs 0.2 s: only where it is the subject
         self.assertTrue([p for p in problems if expect in p], "expected a problem containing %r, got %r" % (expect, problems[:6]))
 
-    def test_the_build_is_clean(self):
+    def test_the_repository_is_clean(self):
         self.assertEqual(V.validate(self.plugin, self.market), [])
 
     def test_manifest_checks(self):
@@ -76,6 +83,13 @@ class Validate(unittest.TestCase):
         self.check(edit("\nmodel:", "\nhooks: x\nmodel:"), "`hooks` is ignored")
         self.check(edit("\neffort: ", "\neffort: huge\n#"), "effort 'huge'")
         self.check(lambda f: [f.pop(k) for k in [k for k in f if k.startswith("agents/")]], "no agent files")
+        # an unquoted description with ": " is not YAML (a nested mapping); one with " #" is cut at the comment
+        self.check(edit("Senior staff backend engineer.", "Senior staff backend engineer: the one"), "unquoted value of description contains ': '")
+        self.check(edit("Senior staff backend engineer.", "Senior staff backend engineer #1."), "unquoted value of description contains ' #'")
+
+    def test_every_shipped_frontmatter_is_plain_yaml(self):
+        for p in sorted(k for k in self.plugin if k.startswith("agents/") and k.endswith(".md") or k.startswith("skills/") and k.endswith("/SKILL.md")):
+            self.assertIsNone(V.frontmatter(self.plugin[p].decode())[1], p)
 
     def test_skill_checks(self):
         s = "skills/pm/SKILL.md"
@@ -97,11 +111,23 @@ class Validate(unittest.TestCase):
         self.check(lambda f: f.__setitem__(s, f[s] + b"\nread ${CLAUDE_PLUGIN_ROOT}/spec/nope.md\n"), "spec/nope.md is not in the plugin")
         self.check(lambda f: f.__setitem__(s, f[s] + b"\nread .claude/spec/loopctl.md\n"), "kit path not rewritten")
         self.check(lambda f: f.__setitem__("context/x.md", b"python3 .claude/scripts/doctor.py\n"), "kit path not rewritten")
+        self.check(lambda f: f.__setitem__(s, f[s] + b"\nread .claude/context/engineer-protocol.md\n"), "kit path not rewritten")
+        # project paths stay: a primer, an override, the project's launch-app skill, and history under docs/design
+        ok = b"\nread .claude/context/backend.md, .claude/agents/<role>.md, .claude/skills/launch-app/SKILL.md\n"
+        files = dict(self.plugin)
+        files[s] = files[s] + ok
+        files["docs/design/old.md"] = b"python3 .claude/scripts/doctor.py\n"
+        # human docs may name an old copy install's .claude/scripts/ and the bare `${CLAUDE_PLUGIN_ROOT}/...` form
+        files["docs/old-layout.md"] = b"an old install kept `.claude/scripts/`; kit prose says `${CLAUDE_PLUGIN_ROOT}/...`.\n"
+        files[s] = files[s] + b"\nkit prose names kit files as `${CLAUDE_PLUGIN_ROOT}/...`.\n"
+        self.assertEqual(V.validate(files, self.market, parse_python=False), [])
+        # but a ${CLAUDE_PLUGIN_ROOT}/ path in human docs must still exist
+        self.check(lambda f: f.__setitem__("docs/x.md", b"read ${CLAUDE_PLUGIN_ROOT}/spec/nope.md\n"), "docs/x.md: ${CLAUDE_PLUGIN_ROOT}/spec/nope.md")
 
     def test_layout_checks(self):
-        self.check(lambda f: f.__setitem__("tests/test_x.py", b"x = 1\n"), "does not belong in a plugin")
+        self.check(lambda f: f.__setitem__("plugin/x.md", b"x\n"), "does not belong in the plugin")
         self.check(lambda f: f.__setitem__("scripts/loop.jsonl", b"{}"), "runtime or junk")
-        self.check(lambda f: f.__setitem__("scripts/__pycache__/x.pyc", b"x"), "does not belong in a plugin")
+        self.check(lambda f: f.__setitem__("scripts/__pycache__/x.pyc", b"x"), "does not belong in the plugin")
         self.check(lambda f: f.__setitem__("scripts/broken.py", b"def (:\n"), "does not parse", parse=True)
         self.check(lambda f: f.__setitem__("settings.json", b'{"permissions": {"deny": []}}'), "applies only `agent`")
         self.check(lambda f: f.pop("KIT_VERSION"), "KIT_VERSION is missing")
@@ -119,7 +145,7 @@ class Validate(unittest.TestCase):
         self.check(lambda f: None, "non-empty list", market=m(lambda d: d.update(plugins=[])))
         self.check(lambda f: None, "relative ./ path", market=m(lambda d: d["plugins"][0].update(source="/abs/plugin")))
         self.check(lambda f: None, "relative ./ path", market=m(lambda d: d["plugins"][0].update(source="./../plugin")))
-        self.check(lambda f: None, "does not point at the generated", market=m(lambda d: d["plugins"][0].update(source="./.")))
+        self.check(lambda f: None, "does not point at the repository root", market=m(lambda d: d["plugins"][0].update(source="./plugin")))
         self.check(lambda f: None, "differs from plugin.json", market=m(lambda d: d["plugins"][0].update(name="other")))
         self.check(lambda f: None, "version", market=m(lambda d: d["plugins"][0].update(version="9.9.9")))
         self.check(lambda f: None, "duplicate plugin name", market=m(lambda d: d["plugins"].append(dict(d["plugins"][0]))))
@@ -131,6 +157,10 @@ class Validate(unittest.TestCase):
         self.assertIn("duplicate", V.frontmatter("---\na: 1\na: 2\n---\n")[1])
         self.assertIn("not closed", V.frontmatter("---\na: 1\n")[1])
         self.assertIn("not `key: value`", V.frontmatter("---\nnot yaml\n---\n")[1])
+        self.assertIn("contains ': '", V.frontmatter("---\nd: one: two\n---\n")[1])
+        self.assertIn("contains ' #'", V.frontmatter("---\nd: one #two\n---\n")[1])
+        for ok in ("d: 'one: two'", "d: \"a #b\"", "d: a#b, c:d", "d: >", "d: [a, b]", "d:"):
+            self.assertIsNone(V.frontmatter("---\n%s\n---\n" % ok)[1], ok)
 
     def test_cli_ok_on_the_repository_and_fails_on_an_empty_one(self):
         script = os.path.join(REPO_ROOT, "tools", "validate-plugin.py")

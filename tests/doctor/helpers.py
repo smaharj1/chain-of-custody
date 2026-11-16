@@ -15,7 +15,7 @@ from doctorlib.model import Context, Result, default_run, run_checks
 from tests import REPO_ROOT
 from tests.helpers import BaseTestCase, TempRepo, gitfast, inproc
 
-DOCTOR = os.path.join(REPO_ROOT, ".claude", "scripts", "doctor.py")
+DOCTOR = os.path.join(REPO_ROOT, "scripts", "doctor.py")
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 FLOOR = "2.1.302"
 
@@ -103,14 +103,39 @@ class BoundaryCase(BaseTestCase):
         self.addCleanup(gitfast.uninstall)
         self.fake_home = self.home()
         self.fs_root = self.tmpdir("kit-root-")
+        self.kit_dir = self.fake_kit()
+
+    # -- the plugin folder ------------------------------------------------------------------
+    def fake_kit(self, kit_version: str = KIT_VERSION_V2) -> str:
+        """A plugin folder for `Context.kit_root`: its own KIT_VERSION and plugin.json, the real kit's agents, templates, spec and
+        loopctl linked in (a test that needs the kit without loopctl removes `scripts/loopctl`)."""
+        d = self.tmpdir("kit-plugin-")
+        for area in ("agents", "templates", "spec"):
+            os.symlink(os.path.join(REPO_ROOT, area), os.path.join(d, area))
+        os.makedirs(os.path.join(d, "scripts"))
+        os.symlink(os.path.join(REPO_ROOT, "scripts", "loopctl"), os.path.join(d, "scripts", "loopctl"))
+        self.set_kit_version(kit_version, d)
+        return d
+
+    def set_kit_version(self, kit_version: str, kit_dir: Optional[str] = None) -> None:
+        """Write the fake plugin's KIT_VERSION, and a plugin.json with the same version."""
+        from kitlib import kitmanifest
+        d = kit_dir or self.kit_dir
+        with open(os.path.join(d, "KIT_VERSION"), "w", encoding="utf-8") as fh:
+            fh.write(kit_version)
+        os.makedirs(os.path.join(d, ".claude-plugin"), exist_ok=True)
+        with open(os.path.join(d, ".claude-plugin", "plugin.json"), "w", encoding="utf-8") as fh:
+            json.dump({"name": "chain-of-custody", "version": kitmanifest.parse_version(kit_version) or "0.0.0"}, fh)
 
     # -- repo -------------------------------------------------------------------------------
     def kit_repo(self, config: Optional[Mapping[str, Any]] = None, origin: str = "https://github.com/acme/widgets.git",
                  kit_version: str = KIT_VERSION_V2, files: Optional[Mapping[str, str]] = None, commit: bool = False) -> TempRepo:
-        """A repo with the kit's files staged (so `git ls-files` sees them). `commit=True` also commits them."""
+        """A project set up for the kit, files staged (so `git ls-files` sees them). `commit=True` also commits them. `kit_version`
+        goes to the fake plugin folder (`self.kit_dir`), which `ctx()` uses as the kit root."""
         r = FastRepo()
         self._repos.append(r)
-        r.write(".claude/KIT_VERSION", kit_version)
+        self.set_kit_version(kit_version)
+        r.write(".claude/CLAUDE.md", "# project\n")
         r.write(".claude/loop.config.md", config_text(config))
         r.write(".gitignore", "")
         for rel, text in (files or {}).items():
@@ -126,6 +151,7 @@ class BoundaryCase(BaseTestCase):
     def ctx(self, repo: TempRepo, env_extra: Optional[Mapping[str, str]] = None, ghapi=None, reach=None, live: bool = False,
             claude_version: Optional[str] = "2.1.305", run=None, **kw) -> Context:
         env = self.fake_home.env(env_extra)
+        kw.setdefault("kit_root", self.kit_dir)
         c = Context(repo=repo.path, home=self.fake_home.path, env=env, fs_root=self.fs_root, live=live, now=kw.pop("now", 1792000000.0),
                     ghapi=ghapi, reach=reach, claude_version=claude_version, run=run or guarded_run, platform=kw.pop("platform", "linux"),
                     groups=kw.pop("groups", []), **kw)
