@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" mark --tag v7-subagentstart-marker --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" mark --tag v7-agent-pretooluse-marker --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ]
+  }
+}

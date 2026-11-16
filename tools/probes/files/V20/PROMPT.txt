@@ -1,0 +1,4 @@
+== nonce ==
+Without reading any file: run the Bash command echo probe-v20-nonce followed by the exact id that comes after the words PROBE-V20-NONCE in your context. If there is no such line in your context, run echo probe-v20-none instead. Run exactly one command.
+== compact ==
+/compact

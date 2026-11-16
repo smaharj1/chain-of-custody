@@ -1,0 +1,18 @@
+# A PR-triggered claude -p job that runs the PR's own .claude/, skills and MCP config.
+# A PR that adds a skill with a PreToolUse frontmatter hook gets that hook executed here (RC-18).
+name: claude-review-unsafe
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Review
+        run: claude -p "review this pull request" --output-format json

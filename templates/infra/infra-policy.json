@@ -1,0 +1,7 @@
+{
+  "schema": "infra-policy.v1",
+  "allowed_providers": [],
+  "allowed_backends": [],
+  "allow_version_ranges": false,
+  "allow_git_tag_refs": false
+}

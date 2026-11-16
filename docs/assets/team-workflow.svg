@@ -1,6 +1,6 @@
 <svg viewBox="0 0 880 752" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-label="The handoff chain, interactive lane">
   <title>The Handoff Chain — Interactive Lane</title>
-  <desc>The handoff chain for one feature as it runs when you drive it by hand. You describe a feature; /pm gathers requirements through questions and writes requirements.md; /architect brainstorms tradeoffs with you, writes technical-design.md and api-contract.md, and has design-critic audit them before any code exists; /tech-lead splits the design into per-engineer briefs, dispatches in dependency order, and code-reviews every diff; engineer subagents (database, backend, app, admin-app, infra) each start in a clean context, read only their brief plus the design and contract, self-verify, and report back to the Tech Lead for review and possible re-dispatch. A quick lane lets small fixes skip straight to /tech-lead. Every arrow between roles is a written artifact. Under /orchestrate the same four roles run this same chain autonomously: PM and Architect derive requirements from the plan item instead of asking you, no requirements.md is written, and review is an independent code-reviewer agent rather than the Tech Lead — so the human checkpoints move up to plan approval and the per-item auto-demo.</desc>
+  <desc>The handoff chain for one feature as it runs when you drive it by hand. You describe a feature; /pm gathers requirements through questions and writes requirements.md; /architect brainstorms tradeoffs with you, writes technical-design.md and api-contract.md, and has design-critic audit them before any code exists; /tech-lead splits the design into per-engineer briefs, dispatches in dependency order, and has the code-reviewer agent review every diff; engineer subagents (database, backend, app, admin-app, infra) each start in a clean context, read only their brief plus the design and contract, self-verify, and report back to the Tech Lead for review and possible re-dispatch. A quick lane lets small fixes skip straight to /tech-lead. Every arrow between roles is a written artifact. Under /orchestrate the same four roles run this same chain autonomously: PM and Architect derive requirements from the plan item instead of asking you, no requirements.md is written, and review stays with the independent code-reviewer agent, as it does here — so the human checkpoints move up to plan approval and the per-item auto-demo.</desc>
   <defs>
     <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
@@ -65,7 +65,7 @@
   <text x="360" y="442" text-anchor="middle" class="t">/tech-lead — Tech Lead</text>
   <text x="360" y="460" text-anchor="middle" class="s">splits the design into per-engineer briefs</text>
   <text x="360" y="476" text-anchor="middle" class="s">dispatches in dependency order</text>
-  <text x="360" y="492" text-anchor="middle" class="s">reviews every diff, re-dispatches on gaps</text>
+  <text x="360" y="492" text-anchor="middle" class="s">has every diff reviewed, re-dispatches on gaps</text>
 
   <line class="edge" x1="360" y1="512" x2="360" y2="568" marker-end="url(#ah)"/>
   <line class="tie" x1="374" y1="541" x2="591" y2="541"/>
@@ -84,7 +84,7 @@
   <path class="edge" d="M 200 618 H 162 V 492 H 196" marker-end="url(#ah)"/>
   <text x="152" y="556" text-anchor="end" class="capm" font-weight="600">structured report</text>
   <text x="152" y="569" text-anchor="end" class="capm">back to the Tech Lead,</text>
-  <text x="152" y="582" text-anchor="end" class="capm">who code-reviews the diff</text>
+  <text x="152" y="582" text-anchor="end" class="capm">reviewed by code-reviewer</text>
 
   <!-- quick lane -->
   <path class="edgea" d="M 240 86 H 110 V 440 H 196" marker-end="url(#aha)"/>

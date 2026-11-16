@@ -1,0 +1,65 @@
+{
+  "acceptance": [
+    {
+      "id": "AC-F1-1",
+      "text": "after `python3 -m hello_loop.migrate` on a fresh database, table `bookmarks` exists with columns `id` (INTEGER PRIMARY KEY), `url` (TEXT NOT NULL, UNIQUE), `title` (TEXT NOT NULL) and `created_at` (TEXT NOT NULL), and nothing else"
+    },
+    {
+      "id": "AC-F1-2",
+      "text": "running `python3 -m hello_loop.migrate` a second time succeeds and `schema_migrations` holds `0001_create_bookmarks` exactly once"
+    },
+    {
+      "id": "AC-F1-3",
+      "text": "`python3 -m hello_loop.migrate --down` removes the `bookmarks` table and its `schema_migrations` row (this is the item's down migration)"
+    },
+    {
+      "id": "AC-F1-4",
+      "text": "`python3 -m hello_loop.seed` inserts exactly 3 sample bookmarks; running it twice still leaves exactly 3 rows"
+    },
+    {
+      "id": "AC-F1-5",
+      "text": "`tests/test_schema.py` exists, covers AC-F1-1 to AC-F1-4, and passes under `verify_tests`"
+    }
+  ],
+  "dependsOn": [],
+  "estimate": {
+    "engineers": [
+      "database-engineer"
+    ],
+    "loc": 120
+  },
+  "id": "F1",
+  "intent": "Add the bookmarks table as the first migration (with its down migration) and a seed command that loads three sample bookmarks. Everything else reads and writes this table.",
+  "migrations": [
+    {
+      "dataLossClass": "none",
+      "down": "hello_loop/migrations/0001_create_bookmarks.down.sql",
+      "name": "0001_create_bookmarks",
+      "stage": "expand",
+      "up": "hello_loop/migrations/0001_create_bookmarks.up.sql"
+    }
+  ],
+  "milestone": "M1 Data and API",
+  "requiresEnv": [],
+  "riskClass": "medium",
+  "schema": "loopctl.item.v1",
+  "size": "S",
+  "slug": "bookmarks-schema",
+  "title": "Bookmarks schema, migration and seed",
+  "touches": {
+    "deps_change": false,
+    "domains": [
+      "database"
+    ],
+    "paths": [
+      "hello_loop/migrations/**",
+      "hello_loop/seed.py",
+      "tests/test_schema.py"
+    ],
+    "schema": true
+  },
+  "verify": {
+    "demoRoute": null,
+    "tests": "python3 -m unittest tests.test_schema"
+  }
+}

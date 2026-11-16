@@ -1,0 +1,33 @@
+{
+  "case": "Q-engineer-report-trailer",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "Implemented the endpoint and its tests.\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Implemented the endpoint and its tests.\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Implemented the endpoint and its tests.\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "Implemented.\nStatus: APPROVED",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Implemented.\n{\"status\": \"DONE\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    }
+  ]
+}

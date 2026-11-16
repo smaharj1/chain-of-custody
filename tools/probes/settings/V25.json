@@ -1,0 +1,12 @@
+{
+  "worktree": {
+    "baseRef": "head"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git rev-parse *)",
+      "Bash(git branch *)",
+      "Bash(git log *)"
+    ]
+  }
+}

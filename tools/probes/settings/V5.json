@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo probe-v5-start)",
+      "Bash(git branch --show-current)",
+      "Bash(git rev-parse --short HEAD)",
+      "Bash(pwd)",
+      "Bash(printenv PROBE_V5_ENV)",
+      "Bash(touch ~/.probe-v5-outside)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "network": {
+      "allowLocalBinding": true
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" mark --tag v5-project-hook --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" mark --tag v5-project-hook --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ]
+  }
+}

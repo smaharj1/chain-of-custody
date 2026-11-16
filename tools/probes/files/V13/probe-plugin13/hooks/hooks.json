@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "python3 \"{{HOOK}}\" mark --tag v13-plugin-hook --log \"{{LOG}}\""},
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/root-check.py\" --log \"{{LOG}}\""}
+        ]
+      }
+    ]
+  }
+}

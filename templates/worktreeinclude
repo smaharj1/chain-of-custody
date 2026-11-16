@@ -1,0 +1,6 @@
+# .worktreeinclude: the ignored files copied from your checkout into a new worktree (report 5.4).
+# Copy this file to ./.worktreeinclude and commit it. Only these two names are ever copied, whatever else you write here:
+# they hold LOCAL development and test values. Production files, keys and credentials never go into a worktree an agent works in
+# (the doctor's `secrets.worktreeinclude` check fails on any other line, and loopctl ignores it).
+.env.local
+.env.test

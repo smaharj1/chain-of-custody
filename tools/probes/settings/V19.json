@@ -1,0 +1,14 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false
+  },
+  "permissions": {
+    "allow": [
+      "Bash(touch probe-v19-inside.txt)",
+      "Bash(touch ~/.probe-v19-outside)",
+      "Bash(ls -la ~/.probe-v19-outside)"
+    ]
+  }
+}

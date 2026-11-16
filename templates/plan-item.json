@@ -1,0 +1,22 @@
+{
+  "schema": "loopctl.item.v1",
+  "id": "F1",
+  "milestone": "M1 Foundation",
+  "title": "Runnable skeleton and test harness",
+  "slug": "skeleton",
+  "size": "S",
+  "dependsOn": [],
+  "intent": "One or two sentences: what this slice adds and why. One user-visible vertical slice.",
+  "acceptance": [
+    {"id": "AC-F1-1", "text": "`GET /` returns 200 and renders the home route"},
+    {"id": "AC-F1-2", "text": "`tests/test_home.py` exists, covers AC-F1-1, and passes under `verify_tests`"}
+  ],
+  "requiresEnv": [],
+  "touches": {"domains": ["backend"], "paths": ["src/app/**", "tests/test_home.py"], "schema": false, "deps_change": false},
+  "estimate": {"loc": 150, "engineers": ["backend-engineer"]},
+  "riskClass": "low",
+  "migrations": [],
+  "verify": {"tests": "python3 -m unittest tests.test_home", "demoRoute": "/"},
+  "rework": [],
+  "waivers": []
+}

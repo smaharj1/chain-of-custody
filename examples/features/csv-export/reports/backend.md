@@ -3,7 +3,7 @@
 > **Illustrative example — not a real run.** This report was hand-authored to show the
 > shape and rigor a Backend Engineer's report should have. TaskFlow is a fictional project
 > (see [`examples/README.md`](../../../README.md)): the files listed below do not exist, no
-> tests were executed, and the verification and telemetry figures are invented. Copy the
+> tests were executed, and the verification figures are invented. Copy the
 > structure and the level of specificity, not the numbers.
 
 ## Status
@@ -35,6 +35,14 @@ AS_SPECIFIED — implemented exactly to `api-contract.md`; no deviation needed.
 ## Open Questions / Brief Gaps
 - Brief didn't specify the slugification rule for the `Content-Disposition` filename; reused the existing workspace `slug` conventions (lowercase, hyphens) from `lib/slugify.ts`. Safe inference — documenting rather than blocking.
 
+## Primer Delta
+NONE
+checked: layering, error handling, route registration, logging (all matched `.claude/context/backend.md` as written)
+
+## Doc Delta
+The project's API reference (wherever it lists endpoints) needs the new `GET /api/boards/:boardId/tasks/export` row; no new environment variables.
+checked: README, API reference, env vars, runbook
+
 ## Verification
 - `pnpm --filter @taskflow/api test`: PASS — 41 tests (9 new), 0 failed
 - `pnpm --filter @taskflow/api lint`: PASS — no warnings
@@ -42,6 +50,9 @@ AS_SPECIFIED — implemented exactly to `api-contract.md`; no deviation needed.
 - Manual: `curl -sf -H "Authorization: Bearer <dev token>" http://localhost:3001/api/boards/<seeded-board>/tasks/export`: PASS — valid CSV, correct filename header
 
 ## Telemetry
-- Tool calls used: ~34
-- Tool-call budget hit: no
 - Wall time (approx): 12 min
+- Turn limit hit: no
+
+```json
+{"status": "APPROVED", "report_path": "docs/features/csv-export/reports/backend.md", "iteration": 1}
+```

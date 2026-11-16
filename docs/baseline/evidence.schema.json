@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "evidence.v1",
+  "title": "Human-committed evidence gate (docs/baseline/evidence.json)",
+  "description": "The authoritative check is kitlib.evidence.check (.claude/scripts/kitlib/evidence.py): schema == evidence.v1, no template placeholders, at least 3 fixture_runs with clean == true and unique ids, a real_feature with an id and completed == true, a non-empty attested_by. This file documents the shape; extra properties are allowed.",
+  "type": "object",
+  "required": ["schema", "fixture_runs", "real_feature", "attested_by", "attested_at"],
+  "properties": {
+    "schema": {"const": "evidence.v1"},
+    "fixture_runs": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["id", "clean"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "clean": {"type": "boolean", "description": "true only for a run with no control-flow rescues and no escaped defects"},
+          "date": {"type": "string"},
+          "kit_version": {"type": "string"},
+          "level": {"type": "string"},
+          "runner": {"type": "string"},
+          "control_flow_rescues": {"type": "integer", "minimum": 0},
+          "results_file": {"type": "string"},
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "real_feature": {
+      "type": "object",
+      "required": ["id", "completed"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "completed": {"type": "boolean"},
+        "level": {"type": "string"},
+        "description": {"type": "string"},
+        "pr_url": {"type": "string"}
+      }
+    },
+    "kill_criteria_checked": {"type": "boolean", "description": "docs/baseline/kill-criteria.md was evaluated against the baseline and not tripped"},
+    "attested_by": {"type": "string", "minLength": 1},
+    "attested_at": {"type": "string"}
+  }
+}

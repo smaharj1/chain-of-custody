@@ -1,0 +1,83 @@
+{
+  "goal": "Build hello-loop, a tiny bookmarks service on the Python standard library: a SQLite table for bookmarks, a JSON API to add and list them, and a server-rendered page that shows them and lets a visitor add one. Local only; no deployment, no authentication.",
+  "createdAt": "2026-10-26",
+  "items": [
+    {
+      "id": "F1",
+      "milestone": "M1 Data and API",
+      "title": "Bookmarks schema, migration and seed",
+      "slug": "bookmarks-schema",
+      "dependsOn": [],
+      "intent": "Add the bookmarks table as the first migration (with its down migration) and a seed command that loads three sample bookmarks. Everything else reads and writes this table.",
+      "acceptance": [
+        "AC-F1-1: after `python3 -m hello_loop.migrate` on a fresh database, table `bookmarks` exists with columns `id` (INTEGER PRIMARY KEY), `url` (TEXT NOT NULL, UNIQUE), `title` (TEXT NOT NULL) and `created_at` (TEXT NOT NULL), and nothing else",
+        "AC-F1-2: running `python3 -m hello_loop.migrate` a second time succeeds and `schema_migrations` holds `0001_create_bookmarks` exactly once",
+        "AC-F1-3: `python3 -m hello_loop.migrate --down` removes the `bookmarks` table and its `schema_migrations` row (this is the item's down migration)",
+        "AC-F1-4: `python3 -m hello_loop.seed` inserts exactly 3 sample bookmarks; running it twice still leaves exactly 3 rows",
+        "AC-F1-5: `tests/test_schema.py` exists, covers AC-F1-1 to AC-F1-4, and passes under `verify_tests`"
+      ],
+      "requiresEnv": [],
+      "status": "pending",
+      "blockReason": null,
+      "branch": null,
+      "mergeCommit": null,
+      "verifyEvidence": null,
+      "downMigrationRef": null,
+      "reworkNotes": null,
+      "securityWaiver": null
+    },
+    {
+      "id": "F2",
+      "milestone": "M1 Data and API",
+      "title": "Bookmarks JSON API",
+      "slug": "bookmarks-api",
+      "dependsOn": [
+        "F1"
+      ],
+      "intent": "Expose bookmarks over HTTP: create one, list all (newest first), fetch one by id. Input is validated; a duplicate url is a conflict. Responses are JSON.",
+      "acceptance": [
+        "AC-F2-1: `POST /api/bookmarks` with JSON `{\"url\": \"https://example.com/\", \"title\": \"Example\"}` returns 201 and a JSON object with `id`, `url`, `title` and `created_at` (UTC, `YYYY-MM-DDTHH:MM:SSZ`)",
+        "AC-F2-2: `GET /api/bookmarks` returns 200 and `{\"bookmarks\": [...]}` ordered newest first (highest id first)",
+        "AC-F2-3: `POST /api/bookmarks` returns 400 and `{\"error\": \"<message>\"}`, and stores nothing, when the body is not a JSON object, `url` is missing or does not start with `http://` or `https://`, or `title` is missing or blank after trimming",
+        "AC-F2-4: `POST /api/bookmarks` with a url that is already stored returns 409 and `{\"error\": \"<message>\"}`, and adds no row",
+        "AC-F2-5: `GET /api/bookmarks/<id>` returns 200 and the object for an existing id, and 404 with `{\"error\": \"<message>\"}` for an unknown or non-numeric id",
+        "AC-F2-6: `tests/test_bookmarks_api.py` exists, covers AC-F2-1 to AC-F2-5 against the running server, and passes under `verify_tests`; demo target `GET /api/bookmarks` returns 200 under `verify_run`"
+      ],
+      "requiresEnv": [],
+      "status": "pending",
+      "blockReason": null,
+      "branch": null,
+      "mergeCommit": null,
+      "verifyEvidence": null,
+      "downMigrationRef": null,
+      "reworkNotes": null,
+      "securityWaiver": null
+    },
+    {
+      "id": "F3",
+      "milestone": "M2 Interface",
+      "title": "Bookmarks page",
+      "slug": "bookmarks-page",
+      "dependsOn": [
+        "F2"
+      ],
+      "intent": "A server-rendered page at / that lists the bookmarks as links and has a form to add one. It reuses the API's validation and data access, and must escape everything a visitor typed.",
+      "acceptance": [
+        "AC-F3-1: `GET /` returns 200 with `Content-Type: text/html; charset=utf-8`; each bookmark appears as `<a href=\"URL\">TITLE</a>`, newest first",
+        "AC-F3-2: with no bookmarks the page contains the text `No bookmarks yet.`",
+        "AC-F3-3: a bookmark whose title is `<script>alert(1)</script>` is rendered as `&lt;script&gt;alert(1)&lt;/script&gt;`, and the page contains no raw `<script>` tag; `&` in a url is rendered as `&amp;`",
+        "AC-F3-4: the page contains `<form method=\"post\" action=\"/bookmarks\">` with inputs named `url` and `title`; posting valid form data (`application/x-www-form-urlencoded`) returns 303 with `Location: /` and stores the bookmark; invalid data returns 400 with an HTML page that shows the validation message, and stores nothing",
+        "AC-F3-5: `tests/test_page.py` exists, covers AC-F3-1 to AC-F3-4, and passes under `verify_tests`; demo target `GET /` returns 200 under `verify_run`"
+      ],
+      "requiresEnv": [],
+      "status": "pending",
+      "blockReason": null,
+      "branch": null,
+      "mergeCommit": null,
+      "verifyEvidence": null,
+      "downMigrationRef": null,
+      "reworkNotes": null,
+      "securityWaiver": null
+    }
+  ]
+}

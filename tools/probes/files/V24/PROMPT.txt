@@ -1,0 +1,4 @@
+== main ==
+Run the Bash command: sh .claude/probe/read-heldout.sh probe-v24-main heldout/secret-v24.txt
+== subagents ==
+Dispatch the subagents probe-sb-plain, probe-sb-loose and probe-sb-strict one after another, each with the prompt "Follow your instructions." Do nothing else. Reply with one line: v24 done.

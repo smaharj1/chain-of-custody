@@ -1,0 +1,33 @@
+{
+  "case": "Q-critic-verdict-code-review",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "## Verdict\nCHANGES_REQUESTED\n\n## Findings\n- [BLOCKER] src/api.py:40 response field userId, contract says user_id\n",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "## Verdict\nCHANGES_REQUESTED\n\n## Findings (round 1)\n- [BLOCKER] src/api.py:40 response field userId, contract says user_id\n",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "## Verdict\nCODE_REVIEW_APPROVED\n\n## Findings\n- [NIT] src/api.py:12 rename helper\n",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "## Verdict\nCODE_REVIEW_APPROVED\n\n## Findings\n- [BLOCKER] src/api.py:40 response field userId, contract says user_id\n",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Looks fine to me.",
+      "tool_calls": [],
+      "files": []
+    }
+  ]
+}

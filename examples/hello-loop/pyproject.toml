@@ -1,0 +1,9 @@
+[project]
+name = "hello-loop"
+version = "0.1.0"
+description = "A tiny bookmarks service: the fixture the Chain of Custody kit is measured against."
+requires-python = ">=3.9"
+dependencies = []
+
+# No dependencies on purpose: the standard library only (http.server, sqlite3, unittest),
+# so the fixture runs offline in CI and on a fresh machine.

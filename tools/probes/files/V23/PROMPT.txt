@@ -1,0 +1,4 @@
+== subagent ==
+Dispatch the subagent probe-wf-caller with the prompt "Follow your instructions." Do nothing else. When it returns, reply with one line: v23 subagent done.
+== headless ==
+Launch the saved workflow named probe-v23 with the Workflow tool, then reply with one line saying whether it started and quoting any error.

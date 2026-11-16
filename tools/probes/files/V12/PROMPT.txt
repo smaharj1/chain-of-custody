@@ -1,0 +1,2 @@
+== dispatch ==
+Dispatch the subagent probe-keep, wait for it, then dispatch the subagent probe-omit. Use the prompt "Follow your instructions." for both. Do nothing else. Reply with one line: v12 done.

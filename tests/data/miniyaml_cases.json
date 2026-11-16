@@ -1,0 +1,438 @@
+{
+ "accept": [
+  {
+   "name": "empty doc",
+   "yaml": "",
+   "expect": null
+  },
+  {
+   "name": "comments only",
+   "yaml": "# a\n\n  # b\n",
+   "expect": null
+  },
+  {
+   "name": "simple mapping",
+   "yaml": "a: 1\nb: two\nc: true\nd: false\ne: null\nf: ~\ng:\n",
+   "expect": {
+    "a": 1,
+    "b": "two",
+    "c": true,
+    "d": false,
+    "e": null,
+    "f": null,
+    "g": null
+   }
+  },
+  {
+   "name": "bool spellings",
+   "yaml": "a: True\nb: FALSE\n",
+   "expect": {
+    "a": true,
+    "b": false
+   }
+  },
+  {
+   "name": "on/off/yes/no are strings",
+   "yaml": "a: on\nb: off\nc: yes\nd: no\n",
+   "expect": {
+    "a": "on",
+    "b": "off",
+    "c": "yes",
+    "d": "no"
+   }
+  },
+  {
+   "name": "numbers",
+   "yaml": "a: -3\nb: +4\nc: 1.5\nd: .5\ne: 1e3\nf: 007\ng: 1.2.3\n",
+   "expect": {
+    "a": -3,
+    "b": 4,
+    "c": 1.5,
+    "d": 0.5,
+    "e": 1000.0,
+    "f": 7,
+    "g": "1.2.3"
+   }
+  },
+  {
+   "name": "plain scalars with spaces and symbols",
+   "yaml": "a: pnpm test\nb: <command>\nc: cp ./x /tmp/y-$ID.db\nd: a-b_c\n",
+   "expect": {
+    "a": "pnpm test",
+    "b": "<command>",
+    "c": "cp ./x /tmp/y-$ID.db",
+    "d": "a-b_c"
+   }
+  },
+  {
+   "name": "trailing comment",
+   "yaml": "a: 1   # note\nb: x # y\n",
+   "expect": {
+    "a": 1,
+    "b": "x"
+   }
+  },
+  {
+   "name": "hash inside word is not a comment",
+   "yaml": "a: x#y\nb: \"p # q\"  # real\nc: 'it''s # ok'\n",
+   "expect": {
+    "a": "x#y",
+    "b": "p # q",
+    "c": "it's # ok"
+   }
+  },
+  {
+   "name": "apostrophe in plain scalar",
+   "yaml": "a: don't stop # c\n",
+   "expect": {
+    "a": "don't stop"
+   }
+  },
+  {
+   "name": "double quote escapes",
+   "yaml": "a: \"x\\ny\\t\\\"q\\\" \\\\ \\u0041 \\x42\"\n",
+   "expect": {
+    "a": "x\ny\t\"q\" \\ A B"
+   }
+  },
+  {
+   "name": "quoted key",
+   "yaml": "\"a b\": 1\n'c': 2\n",
+   "expect": {
+    "a b": 1,
+    "c": 2
+   }
+  },
+  {
+   "name": "nested mappings",
+   "yaml": "gates:\n  g1: on\n  g2: report\nx: 1\n",
+   "expect": {
+    "gates": {
+     "g1": "on",
+     "g2": "report"
+    },
+    "x": 1
+   }
+  },
+  {
+   "name": "deep nesting",
+   "yaml": "a:\n  b:\n    c: 1\n  d: 2\n",
+   "expect": {
+    "a": {
+     "b": {
+      "c": 1
+     },
+     "d": 2
+    }
+   }
+  },
+  {
+   "name": "block sequence of scalars",
+   "yaml": "a:\n  - x\n  - 2\n  - true\n",
+   "expect": {
+    "a": [
+     "x",
+     2,
+     true
+    ]
+   }
+  },
+  {
+   "name": "sequence at the parent's indent",
+   "yaml": "a:\n- x\n- y\nb: 1\n",
+   "expect": {
+    "a": [
+     "x",
+     "y"
+    ],
+    "b": 1
+   }
+  },
+  {
+   "name": "sequence of mappings",
+   "yaml": "items:\n  - name: a\n    n: 1\n  - name: b\n    n: 2\nz: 0\n",
+   "expect": {
+    "items": [
+     {
+      "name": "a",
+      "n": 1
+     },
+     {
+      "name": "b",
+      "n": 2
+     }
+    ],
+    "z": 0
+   }
+  },
+  {
+   "name": "top-level sequence",
+   "yaml": "- a\n- b: 1\n  c: 2\n- 3\n",
+   "expect": [
+    "a",
+    {
+     "b": 1,
+     "c": 2
+    },
+    3
+   ]
+  },
+  {
+   "name": "dash alone then block",
+   "yaml": "-\n  a: 1\n- \n",
+   "expect": [
+    {
+     "a": 1
+    },
+    null
+   ]
+  },
+  {
+   "name": "flow list",
+   "yaml": "a: [x, 1, \"y, z\", 'q']\nb: []\nc: {}\nd: [a,]\n",
+   "expect": {
+    "a": [
+     "x",
+     1,
+     "y, z",
+     "q"
+    ],
+    "b": [],
+    "c": {},
+    "d": [
+     "a"
+    ]
+   }
+  },
+  {
+   "name": "literal block clip",
+   "yaml": "a: |\n  one\n  two\n\n  three\nb: 1\n",
+   "expect": {
+    "a": "one\ntwo\n\nthree\n",
+    "b": 1
+   }
+  },
+  {
+   "name": "literal block strip",
+   "yaml": "a: |-\n  one\n  two\n",
+   "expect": {
+    "a": "one\ntwo"
+   }
+  },
+  {
+   "name": "literal block keep",
+   "yaml": "a: |+\n  one\n\nb: 1\n",
+   "expect": {
+    "a": "one\n\n",
+    "b": 1
+   }
+  },
+  {
+   "name": "literal block keeps hash and indentation",
+   "yaml": "a: |\n  # not a comment\n    indented\nb: 2\n",
+   "expect": {
+    "a": "# not a comment\n  indented\n",
+    "b": 2
+   }
+  },
+  {
+   "name": "literal in sequence",
+   "yaml": "- |\n  hi\n- x\n",
+   "expect": [
+    "hi\n",
+    "x"
+   ]
+  },
+  {
+   "name": "blank lines and comments between entries",
+   "yaml": "a: 1\n\n# c\n\nb: 2\n",
+   "expect": {
+    "a": 1,
+    "b": 2
+   }
+  },
+  {
+   "name": "windows newlines",
+   "yaml": "a: 1\r\nb:\r\n  c: 2\r\n",
+   "expect": {
+    "a": 1,
+    "b": {
+     "c": 2
+    }
+   }
+  },
+  {
+   "name": "url value",
+   "yaml": "u: https://example.com/a?b=c#frag\n",
+   "expect": {
+    "u": "https://example.com/a?b=c#frag"
+   }
+  },
+  {
+   "name": "value with colon not followed by space",
+   "yaml": "t: 12:30\nu: a:b\n",
+   "expect": {
+    "t": "12:30",
+    "u": "a:b"
+   }
+  }
+ ],
+ "reject": [
+  {
+   "name": "tab indentation",
+   "yaml": "a:\n\tb: 1\n",
+   "line": 2,
+   "contains": "tab"
+  },
+  {
+   "name": "anchor",
+   "yaml": "a: &x 1\n",
+   "line": 1,
+   "contains": "unsupported"
+  },
+  {
+   "name": "alias",
+   "yaml": "a: *x\n",
+   "line": 1,
+   "contains": "unsupported"
+  },
+  {
+   "name": "tag",
+   "yaml": "a: !!str 1\n",
+   "line": 1,
+   "contains": "unsupported"
+  },
+  {
+   "name": "folded block",
+   "yaml": "a: >\n  x\n",
+   "line": 1,
+   "contains": "folded"
+  },
+  {
+   "name": "document marker",
+   "yaml": "---\na: 1\n",
+   "line": 1,
+   "contains": "document"
+  },
+  {
+   "name": "second document",
+   "yaml": "a: 1\n---\nb: 2\n",
+   "line": 2,
+   "contains": "document"
+  },
+  {
+   "name": "duplicate key",
+   "yaml": "a: 1\nb: 2\na: 3\n",
+   "line": 3,
+   "contains": "duplicate"
+  },
+  {
+   "name": "duplicate nested key",
+   "yaml": "g:\n  x: 1\n  x: 2\n",
+   "line": 3,
+   "contains": "duplicate"
+  },
+  {
+   "name": "nested flow list",
+   "yaml": "a: [[1]]\n",
+   "line": 1,
+   "contains": "nested"
+  },
+  {
+   "name": "flow mapping with content",
+   "yaml": "a: {b: 1}\n",
+   "line": 1,
+   "contains": "flow mapping"
+  },
+  {
+   "name": "unterminated flow list",
+   "yaml": "a: [1, 2\n",
+   "line": 1,
+   "contains": "unterminated"
+  },
+  {
+   "name": "unterminated quote",
+   "yaml": "a: 'x\n",
+   "line": 1,
+   "contains": "unterminated"
+  },
+  {
+   "name": "text after closing quote",
+   "yaml": "a: \"x\" y\n",
+   "line": 1,
+   "contains": "after closing quote"
+  },
+  {
+   "name": "colon space inside plain value",
+   "yaml": "a: b: c\n",
+   "line": 1,
+   "contains": "': '"
+  },
+  {
+   "name": "bad escape",
+   "yaml": "a: \"\\q\"\n",
+   "line": 1,
+   "contains": "escape"
+  },
+  {
+   "name": "over-indented line",
+   "yaml": "a: 1\n  b: 2\n",
+   "line": 2,
+   "contains": "indentation"
+  },
+  {
+   "name": "line that is not a mapping entry",
+   "yaml": "a: 1\njust text\n",
+   "line": 2,
+   "contains": "key"
+  },
+  {
+   "name": "nested sequence",
+   "yaml": "- - a\n",
+   "line": 1,
+   "contains": "nested sequences"
+  },
+  {
+   "name": "literal header with indent indicator",
+   "yaml": "a: |2\n  x\n",
+   "line": 1,
+   "contains": "literal"
+  },
+  {
+   "name": "literal block dedent inside",
+   "yaml": "a: |\n    x\n  y\n",
+   "line": 3,
+   "contains": "indented less"
+  },
+  {
+   "name": "merge key",
+   "yaml": "<<: *base\n",
+   "line": 1,
+   "contains": "unsupported"
+  },
+  {
+   "name": "complex key",
+   "yaml": "? a\n: b\n",
+   "line": 1,
+   "contains": "complex"
+  },
+  {
+   "name": "percent directive",
+   "yaml": "%YAML 1.2\na: 1\n",
+   "line": 1,
+   "contains": "unsupported"
+  },
+  {
+   "name": "error line includes an earlier comment",
+   "yaml": "# one\n# two\na: 1\na: 2\n",
+   "line": 4,
+   "contains": "duplicate"
+  },
+  {
+   "name": "empty flow item",
+   "yaml": "a: [1,,2]\n",
+   "line": 1,
+   "contains": "empty item"
+  }
+ ]
+}

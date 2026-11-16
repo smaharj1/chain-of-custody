@@ -1,7 +1,7 @@
 ## ORM and Tooling
 
 - ORM: Drizzle ORM.
-- Database: PostgreSQL 16 on RDS in prod; SQLite at `./.data/dev.db` for local dev (see `local-dev.md`). Migrations regenerate per-dialect.
+- Database: PostgreSQL 16 on RDS in prod; PostgreSQL 16 locally too (`embedded-postgres`, see `local-dev.md`), so migrations run on the same dialect everywhere.
 - Migrations: `drizzle-kit generate` + `drizzle-kit migrate`.
 
 ## Migration Location and Commands

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(echo probe-v21-denied*)"
+    ]
+  },
+  "allowManagedHooksOnly": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{HOOK}}\" mark --tag v21-managed-hook --log \"{{LOG}}\""
+          }
+        ]
+      }
+    ]
+  }
+}

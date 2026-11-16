@@ -1,0 +1,33 @@
+{
+  "case": "Q-doc-delta-reported",
+  "synthetic": true,
+  "runs": [
+    {
+      "final": "Implemented the export. Doc Delta: README needs a line for the new variable EXPORT_BATCH_SIZE (default 500).\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Implemented the export. Doc Delta: README needs a line for the new variable EXPORT_BATCH_SIZE (default 500).\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Implemented the export. Doc Delta: README needs a line for the new variable EXPORT_BATCH_SIZE (default 500).\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    }
+  ],
+  "negative_runs": [
+    {
+      "final": "Implemented the export.\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    },
+    {
+      "final": "Implemented; no docs needed.\n{\"status\": \"APPROVED\", \"report_path\": \"docs/features/x/reports/backend.md\", \"iteration\": 1}",
+      "tool_calls": [],
+      "files": []
+    }
+  ]
+}

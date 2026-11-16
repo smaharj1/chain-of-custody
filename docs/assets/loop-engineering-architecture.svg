@@ -1,6 +1,6 @@
 <svg viewBox="0 0 880 600" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" role="img" aria-label="Loop engineering architecture">
   <title>Loop Engineering — Architecture</title>
-  <desc>Three layers: a Plan layer where you and the Planner build an approved build-plan.json; an Orchestrate layer — a main-session loop that picks the next eligible item, runs the per-item pipeline, verifies locally, updates the plan, and auto-demos the running app to you at checkpoints, until done / DEADLOCK / guardrail; and an Execute layer that runs the reused agent team (PM, Architect + design-critic, Tech Lead, engineers, code-review) per item.</desc>
+  <desc>Three layers: a Plan layer where you and the Planner build an approved build-plan.json; an Orchestrate layer — a main-session loop that picks the next eligible item, runs the per-item pipeline, verifies locally, updates the plan, and auto-demos the running app to you at checkpoints, until done / DEADLOCK / guardrail; and an Execute layer that runs the reused agent team (PM, Architect + design-critic, Tech Lead, engineers, code-reviewer agent) per item.</desc>
   <defs>
     <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>

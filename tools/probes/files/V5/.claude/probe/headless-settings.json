@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk"
+  },
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "{{OBSERVE_CMD}}"}]},
+      {"hooks": [{"type": "command", "command": "python3 \"{{HOOK}}\" mark --tag v5-child-settings-hook --log \"{{LOG}}\""}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "{{OBSERVE_CMD}}"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "python3 \"{{HOOK}}\" mark --tag v5-child-settings-hook --log \"{{LOG}}\""}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "{{OBSERVE_CMD}}"}]}
+    ]
+  }
+}

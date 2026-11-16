@@ -1,0 +1,21 @@
+{
+  "id": "Q-critic-verdict-code-review",
+  "class": "quality",
+  "setup": {
+    "agent": "code-reviewer",
+    "fixture": "diff-with-contract-mismatch"
+  },
+  "prompt": "Review the diff for item-3 against the brief and the api-contract.",
+  "graders": [
+    {
+      "type": "verdict_schema",
+      "schema": "code-review"
+    },
+    {
+      "type": "tool_not_used",
+      "tool": "edit"
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}

@@ -1,0 +1,58 @@
+{
+  "acceptance": [
+    {
+      "id": "AC-F3-1",
+      "text": "`GET /` returns 200 with `Content-Type: text/html; charset=utf-8`; each bookmark appears as `<a href=\"URL\">TITLE</a>`, newest first"
+    },
+    {
+      "id": "AC-F3-2",
+      "text": "with no bookmarks the page contains the text `No bookmarks yet.`"
+    },
+    {
+      "id": "AC-F3-3",
+      "text": "a bookmark whose title is `<script>alert(1)</script>` is rendered as `&lt;script&gt;alert(1)&lt;/script&gt;`, and the page contains no raw `<script>` tag; `&` in a url is rendered as `&amp;`"
+    },
+    {
+      "id": "AC-F3-4",
+      "text": "the page contains `<form method=\"post\" action=\"/bookmarks\">` with inputs named `url` and `title`; posting valid form data (`application/x-www-form-urlencoded`) returns 303 with `Location: /` and stores the bookmark; invalid data returns 400 with an HTML page that shows the validation message, and stores nothing"
+    },
+    {
+      "id": "AC-F3-5",
+      "text": "`tests/test_page.py` exists, covers AC-F3-1 to AC-F3-4, and passes under `verify_tests`; demo target `GET /` returns 200 under `verify_run`"
+    }
+  ],
+  "dependsOn": [
+    "F2"
+  ],
+  "estimate": {
+    "engineers": [
+      "app-engineer"
+    ],
+    "loc": 180
+  },
+  "id": "F3",
+  "intent": "A server-rendered page at / that lists the bookmarks as links and has a form to add one. It reuses the API's validation and data access, and must escape everything a visitor typed.",
+  "milestone": "M2 Interface",
+  "requiresEnv": [],
+  "riskClass": "low",
+  "schema": "loopctl.item.v1",
+  "size": "M",
+  "slug": "bookmarks-page",
+  "title": "Bookmarks page",
+  "touches": {
+    "deps_change": false,
+    "domains": [
+      "app"
+    ],
+    "paths": [
+      "hello_loop/handlers/pages.py",
+      "hello_loop/router.py",
+      "tests/test_page.py"
+    ],
+    "schema": false
+  },
+  "verify": {
+    "demoRoute": "/",
+    "tests": "python3 -m unittest tests.test_page"
+  }
+}

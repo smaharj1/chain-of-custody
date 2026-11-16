@@ -1,0 +1,57 @@
+# heldout-sync: put the held-out acceptance tests where heldout.yml can restore them, without a secret ever reaching a pull request job
+# (report section 8.4, RC-3, RC-6). Copy to .github/workflows/heldout-sync.yml.
+#
+# This is a TRUSTED job: it runs from the default branch's copy of this file (push to main, or a human's workflow_dispatch), never on a
+# pull request, and it checks out no pull request code. The store token is in scope for ONE step. The tests land in the Actions cache of the
+# default branch, which pull request workflows can restore but not overwrite.
+#
+# Needs:
+#   * a PRIVATE repository that holds the held-out tests, one directory per plan item id (`F1/`, `F2/`, ...), named in the repository
+#     variable HELDOUT_STORE_REPO (owner/name). The acceptance-author writes them there (not into this repository, and not into any branch the
+#     agent can read);
+#   * a read-only token for that repository only (fine-grained PAT or a deploy key's token) in the repository secret HELDOUT_STORE_TOKEN;
+#   * a human re-running this after the store changes (workflow_dispatch). The cache is immutable per key; the newest `heldout-*` wins.
+#
+# Anyone who can run workflows in this repository can write a workflow that restores the cache and prints it. Keep write access to the people
+# you would trust with the held-out tests, or use `runner: driver`, where they never leave the machine. Actions are referenced by tag; pin
+# each to a commit SHA before you rely on this (ci_lint warns).
+name: heldout-sync
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heldout-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch the held-out store (the token is scoped to this step)
+        uses: actions/checkout@v4 # pin to a commit SHA
+        with:
+          repository: ${{ vars.HELDOUT_STORE_REPO }}
+          token: ${{ secrets.HELDOUT_STORE_TOKEN }}
+          path: store
+          persist-credentials: false
+
+      - name: Stage the tests (no git metadata, no token)
+        run: |
+          set -eu
+          rm -rf store/.git
+          mkdir -p "$RUNNER_TEMP/heldout"
+          cp -R store/. "$RUNNER_TEMP/heldout/"
+          rm -rf store
+
+      - name: Save them for the pull request jobs
+        uses: actions/cache/save@v4 # pin to a commit SHA
+        with:
+          path: ${{ runner.temp }}/heldout
+          key: heldout-${{ github.run_id }}

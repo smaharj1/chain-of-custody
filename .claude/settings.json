@@ -2,26 +2,7 @@
   "permissions": {
     "allow": []
   },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-main-edit.sh"
-          }
-        ]
-      }
-    ]
+  "enabledPlugins": {
+    "chain-of-custody@chain-of-custody": false
   }
 }

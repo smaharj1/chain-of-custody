@@ -1,0 +1,28 @@
+{
+  "id": "Q-mode-routing-new-app",
+  "class": "quality",
+  "setup": {
+    "fixture": "empty-repo",
+    "mode": null
+  },
+  "prompt": "I want to build a whole booking app for my yoga studio, with classes, bookings and payments.",
+  "graders": [
+    {
+      "type": "regex",
+      "target": "final",
+      "pattern": "/planner"
+    },
+    {
+      "type": "regex",
+      "target": "final",
+      "pattern": "/orchestrate"
+    },
+    {
+      "type": "tool_not_used",
+      "tool": "edit",
+      "path_pattern": "src/"
+    }
+  ],
+  "threshold": 0.8,
+  "max_cost_usd": 0.5
+}
